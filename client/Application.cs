@@ -21,26 +21,30 @@ public class Application : IHostedLifecycleService
         _layerSystem = layerSystem;
     }
 
-    public async Task StartingAsync(CancellationToken cancellationToken)
+    public Task StartingAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Application starting");
+        return Task.CompletedTask;
     }
 
 
-    public async Task StartedAsync(CancellationToken cancellationToken)
+    public Task StartedAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Application started");
+        return Task.CompletedTask;
     }
 
 
-    public async Task StoppedAsync(CancellationToken cancellationToken)
+    public Task StoppedAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Application stopped");
+        return Task.CompletedTask;
     }
 
-    public async Task StoppingAsync(CancellationToken cancellationToken)
+    public Task StoppingAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Application stopping");
+        return Task.CompletedTask;
     }
 
 

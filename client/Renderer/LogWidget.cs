@@ -5,7 +5,7 @@ using Serilog.Events;
 
 namespace client.Renderer;
 
-public class LogWidget(IFormatProvider formatProvider) : ILogEventSink
+public class LogWidget(IFormatProvider? formatProvider) : ILogEventSink
 {
     public void Emit(LogEvent logEvent)
     {
@@ -18,7 +18,7 @@ public static class MySinkExtensions
 {
     public static LoggerConfiguration MySink(
         this LoggerSinkConfiguration loggerConfiguration,
-        IFormatProvider formatProvider = null)
+        IFormatProvider? formatProvider = null)
     {
         return loggerConfiguration.Sink(new LogWidget(formatProvider));
     }

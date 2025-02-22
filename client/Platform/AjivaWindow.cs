@@ -105,7 +105,7 @@ public class AjivaWindow : IHostedLifecycleService
             Window.DoRender();
         };
         Window.Update += W_Update;
-        
+
         windowThread = new Thread(MainWindow);
         windowThread.Start();
 
@@ -144,6 +144,8 @@ public class AjivaWindow : IHostedLifecycleService
     public Task StartedAsync(CancellationToken cancellationToken)
     {
         Window.TopMost = true;
+        Window.DoUpdate();
+        Window.TopMost = false;
         return Task.CompletedTask;
     }
 

@@ -3,16 +3,11 @@ using System.Numerics;
 using client.Platform;
 using client.Renderer;
 using ImGuiNET;
-using NativeFileDialogExtendedSharp;
-using Silk.NET.GLFW;
 using Silk.NET.Input;
-using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.ImGui;
 using Silk.NET.WebGPU.Safe;
-using Silk.NET.Windowing;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
-using SurfaceConfiguration = Silk.NET.WebGPU.Safe.SurfaceConfiguration;
 
 namespace client.LayerSystem;
 
@@ -27,7 +22,7 @@ public class AjivaImGuiLayerSystem
     private ImFontPtr _imguiDefaultFont;
     private ImFontPtr _quicksandFont;
     private ImGuiController? _imguiController;
-    private AjivaWindow _window;
+    private AjivaWindow _window = null!;
 
     public List<LayerStruct> Layers { get; } = new();
 
@@ -41,9 +36,6 @@ public class AjivaImGuiLayerSystem
         _logger = logger;
         _api = api;
     }
-
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public void Attach(AjivaWindow parent)
     {
@@ -243,7 +235,7 @@ public class AjivaImGuiLayerSystem
         if (!layer.Enabled || layer.Layer is not IRenderLayer renderLayer) return;
 
         //ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
-        
+
         foreach (var (view, sceneViewport) in layer.Views!)
         {
             //if (!ImGui.Begin(view.Name)) continue;
