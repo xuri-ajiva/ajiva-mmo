@@ -20,7 +20,7 @@ using VertexState = Silk.NET.WebGPU.Safe.VertexState;
 
 namespace client;
 
-public class Simple3dScene : IAjivaLayer, IRenderLayer
+public class Simple3dScene : IRenderLayer
 {
     private readonly ILogger<Simple3dScene> _logger;
     private readonly RendererApi _api;
@@ -37,13 +37,13 @@ public class Simple3dScene : IAjivaLayer, IRenderLayer
     private (TexturePtr tex, TextureViewPtr view) cubeTexture;
     private Vector4 cubeColor = Vector4.One;
 
-    struct Vertex
+    private struct Vertex
     {
         public Vector3D<f32> Position;
         public Vector2D<f32> TexCoord;
     }
 
-    struct ModelUB
+    private struct ModelUB
     {
         public Matrix4X4<f32> Transform;
         public Vector4D<f32> Color;
@@ -255,7 +255,7 @@ public class Simple3dScene : IAjivaLayer, IRenderLayer
         throw new NotImplementedException();
     }
 
-    public bool Enabled { get; set; }
+    public bool Enabled { get; set; } = true;
 
     private void RenderScene(CommandEncoderPtr cmd, QueuePtr queue, TextureViewPtr colorTarget0,
         f32 aspectRatio)

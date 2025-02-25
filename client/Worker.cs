@@ -17,12 +17,12 @@ public class Worker : BackgroundService
     {
         using var span = _tracer.StartRootSpan("Worker", SpanKind.Client);
         int i = 0;
-        while (!stoppingToken.IsCancellationRequested && i++ < 3)
+        while (!stoppingToken.IsCancellationRequested && i++ < 30)
         {
             using var inner = _tracer.StartActiveSpan("Worker", SpanKind.Internal, span);
             if (_logger.IsEnabled(LogLevel.Information))
             {
-                _logger.LogInformation("Worker running at: {Time}", DateTimeOffset.Now);
+                _logger.LogTrace("Worker running at: {Time}", DateTimeOffset.Now);
             }
 
             await Task.Delay(1000, stoppingToken);

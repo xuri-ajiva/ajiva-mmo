@@ -86,7 +86,7 @@ public class AjivaWindow : IHostedLifecycleService
     {
         var options = WindowOptions.Default;
         options.API = GraphicsAPI.None;
-        options.Size = new Vector2D<int>(1000, 700);
+        options.Size = new Vector2D<i32>(1920, 1080);
         options.TransparentFramebuffer = true;
         options.WindowBorder = WindowBorder.Resizable;
 

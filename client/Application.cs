@@ -7,16 +7,13 @@ namespace client;
 public class Application : IHostedLifecycleService
 {
     private readonly ILogger<Application> _logger;
-    private readonly RendererApi _rendererApi;
-    private readonly AjivaWindow _window;
     private readonly IServiceProvider _serviceProvider;
     private readonly AjivaImGuiLayerSystem _layerSystem;
 
-    public Application(ILogger<Application> logger, RendererApi rendererApi, AjivaWindow window, IServiceProvider serviceProvider, AjivaImGuiLayerSystem layerSystem)
+    public Application(ILogger<Application> logger,
+        IServiceProvider serviceProvider, AjivaImGuiLayerSystem layerSystem)
     {
         _logger = logger;
-        _rendererApi = rendererApi;
-        _window = window;
         _serviceProvider = serviceProvider;
         _layerSystem = layerSystem;
     }
@@ -53,8 +50,10 @@ public class Application : IHostedLifecycleService
         var appScope = _serviceProvider.CreateScope();
         var scene = appScope.ServiceProvider.GetRequiredService<Simple3dScene>();
 
+        await _layerSystem.PushLayer(appScope.ServiceProvider.GetRequiredService<LogWidget>());
         await _layerSystem.PushLayer(scene);
         scene.Enabled = true;
     }
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

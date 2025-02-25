@@ -132,7 +132,7 @@ public class AjivaImGuiLayerSystem
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4);
         ImGui.PushFont(_quicksandFont);
 
-        // ImGui.DockSpaceOverViewport(ImGui.GetMainViewport());
+        ImGui.DockSpaceOverViewport(ImGui.GetMainViewport());
         ImGui.UpdatePlatformWindows();
         ImGui.RenderPlatformWindowsDefault();
 
@@ -167,16 +167,16 @@ public class AjivaImGuiLayerSystem
         queue.Submit(new[] { cmd.Finish() });
     }
 
-    private i32 _location = 0;
+    private i32 _location = -1;
     private bool _showOverlay = true;
     private f32[] _frameTimes = new f32[100];
 
     private void RenderMetrics(UpdateInfo info)
     {
         ImGuiWindowFlags windowFlags =
-            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoSavedSettings |
+            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize |
             ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav;
-        const float pad = 10.0f;
+        const f32 pad = 10.0f;
         _frameTimes[info.Ticks % (u64)_frameTimes.Length] = Math.Max(0, info.DeltaTime * 1000);
 
         if (_location >= 0)
@@ -234,15 +234,15 @@ public class AjivaImGuiLayerSystem
     {
         if (!layer.Enabled || layer.Layer is not IRenderLayer renderLayer) return;
 
-        //ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
 
         foreach (var (view, sceneViewport) in layer.Views!)
         {
-            //if (!ImGui.Begin(view.Name)) continue;
-            //var size = ImGui.GetContentRegionAvail();
+            if (!ImGui.Begin(view.Name)) continue;
+            var size = ImGui.GetContentRegionAvail();
 
-            var imDrawListPtr = ImGui.GetBackgroundDrawList();
-            var size = imDrawListPtr.GetClipRectMax();
+            //var imDrawListPtr = ImGui.GetBackgroundDrawList();
+            //var size = imDrawListPtr.GetClipRectMax();
             u32 width = (u32)size.X, height = (u32)Math.Max(0, size.Y);
 
             u32 prevWidth = sceneViewport.Width;
@@ -256,17 +256,15 @@ public class AjivaImGuiLayerSystem
                 if (prevWidth != width && prevHeight != height)
                     _imguiController!.RemoveTextureBindGroup(color0);
 
-                imDrawListPtr.AddImage(color0.GetIntPtr(),
-                    new Vector2(0, 0),
-                    new Vector2(width, height));
+                //imDrawListPtr.AddImage(color0.GetIntPtr(), new Vector2(0, 0), new Vector2(width, height));
 
-                //ImGui.Image(color0.GetIntPtr(), new Vector2(width, height));
+                ImGui.Image(color0.GetIntPtr(), new Vector2(width, height));
             }
 
-            //ImGui.End();
+            ImGui.End();
         }
 
-        //ImGui.PopStyleVar();
+        ImGui.PopStyleVar();
 
         await renderLayer.ExtraWindows(info);
     }
@@ -297,7 +295,7 @@ public interface IAjivaLayer
     bool Enabled { get; set; }
 }
 
-public interface IRenderLayer
+public interface IRenderLayer: IAjivaLayer
 {
     IEnumerable<IVirtualView> ListVirtualViewTargets();
     Task ExtraWindows(UpdateInfo info);
