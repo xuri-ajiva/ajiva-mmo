@@ -1,8 +1,10 @@
 using client;
 using client.LayerSystem;
+using client.Networking;
 using client.Platform;
 using client.Renderer;
-using OpenTelemetry.Trace;
+using client.Renderer.PbrRenderer;
+using Riptide;
 using Serilog;
 
 var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
@@ -33,11 +35,11 @@ builder.AddServiceDefaults();
 
     services.AddSingleton(logWidget);
     services.AddSingleton<PlatformSystem>();
-    services.AddHostedService<Worker>();
 
     services.AddSingleton<AjivaImGuiLayerSystem>();
-    services.AddSingleton<Simple3dScene>();
-    
+    services.AddSingleton<Instanced3dDeferredRenderer>();
+    services.AddSingleton<ClientConnectionLayer>();
+
     services.AddSingleton<AjivaWindow>();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<AjivaWindow>());
 
@@ -45,6 +47,8 @@ builder.AddServiceDefaults();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RendererApi>());
     // services.AddSingleton<RendererApi>(provider => provider.GetRequiredService<RendererApi>());
 
+    services.AddSingleton<Client>();
+    services.AddHostedService<ClientWorker>();
     services.AddHostedService<Application>();
 }
 

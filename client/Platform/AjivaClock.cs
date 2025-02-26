@@ -13,7 +13,7 @@ public struct AjivaClock
         _last = _start;
     }
 
-    void Reset()
+    private void Reset()
     {
         _start = 0;
         _last = 0;

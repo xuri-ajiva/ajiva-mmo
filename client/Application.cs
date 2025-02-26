@@ -1,6 +1,6 @@
 ﻿using client.LayerSystem;
-using client.Platform;
 using client.Renderer;
+using client.Renderer.PbrRenderer;
 
 namespace client;
 
@@ -48,11 +48,10 @@ public class Application : IHostedLifecycleService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var appScope = _serviceProvider.CreateScope();
-        var scene = appScope.ServiceProvider.GetRequiredService<Simple3dScene>();
 
         await _layerSystem.PushLayer(appScope.ServiceProvider.GetRequiredService<LogWidget>());
-        await _layerSystem.PushLayer(scene);
-        scene.Enabled = true;
+        await _layerSystem.PushLayer(appScope.ServiceProvider.GetRequiredService<Instanced3dDeferredRenderer>());
+        await _layerSystem.PushLayer(appScope.ServiceProvider.GetRequiredService<ClientConnectionLayer>());
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

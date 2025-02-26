@@ -1,15 +1,12 @@
 ﻿using System.Numerics;
-using System.Runtime.InteropServices;
-using client.LayerSystem;
 using ImGuiNET;
 using Serilog;
-using Serilog.Configuration;
 using Serilog.Core;
 using Serilog.Events;
 
-namespace client.Renderer;
+namespace client.LayerSystem;
 
-public class LogWidget : ILogEventSink, IRenderLayer
+public class LogWidget : ILogEventSink, IUiRenderLayer
 {
     public void Emit(LogEvent logEvent)
     {
@@ -18,23 +15,8 @@ public class LogWidget : ILogEventSink, IRenderLayer
         _messageList.Add(logEvent);
     }
 
-    public IEnumerable<IVirtualView> ListVirtualViewTargets() => [];
-
     private bool _logOpen = true;
-    private readonly bool[] _severityFilter = new bool[7];
-    private readonly List<LogEvent> _messageList = new();
-
-    private static readonly List<Vector4> Colors =
-    [
-        new(0.5f, 0.5f, 0.5f, 1.0f), //none = 0,
-        new(1.0f, 0.0f, 0.0f, 1.0f), //fatal = 1,
-        new(1.0f, 0.2f, 0.2f, 1.0f), //error = 2,
-        new(1.0f, 1.0f, 0.0f, 1.0f), //warning = 3,
-        new(1.0f, 1.0f, 1.0f, 1.0f), //info = 4,
-        new(0.7f, 1.0f, 1.0f, 1.0f), //debug = 5,
-        new(0.0f, 0.4f, 0.4f, 1.0f), //verbose = 6
-    ];
-
+    private readonly List<LogEvent> _messageList = [];
 
     private readonly (LogEventLevel level, Vector4 color, bool filter)[] _levels;
     private readonly IFormatProvider? _formatProvider;
@@ -42,22 +24,16 @@ public class LogWidget : ILogEventSink, IRenderLayer
     public LogWidget(IFormatProvider? formatProvider = null)
     {
         _formatProvider = formatProvider;
-        _levels =
-        [
-            (LogEventLevel.Verbose, new Vector4(0.7f, 1.0f, 1.0f, 1.0f), false),
-            (LogEventLevel.Debug, new Vector4(0.7f, 1.0f, 1.0f, 1.0f), true),
-            (LogEventLevel.Information, new Vector4(1.0f, 1.0f, 1.0f, 1.0f), true),
-            (LogEventLevel.Warning, new Vector4(1.0f, 1.0f, 0.0f, 1.0f), true),
-            (LogEventLevel.Error, new Vector4(1.0f, 0.2f, 0.2f, 1.0f), true),
-            (LogEventLevel.Fatal, new Vector4(1.0f, 0.0f, 0.0f, 1.0f), true)
-        ];
-        if (Enum.GetValues<LogEventLevel>().Any(level => _levels[(i32)level].level != level))
-        {
-            throw new InvalidOperationException("Levels are not in order");
-        }
+        _levels = new (LogEventLevel level, Vector4 color, bool filter)[Enum.GetValues<LogEventLevel>().Length];
+        _levels[(i32)LogEventLevel.Verbose] = (LogEventLevel.Verbose, new Vector4(0.7f, 1.0f, 1.0f, 1.0f), false);
+        _levels[(i32)LogEventLevel.Debug] = (LogEventLevel.Debug, new Vector4(0.7f, 1.0f, 1.0f, 1.0f), true);
+        _levels[(i32)LogEventLevel.Information] =
+            (LogEventLevel.Information, new Vector4(1.0f, 1.0f, 1.0f, 1.0f), true);
+        _levels[(i32)LogEventLevel.Warning] = (LogEventLevel.Warning, new Vector4(1.0f, 1.0f, 0.0f, 1.0f), true);
+        _levels[(i32)LogEventLevel.Error] = (LogEventLevel.Error, new Vector4(1.0f, 0.2f, 0.2f, 1.0f), true);
     }
 
-    public Task ExtraWindows(UpdateInfo info)
+    public Task RenderUi(UpdateInfo info)
     {
         if (ImGui.Begin("Log", ref _logOpen))
         {

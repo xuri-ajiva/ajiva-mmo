@@ -17,7 +17,7 @@ public class AjivaWindow : IHostedLifecycleService
     private readonly IHostApplicationLifetime _lifetime;
 
     public IWindow Window = null!;
-    Thread windowThread = null!;
+    private Thread windowThread = null!;
 
     public SurfacePtr surface;
     private AjivaClock _updateClock;
@@ -35,15 +35,22 @@ public class AjivaWindow : IHostedLifecycleService
 
     private void W_Load()
     {
-        _layerSystem.Attach(this);
-        surface = Window!.CreateWebGPUSurface(_api.Wgpu, _api.Instance);
-        var properties = _api.Adapter.GetProperties();
-        Window!.Title = $"Imgui {properties.BackendType} {properties.Name}";
-        _updateClock.Start();
-        _renderClock.Start();
+        try
+        {
+            _layerSystem.Attach(this);
+            surface = Window.CreateWebGPUSurface(_api.Wgpu, _api.Instance);
+            var properties = _api.Adapter.GetProperties();
+            Window.Title = $"Ajiva MMO {properties.BackendType} {properties.Name}";
+            _updateClock.Start();
+            _renderClock.Start();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error in Window Load");
+        }
     }
 
-    private void W_Update(double deltaTime)
+    private void W_Update(f64 deltaTime)
     {
         _updateClock.Update();
         _layerSystem.Update(new UpdateInfo(_updateClock)).ConfigureAwait(false).GetAwaiter();
@@ -114,22 +121,29 @@ public class AjivaWindow : IHostedLifecycleService
 
     private void MainWindow()
     {
-        Window.Initialize();
-        Window.Run((Action)(() =>
+        try
         {
-            Window.DoEvents();
-            if (!Window.IsClosing)
-                Window.DoUpdate();
-            if (Window.IsClosing)
+            Window.Initialize();
+            Window.Run((Action)(() =>
             {
-                _lifetime.StopApplication();
-                return;
-            }
+                Window.DoEvents();
+                if (!Window.IsClosing)
+                    Window.DoUpdate();
+                if (Window.IsClosing)
+                {
+                    _lifetime.StopApplication();
+                    return;
+                }
 
-            Window.DoRender();
-        }));
-        Window.DoEvents();
-        Window.Reset();
+                Window.DoRender();
+            }));
+            Window.DoEvents();
+            Window.Reset();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error in Window Main");
+        }
     }
 
     public Task StoppingAsync(CancellationToken cancellationToken)

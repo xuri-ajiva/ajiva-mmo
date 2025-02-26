@@ -13,7 +13,7 @@ namespace client.LayerSystem;
 
 public class AjivaImGuiLayerSystem
 {
-    private bool _initialized = false;
+    private bool _initialized;
 
     private readonly ILogger<AjivaImGuiLayerSystem> _logger;
 
@@ -24,12 +24,7 @@ public class AjivaImGuiLayerSystem
     private ImGuiController? _imguiController;
     private AjivaWindow _window = null!;
 
-    public List<LayerStruct> Layers { get; } = new();
-
-    public record LayerStruct(IAjivaLayer Layer, List<(IVirtualView view, VirtualFramebuffer SceneViewport)>? Views)
-    {
-        public bool Enabled => Layer.Enabled;
-    }
+    private List<IAjivaLayer> Layers { get; } = [];
 
     public AjivaImGuiLayerSystem(ILogger<AjivaImGuiLayerSystem> logger, RendererApi api)
     {
@@ -46,18 +41,17 @@ public class AjivaImGuiLayerSystem
         _imguiController = new ImGuiController(_api.Device,
             TextureFormat.Bgra8Unorm, parent.Window, parent.Window.CreateInput(), SetupFonts);
 
-
         var io = ImGui.GetIO();
 
         io.ConfigFlags |= ImGuiConfigFlags.DockingEnable; // Enable Docking
         io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable; // Enable Multi-Viewport / Platform Windows
+        return;
 
         unsafe void SetupFonts()
         {
             _imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
 
-            var fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
-                "resources/Quicksand-SemiBold.ttf");
+            var fontPath = Path.GetFullPath("resources/Quicksand-SemiBold.ttf");
 
             var nativeConfig = ImGuiNative.ImFontConfig_ImFontConfig();
             //Add a higher horizontal/vertical sample rate for global scaling.
@@ -77,29 +71,15 @@ public class AjivaImGuiLayerSystem
         {
             if (layer.Enabled)
             {
-                await layer.Layer.Update(info);
+                await layer.Update(info);
             }
         }
     }
 
     public async Task PushLayer(IAjivaLayer layer)
     {
-        if (layer is IRenderLayer renderLayer)
-        {
-            var views = renderLayer.ListVirtualViewTargets()
-                .Select(target => (target,
-                    new VirtualFramebuffer(_api.Device, TextureFormat.Rgba8Unorm, label: "Virtual: " + target.Name)))
-                .ToList();
-
-
-            Layers.Add(new LayerStruct(layer, views));
-        }
-        else
-        {
-            Layers.Add(new LayerStruct(layer, null));
-        }
-
         await layer.Attach();
+        Layers.Add(layer);
     }
 
     public Task Detach()
@@ -124,10 +104,7 @@ public class AjivaImGuiLayerSystem
             baseMipLevel: 0, mipLevelCount: 1,
             baseArrayLayer: 0, arrayLayerCount: 1, label: "SwapchainView");
 
-        var cmd = _api.Device.CreateCommandEncoder();
-
         var queue = _api.Device.GetQueue();
-
 
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4);
         ImGui.PushFont(_quicksandFont);
@@ -136,11 +113,18 @@ public class AjivaImGuiLayerSystem
         ImGui.UpdatePlatformWindows();
         ImGui.RenderPlatformWindowsDefault();
 
-        ImGui.ShowDemoWindow();
+        // ImGui.ShowDemoWindow();
 
         foreach (var layer in Layers)
         {
-            await RenderLayer(info, layer, cmd, queue);
+            if (!layer.Enabled) continue;
+
+            // ReSharper disable once ConvertIfStatementToSwitchStatement
+            if (layer is IRenderLayer renderLayer)
+                await renderLayer.Render(info, new RenderTarget(queue));
+
+            if (layer is IUiRenderLayer uiRenderLayer)
+                await uiRenderLayer.RenderUi(info);
         }
 
         if (_showOverlay)
@@ -152,7 +136,7 @@ public class AjivaImGuiLayerSystem
         if (ImGui.GetFrameCount() == 2) //seems to be the magic number for loading dock layouts
             ImGui.LoadIniSettingsFromDisk("imgui.ini");
 
-
+        var cmd = _api.Device.CreateCommandEncoder();
         var pass = cmd.BeginRenderPass(new RenderPassColorAttachment[]
             {
                 new(_swapchainView.Value, resolveTarget: null,
@@ -229,47 +213,6 @@ public class AjivaImGuiLayerSystem
 
         ImGui.End();
     }
-
-    private async Task RenderLayer(UpdateInfo info, LayerStruct layer, CommandEncoderPtr cmd, QueuePtr queue)
-    {
-        if (!layer.Enabled || layer.Layer is not IRenderLayer renderLayer) return;
-
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
-
-        foreach (var (view, sceneViewport) in layer.Views!)
-        {
-            if (!ImGui.Begin(view.Name)) continue;
-            var size = ImGui.GetContentRegionAvail();
-
-            //var imDrawListPtr = ImGui.GetBackgroundDrawList();
-            //var size = imDrawListPtr.GetClipRectMax();
-            u32 width = (u32)size.X, height = (u32)Math.Max(0, size.Y);
-
-            u32 prevWidth = sceneViewport.Width;
-            u32 prevHeight = sceneViewport.Height;
-            sceneViewport.EnsureSize(width, height);
-
-            if (sceneViewport.TryGetViews(out var color0, out _, out _))
-            {
-                await view.Render(info, new RenderTarget(cmd, queue, sceneViewport));
-
-                if (prevWidth != width && prevHeight != height)
-                    _imguiController!.RemoveTextureBindGroup(color0);
-
-                //imDrawListPtr.AddImage(color0.GetIntPtr(), new Vector2(0, 0), new Vector2(width, height));
-
-                ImGui.Image(color0.GetIntPtr(), new Vector2(width, height));
-            }
-
-            ImGui.End();
-        }
-
-        ImGui.PopStyleVar();
-
-        await renderLayer.ExtraWindows(info);
-    }
-
-    public bool Enabled { get; set; }
 }
 
 public record struct UpdateInfo(u64 Ticks, f32 DeltaTime, f32 TotalTime)
@@ -282,10 +225,7 @@ public record struct UpdateInfo(u64 Ticks, f32 DeltaTime, f32 TotalTime)
     }
 }
 
-public record struct RenderTarget(
-    CommandEncoderPtr CommandEncoderPtr,
-    QueuePtr QueuePtr,
-    VirtualFramebuffer SceneViewport);
+public record struct RenderTarget(QueuePtr QueuePtr);
 
 public interface IAjivaLayer
 {
@@ -295,10 +235,14 @@ public interface IAjivaLayer
     bool Enabled { get; set; }
 }
 
-public interface IRenderLayer: IAjivaLayer
+public interface IRenderLayer : IAjivaLayer
 {
-    IEnumerable<IVirtualView> ListVirtualViewTargets();
-    Task ExtraWindows(UpdateInfo info);
+    Task Render(UpdateInfo info, RenderTarget target);
+}
+
+public interface IUiRenderLayer : IAjivaLayer
+{
+    Task RenderUi(UpdateInfo info);
 }
 
 public interface IVirtualView
