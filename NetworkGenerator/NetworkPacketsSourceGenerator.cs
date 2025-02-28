@@ -512,7 +512,7 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                                                 MemberAccessExpression(
                                                     SyntaxKind.SimpleMemberAccessExpression,
                                                     IdentifierName("message"),
-                                                    IdentifierName(TypeToGetMethod(f))
+                                                    IdentifierName(TypeToGetMethod(f.Type))
                                                 )
                                             )
                                         ))
@@ -521,6 +521,86 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                             )
                     )
                 ))
+        );
+
+        List<StatementSyntax> toMessageBody =
+        [
+            LocalDeclarationStatement(
+                VariableDeclaration(IdentifierName("var"))
+                    .WithVariables(SingletonSeparatedList(
+                        VariableDeclarator(Identifier("msg"))
+                            .WithInitializer(EqualsValueClause(
+                                InvocationExpression(MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    IdentifierName("global::Riptide.Message"),
+                                    IdentifierName("Create"))
+                                ).WithArgumentList(ArgumentList(SingletonSeparatedList(
+                                    Argument(IdentifierName("sendMode")))))
+                            )))
+                    )),
+            ExpressionStatement(InvocationExpression(
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        IdentifierName("msg"),
+                        IdentifierName("AddUShort")
+                    )).WithArgumentList(ArgumentList(SingletonSeparatedList(
+                    Argument(CastExpression(
+                        PredefinedType(Token(SyntaxKind.UShortKeyword)),
+                        IdentifierName("PacketType." + className)
+                    ))
+                )))
+            )
+        ];
+        foreach (var f in fields)
+        {
+            toMessageBody.Add(ExpressionStatement(InvocationExpression(
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        IdentifierName("msg"),
+                        IdentifierName(TypeToAddMethod(f.Type))
+                    )).WithArgumentList(ArgumentList(SingletonSeparatedList(
+                    Argument(IdentifierName(f.fieldName))
+                )))
+            ));
+        }
+
+        toMessageBody.Add(ReturnStatement(IdentifierName("msg")));
+
+        classDecle = classDecle.AddMembers(
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), "Send")
+                .AddModifiers(Token(SyntaxKind.PublicKeyword))
+                .AddParameterListParameters(
+                    Parameter(Identifier("connection"))
+                        .WithType(IdentifierName("global::Riptide.Connection")),
+                    Parameter(Identifier("sendMode"))
+                        .WithType(IdentifierName("global::Riptide.MessageSendMode"))
+                )
+                .WithBody(Block(ExpressionStatement(InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName("connection"),
+                            IdentifierName("Send")
+                        ))
+                    .WithArgumentList(ArgumentList(SingletonSeparatedList(
+                        Argument(InvocationExpression(MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                ThisExpression(),
+                                IdentifierName("ToMessage")
+                            ))
+                            .WithArgumentList(ArgumentList(
+                                SingletonSeparatedList(
+                                    Argument(IdentifierName("sendMode"))
+                                ))
+                            ))
+                    ))))
+                )),
+            MethodDeclaration(IdentifierName("global::Riptide.Message"), "ToMessage")
+                .AddModifiers(Token(SyntaxKind.PublicKeyword))
+                .AddParameterListParameters(
+                    Parameter(Identifier("sendMode"))
+                        .WithType(IdentifierName("global::Riptide.MessageSendMode"))
+                )
+                .WithBody(Block(toMessageBody))
         );
 
         var unit = CompilationUnit()
@@ -542,9 +622,14 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                 """;
     }
 
-    private static string TypeToGetMethod((TypeSyntax Type, string fieldName) f)
+    private static string TypeToAddMethod(TypeSyntax type)
     {
-        var typename = f.Type!.ToString();
+        return "Add" + _knownTypeLookup[type.ToString()];
+    }
+
+    private static string TypeToGetMethod(TypeSyntax type)
+    {
+        var typename = type.ToString();
 
         return "Get" + _knownTypeLookup[typename];
     }
