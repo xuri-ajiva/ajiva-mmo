@@ -31,6 +31,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
             (LogEventLevel.Information, new Vector4(1.0f, 1.0f, 1.0f, 1.0f), true);
         _levels[(i32)LogEventLevel.Warning] = (LogEventLevel.Warning, new Vector4(1.0f, 1.0f, 0.0f, 1.0f), true);
         _levels[(i32)LogEventLevel.Error] = (LogEventLevel.Error, new Vector4(1.0f, 0.2f, 0.2f, 1.0f), true);
+        _levels[(i32)LogEventLevel.Fatal] = (LogEventLevel.Fatal, new Vector4(1.0f, 0.2f, 0.2f, 1.0f), true);
     }
 
     public Task RenderUi(UpdateInfo info)
