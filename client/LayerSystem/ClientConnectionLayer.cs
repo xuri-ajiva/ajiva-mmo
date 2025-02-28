@@ -1,13 +1,25 @@
 ﻿using ImGuiNET;
 using Riptide;
+using ServiceDefaults;
 
 namespace client.LayerSystem;
 
-public class ClientConnectionLayer(Client client) : IUiRenderLayer
+public class ClientConnectionLayer(Client client, Ecs ecs) : IUiRenderLayer
 {
     public Task Attach() => Task.CompletedTask;
 
-    public Task Update(UpdateInfo info) => Task.CompletedTask;
+    private u32 counter = 0;
+
+    public Task Update(UpdateInfo info)
+    {
+        if (/*counter++ <= 10 ||*/ !client.IsConnected) return Task.CompletedTask;
+
+        new UpdateEntityPacket(client.Id, ecs.LocalPos.X, ecs.LocalPos.Y, ecs.LocalPos.Z).Send(
+            client.Connection!, MessageSendMode.Unreliable);
+
+        counter = 0;
+        return Task.CompletedTask;
+    }
 
     public Task Detach() => Task.CompletedTask;
 
@@ -33,6 +45,11 @@ public class ClientConnectionLayer(Client client) : IUiRenderLayer
             {
                 client.Disconnect();
             }
+        }
+
+        foreach (var player in ecs.GetPlayers())
+        {
+            ImGui.Text($"Player {player.InstanceId}: {player.Position}");
         }
 
         ImGui.End();

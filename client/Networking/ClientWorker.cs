@@ -1,3 +1,4 @@
+using System.Numerics;
 using NetworkPackets;
 using Riptide;
 using ServiceDefaults;
@@ -8,11 +9,13 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
 {
     private readonly ILogger<ClientWorker> _logger;
     private readonly Client _client;
+    private readonly Ecs _ecs;
 
-    public ClientWorker(ILogger<ClientWorker> logger, Client client)
+    public ClientWorker(ILogger<ClientWorker> logger, Client client, Ecs ecs)
     {
         _logger = logger;
         _client = client;
+        _ecs = ecs;
         _client.MessageReceived += ClientOnMessageReceived;
     }
 
@@ -30,12 +33,19 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
             {
                 if (!_client.IsNotConnected)
                 {
-                    _client.Update();
+                    try
+                    {
+                        _client.Update();
+                    }
+                    catch (Exception e)
+                    {
+                        _logger.LogError(e, "Error in Client Update!");
+                    }
                 }
 
                 try
                 {
-                    await Task.Delay(1, stoppingToken);
+                    await Task.Delay(5, stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -54,11 +64,11 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
 
     public void Handle(NewEntityPacket message)
     {
-        _logger.LogInformation("Received new entity: {@Message}", message);
+        _ecs.UpdatePlayer(message.Id, new Vector3(message.X, message.Y, message.Z));
     }
 
     public void Handle(UpdateEntityPacket message)
     {
-        _logger.LogInformation("Received update entity: {@Message}", message);
+        _ecs.UpdatePlayer(message.Id, new Vector3(message.X, message.Y, message.Z));
     }
 }

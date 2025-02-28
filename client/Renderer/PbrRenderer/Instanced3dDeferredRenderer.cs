@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using client.LayerSystem;
 using client.VirtualFramebuffers;
 using ImGuiNET;
+using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 using static Silk.NET.WebGPU.Safe.BindGroupLayoutEntries;
@@ -24,6 +25,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 {
     private readonly ILogger<Instanced3dDeferredRenderer> _logger;
     private readonly RendererApi _api;
+    private readonly Ecs _ecs;
 
     private SamplerPtr _linearSampler;
     private BufferRange _sceneUniformBuffer;
@@ -37,10 +39,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private SceneLights _sceneLights;
     private BufferRange _lightsBuffer;
 
-    public Instanced3dDeferredRenderer(ILogger<Instanced3dDeferredRenderer> logger, RendererApi api)
+    public Instanced3dDeferredRenderer(ILogger<Instanced3dDeferredRenderer> logger, RendererApi api, Ecs ecs)
     {
         _logger = logger;
         _api = api;
+        _ecs = ecs;
         _camera = new DragCamera();
     }
 
@@ -48,7 +51,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     {
         var models = ModelHelper.LoadModels(path);
 
-        var buffers = new InstancedMeshBuffer<ModelUniform, Instance>[models.Count];
+        var buffers = new InstancedMeshBuffer<ModelUniform, Instance>[models.Count + 1];
 
         for (var iModel = 0; iModel < models.Count; iModel++)
         {
@@ -74,11 +77,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
             Instance[] instances = [new()];
             instances[0].SetTransform(Matrix4x4.Identity);
-            var instanceBuffer = _api.CreateBufferWithData<Instance>(BufferUsage.Vertex | BufferUsage.CopyDst,
-                instances, label == null ? null : $"{label}::InstanceBuffer");
-
             buffers[iModel] =
-                new InstancedMeshBuffer<ModelUniform, Instance>(vertexBuffer, indexBuffer, instanceBuffer,
+                new InstancedMeshBuffer<ModelUniform, Instance>(vertexBuffer, indexBuffer,
                     new ModelUniform
                     {
                         Transform = Matrix4x4.Identity, Tex0Color = new Vector3(1, 1, 1), ModelId = (u32)iModel,
@@ -86,6 +86,97 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                     }, instances
                 );
         }
+
+        {
+            Span<Vertex> cubeVertices = stackalloc Vertex[6 * 4];
+            Span<u32> indices = stackalloc u32[6 * 6];
+            Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0);
+
+            var vIndex = 0;
+            var iIndex = 0;
+            foreach (var rot in new[]
+                     {
+                         Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0),
+                         Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 0.5f, 0, 0),
+                         Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 1.0f, 0, 0),
+                         Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 1.5f, 0, 0),
+                         Quaternion<f32>.CreateFromYawPitchRoll(0, MathF.PI / 2, 0),
+                         Quaternion<f32>.CreateFromYawPitchRoll(0, -MathF.PI / 2, 0),
+                     })
+            {
+                var normal = Vector3D.Transform(new Vector3D<f32>(0, 0, 1), rot).ToSystem();
+                var tangent = Vector3D.Transform(new Vector3D<f32>(1, 0, 0), rot).ToSystem();
+                var a = new Vertex
+                {
+                    Position = Vector3D.Transform(new Vector3D<f32>(-1, 1, 1), rot).ToSystem(),
+                    TexCoord0 = new Vector2(0, 0),
+                    TexCoord1 = new Vector2(0, 0),
+                    Normal = normal,
+                    Tangent = tangent
+                };
+                var b = new Vertex
+                {
+                    Position = Vector3D.Transform(new Vector3D<f32>(1, 1, 1), rot).ToSystem(),
+                    TexCoord0 = new Vector2(1, 0),
+                    TexCoord1 = new Vector2(1, 0),
+                    Normal = normal,
+                    Tangent = tangent
+                };
+                var c = new Vertex
+                {
+                    Position = Vector3D.Transform(new Vector3D<f32>(-1, -1, 1), rot).ToSystem(),
+                    TexCoord0 = new Vector2(0, 1),
+                    TexCoord1 = new Vector2(0, 1),
+                    Normal = normal,
+                    Tangent = tangent
+                };
+                var d = new Vertex
+                {
+                    Position = Vector3D.Transform(new Vector3D<f32>(1, -1, 1), rot).ToSystem(),
+                    TexCoord0 = new Vector2(1, 1),
+                    TexCoord1 = new Vector2(1, 1),
+                    Normal = normal,
+                    Tangent = tangent
+                };
+
+                /*cubeVertices[index++] = b;
+                cubeVertices[index++] = a;
+                cubeVertices[index++] = c;
+
+                cubeVertices[index++] = b;
+                cubeVertices[index++] = c;
+                cubeVertices[index++] = d;*/
+                cubeVertices[vIndex++] = a;
+                cubeVertices[vIndex++] = b;
+                cubeVertices[vIndex++] = c;
+                cubeVertices[vIndex++] = d;
+
+                indices[iIndex++] = (u32)(vIndex - 4);
+                indices[iIndex++] = (u32)(vIndex - 2);
+                indices[iIndex++] = (u32)(vIndex - 3);
+                indices[iIndex++] = (u32)(vIndex - 2);
+                indices[iIndex++] = (u32)(vIndex - 1);
+                indices[iIndex++] = (u32)(vIndex - 3);
+            }
+
+            Instance[] instances = [new()];
+            instances[0].SetTransform(Matrix4x4.Identity);
+
+            buffers[^1] = new InstancedMeshBuffer<ModelUniform, Instance>(
+                _api.CreateBufferWithData<Vertex>(BufferUsage.Vertex | BufferUsage.CopyDst, cubeVertices,
+                    label == null ? null : $"{label}::VertexBuffer"),
+                _api.CreateBufferWithData<u32>(BufferUsage.Index | BufferUsage.CopyDst, indices,
+                    label == null ? null : $"{label}::IndexBuffer"),
+                new ModelUniform
+                {
+                    Transform = Matrix4x4.Identity, Tex0Color = new Vector3(1, 1, 1), ModelId = (u32)models.Count,
+                    Tex1Color = new Vector3(1, 1, 1), NormalMapStrength = 1
+                }, instances
+            );
+        }
+
+        buffers[2].InstanceInfos[0].HighlightColor = new Vector4(1, 1, 0.5f, 0.5f);
+        buffers[1].InstanceInfos[0].HighlightColor = new Vector4(0.5f, 1, 1, 0.5f);
 
         return buffers;
     }
@@ -369,16 +460,21 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         queue.WriteBuffer(_sceneUniformBuffer.Buffer, _sceneUniformBuffer.Offset,
             new ReadOnlySpan<SceneUniform>(ref _sceneUniform));
 
-        _meshBuffers[2].InstanceInfos[0].HighlightColor = new Vector4(1, 1, 0.5f, 0.5f);
-        _meshBuffers[1].InstanceInfos[0].HighlightColor = new Vector4(0.5f, 1, 1, 0.5f);
+        var players = _ecs.GetPlayers().ToArray();
+        if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
+            _meshBuffers[^1].InstanceInfos = new Instance[players.Length + 1];
+
+        ref var instanceInfo = ref _meshBuffers[^1].InstanceInfos;
+        instanceInfo[0].SetTransform(Matrix4x4.CreateTranslation(_camera.Position));
+        _ecs.LocalPos = _camera.Position;
+        for (var i = 0; i < players.Length; i++)
+        {
+            instanceInfo[i + 1].SetTransform(Matrix4x4.CreateTranslation(players[i].Position));
+        }
 
         foreach (var buffer in _meshBuffers)
         {
-            queue.WriteBuffer(buffer.ModelUniformBuffer.Buffer, buffer.ModelUniformBuffer.Offset,
-                new ReadOnlySpan<ModelUniform>(ref buffer.ModelUniform));
-
-            queue.WriteBuffer(buffer.InstanceBuffer.Buffer, buffer.InstanceBuffer.Offset,
-                new ReadOnlySpan<Instance>(buffer.InstanceInfos));
+            WriteBuffer(queue, buffer);
         }
 
         queue.WriteBuffer(_lightsBuffer.Buffer, _lightsBuffer.Offset, _sceneLights.LightData);
@@ -406,7 +502,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _meshBuffers)
         {
             pass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.Offset, vertexBuffer.Size);
-            pass.SetVertexBuffer(1, instanceBuffer.Buffer, instanceBuffer.Offset, instanceBuffer.Size);
+            pass.SetVertexBuffer(1, instanceBuffer!.Value.Buffer, instanceBuffer.Value.Offset,
+                instanceBuffer.Value.Size);
 
             pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset, indexBuffer.Size);
 
@@ -418,6 +515,23 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         pass.End();
         queue.Submit(new[] { cmd.Finish() });
+    }
+
+    private void WriteBuffer(QueuePtr queue, InstancedMeshBuffer<ModelUniform, Instance> buffer)
+    {
+        queue.WriteBuffer(buffer.ModelUniformBuffer.Buffer, buffer.ModelUniformBuffer.Offset,
+            new ReadOnlySpan<ModelUniform>(ref buffer.ModelUniform));
+
+        var data = new ReadOnlySpan<Instance>(buffer.InstanceInfos);
+        if (buffer.InstanceBuffer is null || buffer.InstanceBuffer.Value.Size <
+            (u64)data.Length * (u64)Unsafe.SizeOf<Instance>())
+        {
+            buffer.InstanceBuffer?.Buffer.Release();
+            buffer.InstanceBuffer = _api.CreateBufferWithData(BufferUsage.Vertex | BufferUsage.CopyDst,
+                data, "Temple::IndexBuffer");
+        }
+
+        queue.WriteBuffer(buffer.InstanceBuffer.Value.Buffer, buffer.InstanceBuffer.Value.Offset, data);
     }
 
     public Task Render(UpdateInfo info, RenderTarget target)

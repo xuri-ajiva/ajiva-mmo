@@ -6,6 +6,7 @@ using client.Renderer;
 using client.Renderer.PbrRenderer;
 using Riptide;
 using Serilog;
+using ServiceDefaults;
 
 var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
 {
@@ -35,6 +36,7 @@ builder.AddServiceDefaults();
 
     services.AddSingleton(logWidget);
     services.AddSingleton<PlatformSystem>();
+    services.AddSingleton<Ecs>();
 
     services.AddSingleton<AjivaImGuiLayerSystem>();
     services.AddSingleton<Instanced3dDeferredRenderer>();

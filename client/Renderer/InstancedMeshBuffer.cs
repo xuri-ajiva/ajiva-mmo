@@ -10,7 +10,6 @@ public record struct BufferRange(BufferPtr Buffer, u64 Offset, u64 Size);
 public class InstancedMeshBuffer<TModelUniform, TInstance>(
     BufferRange vertexBuffer,
     BufferRange indexBuffer,
-    BufferRange instanceBuffer,
     TModelUniform modelUniform,
     TInstance[] instanceInfos
 )
@@ -18,7 +17,7 @@ public class InstancedMeshBuffer<TModelUniform, TInstance>(
     // buffers
     public BufferRange VertexBuffer { get; set; } = vertexBuffer;
     public BufferRange IndexBuffer { get; set; } = indexBuffer;
-    public BufferRange InstanceBuffer { get; set; } = instanceBuffer;
+    public BufferRange? InstanceBuffer;
     public BufferRange ModelUniformBuffer { get; set; }
 
     // bind groups
@@ -31,7 +30,7 @@ public class InstancedMeshBuffer<TModelUniform, TInstance>(
     public TextureAndView NormalTexture;
     public TextureAndView EmissionTexture;
 
-    public void Deconstruct(out BufferRange vertexBuffer, out BufferRange indexBuffer, out BufferRange instanceBuffer,
+    public void Deconstruct(out BufferRange vertexBuffer, out BufferRange indexBuffer, out BufferRange? instanceBuffer,
         out BindGroupPtr? modelBindGroup, out TInstance[] instanceInfos)
     {
         vertexBuffer = VertexBuffer;
