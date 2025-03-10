@@ -47,11 +47,9 @@ public class Application : IHostedLifecycleService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var appScope = _serviceProvider.CreateScope();
-
-        await _layerSystem.PushLayer(appScope.ServiceProvider.GetRequiredService<LogWidget>());
-        await _layerSystem.PushLayer(appScope.ServiceProvider.GetRequiredService<Instanced3dDeferredRenderer>());
-        await _layerSystem.PushLayer(appScope.ServiceProvider.GetRequiredService<ClientConnectionLayer>());
+        /*await _layerSystem.PushLayer<LogWidget>();
+        await _layerSystem.PushLayer<Instanced3dDeferredRenderer>();
+        await _layerSystem.PushLayer<ClientConnectionLayer>();*/
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

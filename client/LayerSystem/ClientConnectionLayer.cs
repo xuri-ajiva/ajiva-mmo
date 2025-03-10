@@ -10,24 +10,24 @@ public class ClientConnectionLayer(Client client, Ecs ecs) : IUiRenderLayer
 
     private u32 counter = 0;
 
-    public Task Update(UpdateInfo info)
+    public void Update(UpdateInfo info)
     {
-        if (/*counter++ <= 10 ||*/ !client.IsConnected) return Task.CompletedTask;
+        if (/*counter++ <= 10 ||*/ !client.IsConnected) return;
 
         new UpdateEntityPacket(client.Id, ecs.LocalPos.X, ecs.LocalPos.Y, ecs.LocalPos.Z).Send(
             client.Connection!, MessageSendMode.Unreliable);
 
         counter = 0;
-        return Task.CompletedTask;
     }
 
     public Task Detach() => Task.CompletedTask;
 
-    public bool Enabled { get; set; } = true;
+    public ref bool Enabled => ref _enabled;
 
     private string _address = "127.0.0.1:7777";
+    private bool _enabled = true;
 
-    public Task RenderUi(UpdateInfo info)
+    public void RenderUi(UpdateInfo info)
     {
         ImGui.Begin("Client Connection");
         ImGui.Text($"Status: {client.State?.ToString()}");
@@ -53,6 +53,5 @@ public class ClientConnectionLayer(Client client, Ecs ecs) : IUiRenderLayer
         }
 
         ImGui.End();
-        return Task.CompletedTask;
     }
 }

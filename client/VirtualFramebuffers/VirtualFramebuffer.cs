@@ -4,7 +4,7 @@ using Silk.NET.WebGPU.Safe;
 
 namespace client.VirtualFramebuffers;
 
-public class VirtualFramebuffer
+public class VirtualFramebuffer : IDisposable
 {
     private struct ColorTarget(string name, TextureFormat format, TexturePtr? tex, TextureViewPtr? view)
     {
@@ -126,7 +126,8 @@ public class VirtualFramebuffer
         for (var i = 0; i < _colorTargets.Length; i++)
         {
             ref var target = ref _colorTargets[i];
-
+            target.Tex?.Release();
+            
             target.Tex = _device.CreateTexture(usageFlags, TextureDimension.Dimension2D,
                 new Extent3D(width, height, 1),
                 target.Format, 1, 1, new ReadOnlySpan<TextureFormat>(in target.Format),
@@ -141,6 +142,7 @@ public class VirtualFramebuffer
         if (_depthStencil is null) return;
 
         var depthTarget = _depthStencil.Value;
+        depthTarget.Tex?.Release();
         depthTarget.Tex = _device.CreateTexture(usageFlags, TextureDimension.Dimension2D,
             new Extent3D(width, height, 1),
             depthTarget.Format, 1, 1, new ReadOnlySpan<TextureFormat>(in depthTarget.Format),
@@ -157,5 +159,23 @@ public class VirtualFramebuffer
             label: _label == null ? null : $"{_label}:DepthStencil_View(Depth)");
 
         _depthStencil = depthTarget;
+    }
+
+    public void Release()
+    {
+        foreach (var t in _colorTargets)
+        {
+            t.Tex?.Destroy();
+            t.View?.Release();
+        }
+
+        _depthStencil?.Tex?.Destroy();
+        _depthStencil?.View?.Release();
+        _depthStencil?.DepthOnlyView?.Release();
+    }
+
+    public void Dispose()
+    {
+        Release();
     }
 }

@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using System.Reflection;
 using client.Platform;
 using client.Renderer;
 using ImGuiNET;
@@ -26,10 +28,17 @@ public class AjivaImGuiLayerSystem
 
     private List<IAjivaLayer> Layers { get; } = [];
 
-    public AjivaImGuiLayerSystem(ILogger<AjivaImGuiLayerSystem> logger, RendererApi api)
+    public AjivaImGuiLayerSystem(ILogger<AjivaImGuiLayerSystem> logger, RendererApi api,
+        IServiceScopeFactory serviceProvider)
     {
+        _scope = serviceProvider.CreateScope();
+
         _logger = logger;
         _api = api;
+        // find alll types that implement IAjivaLayer
+        _layerTypes = typeof(AjivaImGuiLayerSystem).Assembly.DefinedTypes
+            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IAjivaLayer).IsAssignableFrom(t))
+            .ToArray();
     }
 
     public void Attach(AjivaWindow parent)
@@ -64,34 +73,50 @@ public class AjivaImGuiLayerSystem
         }
     }
 
-    public async Task Update(UpdateInfo info)
+    public void Update(UpdateInfo info)
     {
         _imguiController!.Update(info.DeltaTime);
         foreach (var layer in Layers)
         {
             if (layer.Enabled)
             {
-                await layer.Update(info);
+                layer.Update(info);
             }
         }
     }
 
-    public async Task PushLayer(IAjivaLayer layer)
+    public async Task PushLayer<T>(T? layer = default) where T : IAjivaLayer
     {
+        layer ??= _scope.ServiceProvider.GetRequiredService<T>();
         await layer.Attach();
         Layers.Add(layer);
     }
 
-    public Task Detach()
+    public async Task PopLayer<T>() where T : IAjivaLayer
     {
+        var layer = Layers.OfType<T>().FirstOrDefault();
+        if (layer is null) return;
+
+        await layer.Detach();
+        Layers.Remove(layer);
+    }
+
+    public async Task Detach()
+    {
+        foreach (var ajivaLayer in Layers)
+        {
+            await ajivaLayer.Detach();
+        }
+
+        Layers.Clear();
+
         _imguiController!.Dispose();
-        return Task.CompletedTask;
     }
 
     private TextureViewPtr? _swapchainView;
 
 
-    public async Task Render(UpdateInfo info)
+    public void Render(UpdateInfo info)
     {
         _swapchainView?.Release();
 
@@ -109,9 +134,9 @@ public class AjivaImGuiLayerSystem
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4);
         ImGui.PushFont(_quicksandFont);
 
-        ImGui.DockSpaceOverViewport(ImGui.GetMainViewport());
+        ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport());
         ImGui.UpdatePlatformWindows();
-        ImGui.RenderPlatformWindowsDefault();
+        //ImGui.RenderPlatformWindowsDefault();
 
         // ImGui.ShowDemoWindow();
 
@@ -121,39 +146,103 @@ public class AjivaImGuiLayerSystem
 
             // ReSharper disable once ConvertIfStatementToSwitchStatement
             if (layer is IRenderLayer renderLayer)
-                await renderLayer.Render(info, new RenderTarget(queue));
+                renderLayer.Render(info, new RenderTarget(queue, _imguiController!));
 
             if (layer is IUiRenderLayer uiRenderLayer)
-                await uiRenderLayer.RenderUi(info);
+                uiRenderLayer.RenderUi(info);
         }
 
-        if (_showOverlay)
-            RenderMetrics(info);
+        /*if (_showOverlay)
+            RenderMetrics(info);*/
+        if (_demoWindow)
+            ImGui.ShowDemoWindow();
+
+        //RenderLayerControls();
 
         ImGui.PopFont();
         ImGui.PopStyleVar();
 
-        if (ImGui.GetFrameCount() == 2) //seems to be the magic number for loading dock layouts
+        if (ImGui.GetFrameCount() == 4) //seems to be the magic number for loading dock layouts
             ImGui.LoadIniSettingsFromDisk("imgui.ini");
 
         var cmd = _api.Device.CreateCommandEncoder();
-        var pass = cmd.BeginRenderPass(new RenderPassColorAttachment[]
-            {
-                new(_swapchainView.Value, resolveTarget: null,
+        var pass = cmd.BeginRenderPass([
+                new RenderPassColorAttachment(_swapchainView.Value, resolveTarget: null,
                     LoadOp.Clear, StoreOp.Store, new Color(.1, .1, .1, 1))
-            }, null, null,
+            ], null, null,
             null);
 
         _imguiController!.Render(pass);
 
         pass.End();
+        queue.Submit(cmd.Finish());
+    }
 
-        queue.Submit(new[] { cmd.Finish() });
+    private void RenderLayerControls()
+    {
+        if (ImGui.Begin("Layer Controls"))
+        {
+            ImGui.Checkbox("Show Overlay", ref _showOverlay);
+            ImGui.Checkbox("Show Demo Window", ref _demoWindow);
+
+            ImGui.Separator();
+            ImGui.Columns(2);
+            IAjivaLayer? layerToRemove = null;
+            foreach (var layer in Layers)
+            {
+                ImGui.Checkbox(layer.GetType().Name, ref layer.Enabled);
+                ImGui.NextColumn();
+                if (ImGui.Button("X"))
+                {
+                    layerToRemove = layer;
+                }
+
+                ImGui.NextColumn();
+            }
+
+            ImGui.Columns(1);
+
+            if (layerToRemove is not null)
+            {
+                Task.WaitAll(layerToRemove.Detach());
+                Layers.Remove(layerToRemove);
+            }
+
+            ImGui.Separator();
+            // combobox for adding or removing layers
+            if (ImGui.BeginCombo("Add Layer", "Select Layer"))
+            {
+                foreach (var layerType in _layerTypes)
+                {
+                    if (Layers.Any(l => l.GetType() == layerType)) continue;
+
+                    if (ImGui.Selectable(layerType.Name))
+                    {
+                        CreateLayer(layerType);
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            if (ImGui.Button("GC"))
+                GC.Collect();
+        }
+
+        ImGui.End();
+    }
+
+    private void CreateLayer(TypeInfo layerType)
+    {
+        var layer = (IAjivaLayer)_scope.ServiceProvider.GetRequiredService(layerType);
+        Task.WaitAll(PushLayer(layer));
     }
 
     private i32 _location = -1;
-    private bool _showOverlay = true;
+    private bool _showOverlay = true, _demoWindow = false;
     private f32[] _frameTimes = new f32[100];
+    private readonly TypeInfo[] _layerTypes;
+    private readonly IServiceScope _scope;
 
     private void RenderMetrics(UpdateInfo info)
     {
@@ -215,7 +304,7 @@ public class AjivaImGuiLayerSystem
     }
 }
 
-public record struct UpdateInfo(u64 Ticks, f32 DeltaTime, f32 TotalTime)
+public ref struct UpdateInfo(u64 ticks, f32 deltaTime, f32 totalTime)
 {
     public UpdateInfo(AjivaClock updateClock) : this(
         updateClock.Ticks,
@@ -223,26 +312,34 @@ public record struct UpdateInfo(u64 Ticks, f32 DeltaTime, f32 TotalTime)
         (f32)updateClock.Total.TotalSeconds)
     {
     }
+
+    public readonly u64 Ticks = ticks;
+    public readonly f32 DeltaTime = deltaTime;
+    public readonly f32 TotalTime = totalTime;
 }
 
-public record struct RenderTarget(QueuePtr QueuePtr);
+public ref struct RenderTarget(QueuePtr queuePtr, ImGuiController imguiController)
+{
+    public readonly QueuePtr QueuePtr = queuePtr;
+    public readonly ImGuiController ImguiController = imguiController;
+}
 
 public interface IAjivaLayer
 {
     Task Attach();
-    Task Update(UpdateInfo info);
+    void Update(UpdateInfo info);
     Task Detach();
-    bool Enabled { get; set; }
+    ref bool Enabled { get; }
 }
 
 public interface IRenderLayer : IAjivaLayer
 {
-    Task Render(UpdateInfo info, RenderTarget target);
+    void Render(UpdateInfo info, RenderTarget target);
 }
 
 public interface IUiRenderLayer : IAjivaLayer
 {
-    Task RenderUi(UpdateInfo info);
+    void RenderUi(UpdateInfo info);
 }
 
 public interface IVirtualView

@@ -18,6 +18,15 @@ public class RendererApi(ILogger<RendererApi> logger)
     public WebGPU Wgpu = null!;
     public InstancePtr Instance;
 
+    public Task StoppedAsync(CancellationToken cancellationToken)
+    {
+        Device.Destroy();
+        Adapter.Release();
+        Instance.Release();
+        Wgpu.Dispose();
+        return Task.CompletedTask;
+    }
+
     private async Task Initialize()
     {
         if (_initialized) return;
@@ -29,7 +38,7 @@ public class RendererApi(ILogger<RendererApi> logger)
         logger.LogDebug("WGPU Instance: {Instance:X}", Instance.GetIntPtr());
 
         Adapter = await Instance.RequestAdapter(
-            backendType: default,                     
+            backendType: default,
             powerPreference: PowerPreference.Undefined
         );
 
@@ -73,7 +82,7 @@ public class RendererApi(ILogger<RendererApi> logger)
             }
         });
     }
-    
+
     public BufferRange CreateBufferWithData<T>(BufferUsage usage, ReadOnlySpan<T> data, string? label = null)
         where T : unmanaged
     {
@@ -83,7 +92,7 @@ public class RendererApi(ILogger<RendererApi> logger)
             bufferSize,
             mappedAtCreation: true, label);
 
-        var mappedBuffer = buffer.GetMappedRange<T>(0, (nuint)bufferSize);
+        var mappedBuffer = buffer.GetMappedRange<T>(UIntPtr.Zero, (nuint)bufferSize);
         data.CopyTo(mappedBuffer);
 
         buffer.Unmap();
@@ -180,11 +189,12 @@ public class RendererApi(ILogger<RendererApi> logger)
         }
     }
 
-    
+
     public async Task StartingAsync(CancellationToken cancellationToken) => await Initialize();
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

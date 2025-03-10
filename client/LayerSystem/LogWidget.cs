@@ -20,6 +20,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
 
     private readonly (LogEventLevel level, Vector4 color, bool filter)[] _levels;
     private readonly IFormatProvider? _formatProvider;
+    private bool _enabled = true;
 
     public LogWidget(IFormatProvider? formatProvider = null)
     {
@@ -34,7 +35,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
         _levels[(i32)LogEventLevel.Fatal] = (LogEventLevel.Fatal, new Vector4(1.0f, 0.2f, 0.2f, 1.0f), true);
     }
 
-    public Task RenderUi(UpdateInfo info)
+    public void RenderUi(UpdateInfo info)
     {
         if (ImGui.Begin("Log", ref _logOpen))
         {
@@ -42,8 +43,6 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
         }
 
         ImGui.End();
-
-        return Task.CompletedTask;
     }
 
 
@@ -72,7 +71,8 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
 
         ImGui.Separator();
 
-        if (ImGui.BeginChild("scrolling", new Vector2(0, 0), false, ImGuiWindowFlags.HorizontalScrollbar))
+        if (ImGui.BeginChild("scrolling", new Vector2(0, 0), ImGuiChildFlags.None,
+                ImGuiWindowFlags.HorizontalScrollbar))
         {
             if (clear)
             {
@@ -153,9 +153,11 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
 
     public Task Attach() => Task.CompletedTask;
 
-    public Task Update(UpdateInfo info) => Task.CompletedTask;
+    public void Update(UpdateInfo info)
+    {
+    }
 
     public Task Detach() => Task.CompletedTask;
 
-    public bool Enabled { get; set; } = true;
+    public ref bool Enabled => ref _enabled;
 }

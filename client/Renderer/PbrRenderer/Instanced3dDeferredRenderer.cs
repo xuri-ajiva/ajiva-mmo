@@ -392,23 +392,16 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         );
     }
 
-    public Task Update(UpdateInfo info)
+    public void Update(UpdateInfo info)
     {
         _sceneLights.Animate(info.DeltaTime);
         if (_isSceneViewHovered)
         {
             _camera.Update();
         }
-
-        return Task.CompletedTask;
     }
 
-    public Task Detach()
-    {
-        throw new NotImplementedException();
-    }
-
-    public bool Enabled { get; set; } = true;
+    public ref bool Enabled => ref _enabled;
 
     private (TexturePtr tex, TextureViewPtr view)? _requestedCubeTexture = null;
 
@@ -417,6 +410,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private Compositor _compositor;
     private DragCamera _camera;
     private SceneUniform _sceneUniform;
+    private bool _enabled = true;
 
     public void Render(UpdateInfo info, RenderTarget target, Extent3D sceneViewport)
     {
@@ -483,15 +477,16 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             return;
 
         var cmd = _api.Device.CreateCommandEncoder();
-        var pass = cmd.BeginRenderPass(new RenderPassColorAttachment[]
-            {
-                new(albedo.View, resolveTarget: null,
+
+        var pass = cmd.BeginRenderPass([
+                new RenderPassColorAttachment(albedo.View, resolveTarget: null,
                     LoadOp.Clear, StoreOp.Store, new Color(.06, .1, .1, 1)),
-                new(normal.View, resolveTarget: null,
+                new RenderPassColorAttachment(normal.View, resolveTarget: null,
                     LoadOp.Clear, StoreOp.Store, new Color(0, 0, 0, 1)),
-                new(emission.View, resolveTarget: null,
+                new RenderPassColorAttachment(emission.View, resolveTarget: null,
                     LoadOp.Clear, StoreOp.Store, new Color(0, 0, 0.1, 1))
-            }, null,
+            ],
+            null,
             new RenderPassDepthStencilAttachment(depthStencil.View, LoadOp.Clear, StoreOp.Store, 1f, false,
                 /*stencil*/ LoadOp.Clear, StoreOp.Discard, 0, true),
             null);
@@ -516,6 +511,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         pass.End();
         queue.Submit(new[] { cmd.Finish() });
     }
+    
 
     private void WriteBuffer(QueuePtr queue, InstancedMeshBuffer<ModelUniform, Instance> buffer)
     {
@@ -534,11 +530,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         queue.WriteBuffer(buffer.InstanceBuffer.Value.Buffer, buffer.InstanceBuffer.Value.Offset, data);
     }
 
-    public Task Render(UpdateInfo info, RenderTarget target)
+    public void Render(UpdateInfo info, RenderTarget target)
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
 
-        if (!ImGui.Begin("Scene") || _sceneGBuffer is null || _finalSceneTexture is null) return Task.CompletedTask;
+        if (!ImGui.Begin("Scene") || _sceneGBuffer is null || _finalSceneTexture is null) return;
         var size = ImGui.GetContentRegionAvail();
 
         //var imDrawListPtr = ImGui.GetBackgroundDrawList();
@@ -547,6 +543,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         var prevWidth = _sceneGBuffer.Width;
         var prevHeight = _sceneGBuffer.Height;
+        var hasPrev = _finalSceneTexture.TryGetTargets(out var prevView);
         _sceneGBuffer.EnsureSize(width, height);
         _finalSceneTexture.EnsureSize(width, height);
 
@@ -565,8 +562,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             _compositor.Apply(queue, emission.View, depth.DepthOnlyView, colorOutput.View);
 
 
-            /*if (prevWidth != width && prevHeight != height)
-                _imguiController!.RemoveTextureBindGroup(color0);*/
+            if (prevWidth != width && prevHeight != height && hasPrev)
+                target.ImguiController.RemoveTextureBindGroup(prevView.View);
 
             //imDrawListPtr.AddImage(color0.GetIntPtr(), new Vector2(0, 0), new Vector2(width, height));
 
@@ -577,11 +574,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         ImGui.End();
 
         ImGui.PopStyleVar();
-
-        return Task.CompletedTask;
     }
 
-    public Task RenderUi(UpdateInfo info)
+    public void RenderUi(UpdateInfo info)
     {
         if (ImGui.Begin("Controls"))
         {
@@ -639,7 +634,28 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         }
 
         ImGui.End();
+    }
 
+
+    public Task Detach()
+    {
+        _sceneGBuffer?.Release();
+        _finalSceneTexture?.Release();
+        _linearSampler.Release();
+        _sceneUniformBuffer.Buffer.Release();
+        _sceneBindGroup.Release();
+        _modelBindGroupLayout.Release();
+        _modelPipeline.Release();
+        foreach (var buffer in _meshBuffers)
+        {
+            buffer.VertexBuffer.Buffer.Release();
+            buffer.IndexBuffer.Buffer.Release();
+            buffer.ModelUniformBuffer.Buffer.Release();
+            buffer.ModelBindGroup?.Release();
+            buffer.InstanceBuffer?.Buffer.Release();
+        }
+
+        _lightsBuffer.Buffer.Release();
         return Task.CompletedTask;
     }
 }

@@ -56,11 +56,13 @@ builder.AddServiceDefaults();
 
 var host = builder.Build();
 {
-    var services = host.Services;
-    var platform = services.GetRequiredService<PlatformSystem>();
+    using var scop = host.Services.CreateScope();
+    var services = scop.ServiceProvider;
 
+    var platform = services.GetRequiredService<PlatformSystem>();
     platform.Init();
 
-    host.Run();
+    await host.RunAsync();
+
     platform.Shotdown();
 }

@@ -53,7 +53,7 @@ public class AjivaWindow : IHostedLifecycleService
     private void W_Update(f64 deltaTime)
     {
         _updateClock.Update();
-        _layerSystem.Update(new UpdateInfo(_updateClock)).ConfigureAwait(false).GetAwaiter();
+        _layerSystem.Update(new UpdateInfo(_updateClock));
     }
 
     private Vector2D<i32> _lastFramebufferSize = new(0, 0);
@@ -84,7 +84,7 @@ public class AjivaWindow : IHostedLifecycleService
             });
         }
 
-        _layerSystem.Render(new UpdateInfo(_renderClock)).ConfigureAwait(false).GetAwaiter();
+        _layerSystem.Render(new UpdateInfo(_renderClock));
 
         surface.Present();
     }
@@ -157,9 +157,9 @@ public class AjivaWindow : IHostedLifecycleService
 
     public Task StartedAsync(CancellationToken cancellationToken)
     {
-        Window.TopMost = true;
+        /*Window.TopMost = true;
         Window.DoUpdate();
-        Window.TopMost = false;
+        Window.TopMost = false;*/
         return Task.CompletedTask;
     }
 

@@ -44,5 +44,10 @@ namespace client.VirtualFramebuffers
         {
             _framebuffer.EnsureSize(width, height);
         }
+
+        public void Release()
+        {
+            _framebuffer.Dispose();
+        }
     }
 }
