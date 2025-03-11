@@ -166,49 +166,12 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
             // Add layout properties for each bind group
             foreach (var group in bindGroups)
             {
-                members.Add(PropertyDeclaration(
-                        ParseTypeName($"{BindGroupLayout}?"),
-                        $"BindGroupLayout{group.Key}")
-                    .AddModifiers(Token(SyntaxKind.PublicKeyword))
-                    .AddAccessorListAccessors(
-                        AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
-                        AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
-                            .AddModifiers(Token(SyntaxKind.PrivateKeyword))
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)))
-                );
-
-                members.Add(PropertyDeclaration(
-                        ParseTypeName($"{BindGroup}?"),
-                        $"bindGroup{group.Key}")
-                    .AddModifiers(Token(SyntaxKind.PrivateKeyword))
-                    .AddAccessorListAccessors(
-                        AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
-                        AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                    )
-                );
-
                 // Generate bind group layout method
                 members.Add(GenerateBindGroupLayoutMethod(group.Key, group.Value, className));
 
                 // Generate bind group method
                 members.Add(GenerateCreateBindGroupMethod(group.Key, group.Value, className));
             }
-
-            // Add pipeline layout property
-            members.Add(PropertyDeclaration(
-                    ParseTypeName($"{PipelineLayout}?"),
-                    "PipelineLayout")
-                .AddModifiers(Token(SyntaxKind.PublicKeyword))
-                .AddAccessorListAccessors(
-                    AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
-                    AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
-                        .AddModifiers(Token(SyntaxKind.PrivateKeyword))
-                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)))
-            );
 
             // Generate buffer layout methods
             if (vertexAttributes.Any())
@@ -227,9 +190,6 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
             // Generate pipeline layout method
             members.Add(GenerateGetPipelineLayoutMethod(bindGroups.Keys.OrderBy(k => k), className));
 
-            // Add Dispose method
-            members.Add(GenerateDisposeMethod(bindGroups.Keys.OrderBy(k => k)));
-
             // Using compilation unit to build the partial class
             var partialClass = CompilationUnit()
                 .AddUsings(
@@ -242,7 +202,6 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
                 .AddMembers(FileScopedNamespaceDeclaration(ParseName(namespaceName)),
                     ClassDeclaration(className)
                         .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.PartialKeyword))
-                        .AddBaseListTypes(SimpleBaseType(ParseTypeName("IDisposable")))
                         .AddMembers(FieldDeclaration(
                             VariableDeclaration(ParseTypeName("string"))
                                 .AddVariables(VariableDeclarator("ShaderSource")
@@ -260,8 +219,8 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
     private MemberDeclarationSyntax GenerateBindGroupLayoutMethod(uint groupId, BindGroupInfo bindGroup,
         string className)
     {
-        // Method signature: public BindGroupLayout RecreateBindGroupLayout{groupId}(Device device, ...)
-        var methodName = $"RecreateBindGroupLayout{groupId}";
+        // Method signature: public BindGroupLayout CreateBindGroupLayout{groupId}(Device device, ...)
+        var methodName = $"CreateBindGroupLayout{groupId}";
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(BindGroupLayout),
             methodName
@@ -314,9 +273,6 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
         // Method body
         var statements = new List<StatementSyntax>();
 
-        // Dispose of existing layout
-        statements.Add(ParseStatement($"BindGroupLayout{groupId}?.Release();"));
-
         // Create entries array
         var entries = new List<string>();
         foreach (var entry in bindGroup.Entries)
@@ -341,9 +297,7 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
         }
 
         var entriesArray = $"[{string.Join(",\r\n", entries)}]";
-        statements.Add(
-            ParseStatement($"BindGroupLayout{groupId} = device.CreateBindGroupLayout({entriesArray}, label: label);"));
-        statements.Add(ReturnStatement(ParseExpression($"BindGroupLayout{groupId}.Value")));
+        statements.Add(ReturnStatement(ParseExpression($"device.CreateBindGroupLayout({entriesArray}, label: label)")));
 
         return methodDeclaration.WithBody(Block(statements));
     }
@@ -362,7 +316,9 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
         var parameters = new List<ParameterSyntax>
         {
             Parameter(Identifier("device"))
-                .WithType(ParseTypeName(Device))
+                .WithType(ParseTypeName(Device)),
+            Parameter(Identifier("layout"))
+                .WithType(ParseTypeName(BindGroupLayout))
         };
 
         // Add required parameters first (without default values)
@@ -404,11 +360,6 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
             }
         }
 
-        // Add recreateLayout parameter
-        parameters.Add(Parameter(Identifier("recreateLayout"))
-            .WithType(ParseTypeName("bool"))
-            .WithDefault(EqualsValueClause(ParseExpression("false"))));
-
         // Add label parameter
         parameters.Add(Parameter(Identifier("label"))
             .WithType(ParseTypeName("string"))
@@ -418,12 +369,6 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
 
         // Method body
         var statements = new List<StatementSyntax>();
-
-        // Check if layout needs to be recreated
-        statements.Add(ParseStatement($"if (recreateLayout || BindGroupLayout{groupId} is null)"));
-        statements.Add(ParseStatement("{"));
-        statements.Add(ParseStatement($"RecreateBindGroupLayout{groupId}(device, label: $\"{{label}}_Layout\");"));
-        statements.Add(ParseStatement("}"));
 
         // Create bindGroup entries
         var entries = new List<string>();
@@ -446,11 +391,9 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
             entries.Add(entryCode);
         }
 
-        string entriesArray = $"[{string.Join(",\r\n", entries)}]";
-        statements.Add(ParseStatement(
-            $"bindGroup{groupId} = device.CreateBindGroup(BindGroupLayout{groupId}.Value, {entriesArray}, label: label);"));
-
-        statements.Add(ParseStatement($"return bindGroup{groupId}.Value;"));
+        var entriesArray = $"[{string.Join(",\r\n", entries)}]";
+        statements.Add(
+            ReturnStatement(ParseExpression($"device.CreateBindGroup(layout, {entriesArray}, label: label)")));
 
         return methodDeclaration.WithBody(Block(statements));
     }
@@ -511,81 +454,38 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
 
     private MemberDeclarationSyntax GenerateGetPipelineLayoutMethod(IEnumerable<uint> groupIds, string className)
     {
-        // Method signature: public PipelineLayout RecreatePipelineLayout(Device device, string label = null)
+        // Method signature: public PipelineLayout CreatePipelineLayout(Device device, string label = null)
+        // Add parameters
+        var parameters = new List<ParameterSyntax>
+        {
+            Parameter(Identifier("device"))
+                .WithType(ParseTypeName(Device))
+        };
+
+        // layout for group bind layouts
+        var parameterNames = new List<string>();
+        foreach (var groupId in groupIds)
+        {
+            var paramName = $"bindGroupLayout{groupId}";
+            parameterNames.Add(paramName);
+            parameters.Add(Parameter(Identifier(paramName))
+                .WithType(ParseTypeName(BindGroupLayout)));
+        }
+
+        parameters.Add(Parameter(Identifier("label"))
+            .WithType(ParseTypeName("string"))
+            .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::PipelineLayout\""))));
+        
         var methodDeclaration = MethodDeclaration(
                 ParseTypeName(PipelineLayout),
-                "RecreatePipelineLayout"
+                "CreatePipelineLayout"
             ).AddModifiers(Token(SyntaxKind.PublicKeyword))
-            .WithParameterList(
-                ParameterList(
-                    SeparatedList<ParameterSyntax>(
-                        new SyntaxNodeOrToken[]
-                        {
-                            Parameter(Identifier("device"))
-                                .WithType(ParseTypeName(Device)),
-                            Token(SyntaxKind.CommaToken),
-                            Parameter(Identifier("recreateBindGroupLayouts"))
-                                .WithType(ParseTypeName("bool"))
-                                .WithDefault(EqualsValueClause(ParseExpression("false"))),
-                            Token(SyntaxKind.CommaToken),
-                            Parameter(Identifier("label"))
-                                .WithType(ParseTypeName("string"))
-                                .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::PipelineLayout\"")))
-                        }
-                    )
-                )
-            );
-
-        // Method body
-        var statements = new List<StatementSyntax>();
-
-        // Dispose of existing pipeline layout
-        statements.Add(ParseStatement("PipelineLayout?.Release();"));
-
-        // Create or ensure bind group layouts exist
-        foreach (var groupId in groupIds)
-        {
-            statements.Add(ParseStatement($"if (recreateBindGroupLayouts || BindGroupLayout{groupId} is null)"));
-            statements.Add(ParseStatement("{"));
-            statements.Add(ParseStatement(
-                $"RecreateBindGroupLayout{groupId}(device, label: $\"{{label}}_BindGroupLayout_{groupId}\");"));
-            statements.Add(ParseStatement("}"));
-        }
+            .WithParameterList(ParameterList(SeparatedList(parameters)));
 
         // Create array of layouts
-        var layoutsArray = string.Join(",\r\n", groupIds.Select(id => $"BindGroupLayout{id}.Value"));
-
-        statements.Add(ParseStatement(
-            $"PipelineLayout = device.CreatePipelineLayout([{layoutsArray}], " +
-            $"label: label);"));
-        statements.Add(ReturnStatement(ParseExpression("PipelineLayout.Value")));
-
-        return methodDeclaration.WithBody(Block(statements));
-    }
-
-    private MemberDeclarationSyntax GenerateDisposeMethod(IEnumerable<uint> groupIds)
-    {
-        // Method signature: public void Dispose()
-        var methodDeclaration = MethodDeclaration(
-            ParseTypeName("void"),
-            "Dispose"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
-
-        // Method body
-        var statements = new List<StatementSyntax>();
-
-        // Release pipeline layout
-        statements.Add(ParseStatement("PipelineLayout?.Release();"));
-        statements.Add(ParseStatement("PipelineLayout = null;"));
-
-        // Release bind group layouts
-        foreach (var groupId in groupIds)
-        {
-            statements.Add(ParseStatement($"BindGroupLayout{groupId}?.Release();"));
-            statements.Add(ParseStatement($"BindGroupLayout{groupId} = null;"));
-        }
-
-        return methodDeclaration.WithBody(Block(statements));
+        var layoutsArray = string.Join(",\r\n", parameterNames);
+        return methodDeclaration.WithBody(
+            Block(ReturnStatement(ParseExpression($"device.CreatePipelineLayout([{layoutsArray}], label: label)"))));
     }
 
     private MemberDeclarationSyntax GenerateGetShaderEntryPointsMethod(ShaderEntryInfo entryPoints)

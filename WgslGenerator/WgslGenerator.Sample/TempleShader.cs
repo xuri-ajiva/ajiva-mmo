@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using Generators;
 using GlmSharp;
@@ -17,7 +18,7 @@ public partial class TempleShader
         float Time
     );
 
-    public partial record struct UbModel(
+    public partial record struct ModelUniform(
         mat4 Transform,
         vec3 Tex0Color,
         uint ModelId,
@@ -39,7 +40,16 @@ public partial class TempleShader
         [Location(7)] vec4 Transform2,
         [Location(8)] vec4 Transform3,
         [Location(9)] vec4 HighlightColor
-    );
+    )
+    {
+        public void SetTransform(Matrix4x4 transform)
+        {
+            Transform0 = new vec4(transform.M11, transform.M12, transform.M13, transform.M14);
+            Transform1 = new vec4(transform.M21, transform.M22, transform.M23, transform.M24);
+            Transform2 = new vec4(transform.M31, transform.M32, transform.M33, transform.M34);
+            Transform3 = new vec4(transform.M41, transform.M42, transform.M43, transform.M44);
+        }
+    }
 
     public partial record struct Varyings(
         [Builtin("position")] vec4 Position,
@@ -63,7 +73,7 @@ public partial class TempleShader
     private UbScene ubScene;
 
     [Group(1), Binding(0), Access(ShaderAccess.Uniform)]
-    private UbModel ubModel;
+    private ModelUniform ubModel;
 
     [Group(1)] [Binding(1)] private sampler uSampler;
     [Group(1)] [Binding(2)] private texture_2d<float> uAlbedo;

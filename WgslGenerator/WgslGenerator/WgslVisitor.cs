@@ -215,7 +215,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
     {
         if (node.ClassOrStructKeyword.Text == "class")
             throw new NotImplementedException("Only structs are allowed");
-        if (node.Members.Any())
+        if (node.Members.OfType<PropertyDeclarationSyntax>().Any() || node.Members.OfType<FieldDeclarationSyntax>().Any())
             throw new NotImplementedException("Record should use primary constructor");
 
         var structName = node.Identifier.Text;
