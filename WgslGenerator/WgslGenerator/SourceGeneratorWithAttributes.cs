@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
@@ -64,6 +65,16 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
           #pragma warning restore CS9113
           """;
 
+    private const string BindGroupLayout = "global::Silk.NET.WebGPU.Safe.BindGroupLayoutPtr";
+    private const string BindGroup = "global::Silk.NET.WebGPU.Safe.BindGroupPtr";
+    private const string Device = "global::Silk.NET.WebGPU.Safe.DevicePtr";
+    private const string PipelineLayout = "global::Silk.NET.WebGPU.Safe.PipelineLayoutPtr";
+    private const string VertexBufferLayout = "global::Silk.NET.WebGPU.Safe.VertexBufferLayout";
+    private const string VertexAttribute = "global::Silk.NET.WebGPU.VertexAttribute";
+
+    private const string CreateLayoutEntries = "global::Silk.NET.WebGPU.Safe.BindGroupLayoutEntries";
+    private const string BindGroupEntries = "global::Silk.NET.WebGPU.Safe.BindGroupEntries";
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         context.RegisterPostInitializationOutput(ctx => ctx.AddSource(
@@ -123,15 +134,19 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
         {
             var wgslVisitor = new WgslVisitor(context, compilation, classDeclarationSyntax);
             classDeclarationSyntax.Accept(wgslVisitor);
-            var shaderSource =
-                $""""
-                 """
-                 {wgslVisitor.GetResult()}
-                 """    
-                 """";
+            var shaderSource = $""""
+                                """
+                                {wgslVisitor.GetResult()}
+                                """    
+                                """";
 
-            //var bindings = wgslVisitor.GetBindingGroups();
-            
+            // Get binding information
+            var bindGroups = wgslVisitor.GetBindingGroups();
+            var vertexAttributes = wgslVisitor.GetVertexAttributes();
+            var instanceAttributes = wgslVisitor.GetInstanceAttributes();
+            var entryPoints = wgslVisitor.GetEntryPoints();
+            var structAttributes = wgslVisitor.GetStructAttributes();
+
             // Generate a partial class with a ShaderSource constant
             var className = classDeclarationSyntax.Identifier.Text;
 
@@ -140,29 +155,461 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
             var symbol = ModelExtensions.GetDeclaredSymbol(semanticModel, classDeclarationSyntax);
             var namespaceName = symbol.ContainingNamespace.ToDisplayString();
 
-            var assingment = EqualsValueClause(
+            var assignment = EqualsValueClause(
                 LiteralExpression(
                     SyntaxKind.StringLiteralExpression,
                     Literal(shaderSource, shaderSource)));
 
-            
+            // Generate bind layout properties and methods
+            var members = new List<MemberDeclarationSyntax>();
+
+            // Add layout properties for each bind group
+            foreach (var group in bindGroups)
+            {
+                members.Add(PropertyDeclaration(
+                        ParseTypeName($"{BindGroupLayout}?"),
+                        $"BindGroupLayout{group.Key}")
+                    .AddModifiers(Token(SyntaxKind.PublicKeyword))
+                    .AddAccessorListAccessors(
+                        AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
+                        AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                            .AddModifiers(Token(SyntaxKind.PrivateKeyword))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)))
+                );
+
+                members.Add(PropertyDeclaration(
+                        ParseTypeName($"{BindGroup}?"),
+                        $"bindGroup{group.Key}")
+                    .AddModifiers(Token(SyntaxKind.PrivateKeyword))
+                    .AddAccessorListAccessors(
+                        AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
+                        AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                    )
+                );
+
+                // Generate bind group layout method
+                members.Add(GenerateBindGroupLayoutMethod(group.Key, group.Value, className));
+
+                // Generate bind group method
+                members.Add(GenerateCreateBindGroupMethod(group.Key, group.Value, className));
+            }
+
+            // Add pipeline layout property
+            members.Add(PropertyDeclaration(
+                    ParseTypeName($"{PipelineLayout}?"),
+                    "PipelineLayout")
+                .AddModifiers(Token(SyntaxKind.PublicKeyword))
+                .AddAccessorListAccessors(
+                    AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
+                    AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                        .AddModifiers(Token(SyntaxKind.PrivateKeyword))
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)))
+            );
+
+            // Generate buffer layout methods
+            if (vertexAttributes.Any())
+            {
+                members.Add(GenerateVertexBufferLayoutMethod(vertexAttributes));
+            }
+
+            if (instanceAttributes.Any())
+            {
+                members.Add(GenerateInstanceBufferLayoutMethod(instanceAttributes));
+            }
+
+            // Generate shader entry points method
+            members.Add(GenerateGetShaderEntryPointsMethod(entryPoints));
+
+            // Generate pipeline layout method
+            members.Add(GenerateGetPipelineLayoutMethod(bindGroups.Keys.OrderBy(k => k), className));
+
+            // Add Dispose method
+            members.Add(GenerateDisposeMethod(bindGroups.Keys.OrderBy(k => k)));
+
             // Using compilation unit to build the partial class
             var partialClass = CompilationUnit()
-                .AddUsings(UsingDirective(ParseName("System")))
+                .AddUsings(
+                    UsingDirective(ParseName("System")),
+                    UsingDirective(ParseName("System.Collections.Generic")),
+                    UsingDirective(ParseName("System.Runtime.InteropServices")),
+                    UsingDirective(ParseName("Silk.NET.WebGPU")),
+                    UsingDirective(ParseName("Silk.NET.WebGPU.Safe"))
+                )
                 .AddMembers(FileScopedNamespaceDeclaration(ParseName(namespaceName)),
                     ClassDeclaration(className)
                         .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.PartialKeyword))
+                        .AddBaseListTypes(SimpleBaseType(ParseTypeName("IDisposable")))
                         .AddMembers(FieldDeclaration(
                             VariableDeclaration(ParseTypeName("string"))
                                 .AddVariables(VariableDeclarator("ShaderSource")
-                                    .WithInitializer(assingment))
+                                    .WithInitializer(assignment))
                         ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.ConstKeyword)))
-                        //.AddMembers(layoutDeclarations)
-                       // .AddMembers(bindGroupCreators)
+                        .AddMembers(members.ToArray())
                 );
 
             var sourceText = partialClass.NormalizeWhitespace().ToFullString();
             context.AddSource($"{className}.g.cs", SourceText.From(sourceText, Encoding.UTF8));
         }
+    }
+
+
+    private MemberDeclarationSyntax GenerateBindGroupLayoutMethod(uint groupId, BindGroupInfo bindGroup,
+        string className)
+    {
+        // Method signature: public BindGroupLayout RecreateBindGroupLayout{groupId}(Device device, ...)
+        var methodName = $"RecreateBindGroupLayout{groupId}";
+        var methodDeclaration = MethodDeclaration(
+            ParseTypeName(BindGroupLayout),
+            methodName
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+
+        // Add parameters for customizable options
+        var parameters = new List<ParameterSyntax>
+        {
+            Parameter(Identifier("device"))
+                .WithType(ParseTypeName(Device))
+        };
+
+        // Add specific parameters for each binding entry
+        foreach (var entry in bindGroup.Entries)
+        {
+            if (entry.BindingType == BindingType.UniformBuffer || entry.BindingType == BindingType.StorageBuffer)
+            {
+                // Add hasDynamicOffset parameter for buffers
+                parameters.Add(Parameter(Identifier($"{entry.Name}HasDynamicOffset"))
+                    .WithType(ParseTypeName("bool"))
+                    .WithDefault(EqualsValueClause(ParseExpression("false"))));
+            }
+            else if (entry.BindingType == BindingType.Texture)
+            {
+                // Add multisampled parameter for textures
+                parameters.Add(Parameter(Identifier($"{entry.Name}Multisampled"))
+                    .WithType(ParseTypeName("bool"))
+                    .WithDefault(EqualsValueClause(ParseExpression("false"))));
+
+                // Add viewDimension - determine default from type name
+                string defaultDimension = "TextureViewDimension.Dimension2D"; // Default to 2D
+                if (entry.TypeName.Contains("3d"))
+                    defaultDimension = "TextureViewDimension.Dimension3D";
+                else if (entry.TypeName.Contains("1d"))
+                    defaultDimension = "TextureViewDimension.Dimension1D";
+
+                parameters.Add(Parameter(Identifier($"{entry.Name}ViewDimension"))
+                    .WithType(ParseTypeName("TextureViewDimension"))
+                    .WithDefault(EqualsValueClause(ParseExpression(defaultDimension))));
+            }
+        }
+
+        // Add label parameter
+        parameters.Add(Parameter(Identifier("label"))
+            .WithType(ParseTypeName("string"))
+            .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::BindGroupLayout_{groupId}\""))));
+
+        methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
+
+        // Method body
+        var statements = new List<StatementSyntax>();
+
+        // Dispose of existing layout
+        statements.Add(ParseStatement($"BindGroupLayout{groupId}?.Release();"));
+
+        // Create entries array
+        var entries = new List<string>();
+        foreach (var entry in bindGroup.Entries)
+        {
+            string entryCode = entry.BindingType switch
+            {
+                BindingType.UniformBuffer =>
+                    $"{CreateLayoutEntries}.Buffer({entry.Binding}, ShaderStage.Vertex | ShaderStage.Fragment, " +
+                    $"BufferBindingType.Uniform, (ulong)Marshal.SizeOf<{entry.TypeName}>(), {entry.Name}HasDynamicOffset)",
+                BindingType.StorageBuffer =>
+                    $"{CreateLayoutEntries}.Buffer({entry.Binding}, ShaderStage.Vertex | ShaderStage.Fragment, " +
+                    $"BufferBindingType.Storage, (ulong)Marshal.SizeOf<{entry.TypeName}>(), {entry.Name}HasDynamicOffset)",
+                BindingType.Sampler =>
+                    $"{CreateLayoutEntries}.Sampler({entry.Binding}, ShaderStage.Fragment, SamplerBindingType.Filtering)",
+                BindingType.Texture =>
+                    $"{CreateLayoutEntries}.Texture({entry.Binding}, ShaderStage.Fragment, TextureSampleType.Float, " +
+                    $"{entry.Name}ViewDimension, {entry.Name}Multisampled)",
+                _ => throw new NotImplementedException($"Binding type {entry.BindingType} not implemented")
+            };
+
+            entries.Add(entryCode);
+        }
+
+        var entriesArray = $"[{string.Join(",\r\n", entries)}]";
+        statements.Add(
+            ParseStatement($"BindGroupLayout{groupId} = device.CreateBindGroupLayout({entriesArray}, label: label);"));
+        statements.Add(ReturnStatement(ParseExpression($"BindGroupLayout{groupId}.Value")));
+
+        return methodDeclaration.WithBody(Block(statements));
+    }
+
+    private MemberDeclarationSyntax GenerateCreateBindGroupMethod(uint groupId, BindGroupInfo bindGroup,
+        string className)
+    {
+        // Method signature: public BindGroup CreateBindGroup{groupId}(Device device, ...)
+        var methodName = $"CreateBindGroup{groupId}";
+        var methodDeclaration = MethodDeclaration(
+            ParseTypeName(BindGroup),
+            methodName
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+
+        // Add parameters
+        var parameters = new List<ParameterSyntax>
+        {
+            Parameter(Identifier("device"))
+                .WithType(ParseTypeName(Device))
+        };
+
+        // Add required parameters first (without default values)
+        foreach (var entry in bindGroup.Entries)
+        {
+            switch (entry.BindingType)
+            {
+                case BindingType.UniformBuffer:
+                case BindingType.StorageBuffer:
+                    parameters.Add(Parameter(Identifier($"{entry.Name}Buffer"))
+                        .WithType(ParseTypeName("BufferPtr")));
+                    break;
+
+                case BindingType.Sampler:
+                    parameters.Add(Parameter(Identifier(entry.Name))
+                        .WithType(ParseTypeName("SamplerPtr")));
+                    break;
+
+                case BindingType.Texture:
+                    parameters.Add(Parameter(Identifier($"{entry.Name}View"))
+                        .WithType(ParseTypeName("TextureViewPtr")));
+                    break;
+            }
+        }
+
+        // Add optional parameters with default values after all required parameters
+        foreach (var entry in bindGroup.Entries)
+        {
+            if (entry.BindingType == BindingType.UniformBuffer || entry.BindingType == BindingType.StorageBuffer)
+            {
+                // Add offset and size parameters for buffers
+                parameters.Add(Parameter(Identifier($"{entry.Name}Offset"))
+                    .WithType(ParseTypeName("ulong"))
+                    .WithDefault(EqualsValueClause(ParseExpression("0"))));
+
+                parameters.Add(Parameter(Identifier($"{entry.Name}Size"))
+                    .WithType(ParseTypeName("ulong?"))
+                    .WithDefault(EqualsValueClause(ParseExpression("null"))));
+            }
+        }
+
+        // Add recreateLayout parameter
+        parameters.Add(Parameter(Identifier("recreateLayout"))
+            .WithType(ParseTypeName("bool"))
+            .WithDefault(EqualsValueClause(ParseExpression("false"))));
+
+        // Add label parameter
+        parameters.Add(Parameter(Identifier("label"))
+            .WithType(ParseTypeName("string"))
+            .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::BindGroup_{groupId}\""))));
+
+        methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
+
+        // Method body
+        var statements = new List<StatementSyntax>();
+
+        // Check if layout needs to be recreated
+        statements.Add(ParseStatement($"if (recreateLayout || BindGroupLayout{groupId} is null)"));
+        statements.Add(ParseStatement("{"));
+        statements.Add(ParseStatement($"RecreateBindGroupLayout{groupId}(device, label: $\"{{label}}_Layout\");"));
+        statements.Add(ParseStatement("}"));
+
+        // Create bindGroup entries
+        var entries = new List<string>();
+        foreach (var entry in bindGroup.Entries)
+        {
+            string entryCode = entry.BindingType switch
+            {
+                BindingType.UniformBuffer or BindingType.StorageBuffer =>
+                    $"{BindGroupEntries}.Buffer({entry.Binding}, {entry.Name}Buffer, {entry.Name}Offset, {entry.Name}Size ?? (ulong)Marshal.SizeOf<{entry.TypeName}>())",
+
+                BindingType.Sampler =>
+                    $"{BindGroupEntries}.Sampler({entry.Binding}, {entry.Name})",
+
+                BindingType.Texture =>
+                    $"{BindGroupEntries}.Texture({entry.Binding}, {entry.Name}View)",
+
+                _ => throw new NotImplementedException($"Binding type {entry.BindingType} not implemented")
+            };
+
+            entries.Add(entryCode);
+        }
+
+        string entriesArray = $"[{string.Join(",\r\n", entries)}]";
+        statements.Add(ParseStatement(
+            $"bindGroup{groupId} = device.CreateBindGroup(BindGroupLayout{groupId}.Value, {entriesArray}, label: label);"));
+
+        statements.Add(ParseStatement($"return bindGroup{groupId}.Value;"));
+
+        return methodDeclaration.WithBody(Block(statements));
+    }
+
+    private MemberDeclarationSyntax GenerateVertexBufferLayoutMethod(
+        IReadOnlyList<VertexAttributeInfo> vertexAttributes)
+    {
+        // Method signature: public VertexBufferLayout GetVertexBufferLayout()
+        var methodDeclaration = MethodDeclaration(
+            ParseTypeName(VertexBufferLayout),
+            "GetVertexBufferLayout"
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+
+        // Method body
+        var statements = new List<StatementSyntax>();
+
+        var vertexAttributesCode = new List<string>();
+        foreach (var attr in vertexAttributes)
+        {
+            var formatName = GetVertexFormatName(attr.VertexFormat);
+            vertexAttributesCode.Add(
+                $"new {VertexAttribute}(VertexFormat.{formatName}, {attr.Location}, (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})))");
+        }
+
+        statements.Add(ParseStatement(
+            $"return new {VertexBufferLayout}((uint)Marshal.SizeOf<{vertexAttributes[0].StructName}>(), VertexStepMode.Vertex, " +
+            $"[{string.Join(",\r\n", vertexAttributesCode)}]);"));
+
+        return methodDeclaration.WithBody(Block(statements));
+    }
+
+    private MemberDeclarationSyntax GenerateInstanceBufferLayoutMethod(
+        IReadOnlyList<VertexAttributeInfo> instanceAttributes)
+    {
+        // Method signature: public VertexBufferLayout GetInstanceBufferLayout()
+        var methodDeclaration = MethodDeclaration(
+            ParseTypeName(VertexBufferLayout),
+            "GetInstanceBufferLayout"
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+
+        // Method body
+        var statements = new List<StatementSyntax>();
+
+        var instanceAttributesCode = new List<string>();
+        foreach (var attr in instanceAttributes)
+        {
+            var formatName = GetVertexFormatName(attr.VertexFormat);
+            instanceAttributesCode.Add(
+                $"new {VertexAttribute}(VertexFormat.{formatName}, {attr.Location}, (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})))");
+        }
+
+        statements.Add(ParseStatement(
+            $"return new {VertexBufferLayout}((uint)Marshal.SizeOf<{instanceAttributes[0].StructName}>(), VertexStepMode.Instance, " +
+            $"[{string.Join(",\r\n", instanceAttributesCode)}]);"));
+
+        return methodDeclaration.WithBody(Block(statements));
+    }
+
+    private MemberDeclarationSyntax GenerateGetPipelineLayoutMethod(IEnumerable<uint> groupIds, string className)
+    {
+        // Method signature: public PipelineLayout RecreatePipelineLayout(Device device, string label = null)
+        var methodDeclaration = MethodDeclaration(
+                ParseTypeName(PipelineLayout),
+                "RecreatePipelineLayout"
+            ).AddModifiers(Token(SyntaxKind.PublicKeyword))
+            .WithParameterList(
+                ParameterList(
+                    SeparatedList<ParameterSyntax>(
+                        new SyntaxNodeOrToken[]
+                        {
+                            Parameter(Identifier("device"))
+                                .WithType(ParseTypeName(Device)),
+                            Token(SyntaxKind.CommaToken),
+                            Parameter(Identifier("recreateBindGroupLayouts"))
+                                .WithType(ParseTypeName("bool"))
+                                .WithDefault(EqualsValueClause(ParseExpression("false"))),
+                            Token(SyntaxKind.CommaToken),
+                            Parameter(Identifier("label"))
+                                .WithType(ParseTypeName("string"))
+                                .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::PipelineLayout\"")))
+                        }
+                    )
+                )
+            );
+
+        // Method body
+        var statements = new List<StatementSyntax>();
+
+        // Dispose of existing pipeline layout
+        statements.Add(ParseStatement("PipelineLayout?.Release();"));
+
+        // Create or ensure bind group layouts exist
+        foreach (var groupId in groupIds)
+        {
+            statements.Add(ParseStatement($"if (recreateBindGroupLayouts || BindGroupLayout{groupId} is null)"));
+            statements.Add(ParseStatement("{"));
+            statements.Add(ParseStatement(
+                $"RecreateBindGroupLayout{groupId}(device, label: $\"{{label}}_BindGroupLayout_{groupId}\");"));
+            statements.Add(ParseStatement("}"));
+        }
+
+        // Create array of layouts
+        var layoutsArray = string.Join(",\r\n", groupIds.Select(id => $"BindGroupLayout{id}.Value"));
+
+        statements.Add(ParseStatement(
+            $"PipelineLayout = device.CreatePipelineLayout([{layoutsArray}], " +
+            $"label: label);"));
+        statements.Add(ReturnStatement(ParseExpression("PipelineLayout.Value")));
+
+        return methodDeclaration.WithBody(Block(statements));
+    }
+
+    private MemberDeclarationSyntax GenerateDisposeMethod(IEnumerable<uint> groupIds)
+    {
+        // Method signature: public void Dispose()
+        var methodDeclaration = MethodDeclaration(
+            ParseTypeName("void"),
+            "Dispose"
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+
+        // Method body
+        var statements = new List<StatementSyntax>();
+
+        // Release pipeline layout
+        statements.Add(ParseStatement("PipelineLayout?.Release();"));
+        statements.Add(ParseStatement("PipelineLayout = null;"));
+
+        // Release bind group layouts
+        foreach (var groupId in groupIds)
+        {
+            statements.Add(ParseStatement($"BindGroupLayout{groupId}?.Release();"));
+            statements.Add(ParseStatement($"BindGroupLayout{groupId} = null;"));
+        }
+
+        return methodDeclaration.WithBody(Block(statements));
+    }
+
+    private MemberDeclarationSyntax GenerateGetShaderEntryPointsMethod(ShaderEntryInfo entryPoints)
+    {
+        // Method signature: public (string VertexEntryPoint, string FragmentEntryPoint) GetShaderEntryPoints()
+        var methodDeclaration = MethodDeclaration(
+            ParseTypeName("(string VertexEntryPoint, string FragmentEntryPoint)"),
+            "GetShaderEntryPoints"
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+
+        // Method body
+        var statements = new List<StatementSyntax>();
+
+        // Return statement
+        string vertexEntry = entryPoints.VertexEntryPoint ?? "null";
+        string fragmentEntry = entryPoints.FragmentEntryPoint ?? "null";
+
+        statements.Add(ParseStatement($"return (\"{vertexEntry}\", \"{fragmentEntry}\");"));
+
+        return methodDeclaration.WithBody(Block(statements));
+    }
+
+    private string GetVertexFormatName(VertexFormat format)
+    {
+        return format.ToString();
     }
 }

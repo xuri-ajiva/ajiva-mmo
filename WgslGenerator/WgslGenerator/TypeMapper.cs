@@ -65,7 +65,7 @@ public class TypeMapper
     public HashSet<string> KnownMethods { get; } =
     [
         "textureLoad", "textureSample", "floor", "ceil", "max", "min", "sqrt", "pow", "array", "length", "dot",
-        "normalize", "cross"
+        "normalize", "cross", "reflect", "refract", "mix", "step", "smoothstep", "distance", "fma"
     ];
 
     public string MapMethod(string name)
@@ -77,6 +77,21 @@ public class TypeMapper
         {
             "normalized" => "normalize",
             _ => throw new NotImplementedException($"Method {name} is not implemented.")
+        };
+    }
+
+    // Helper method to map C# types to WebGPU vertex formats
+    public VertexFormat MapTypeToVertexFormat(string typeName)
+    {
+        return typeName switch
+        {
+            "vec2" or "Vector2" => VertexFormat.Float32x2,
+            "vec3" or "Vector3" => VertexFormat.Float32x3,
+            "vec4" or "Vector4" => VertexFormat.Float32x4,
+            "float" => VertexFormat.Float32,
+            "uint" => VertexFormat.Uint32,
+            "int" => VertexFormat.Sint32,
+            _ => VertexFormat.Float32x4 // Default format for unknown types
         };
     }
 }

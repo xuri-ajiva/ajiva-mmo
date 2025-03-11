@@ -23,7 +23,7 @@ public class SourceGeneratorWithAttributesTests
             new[]
             {
                 CSharpSyntaxTree.ParseText(
-                    File.ReadAllText("I:\\ajiva-mmo\\WgslGenerator\\WgslGenerator.Sample\\DeferredShader.cs"))
+                    File.ReadAllText("I:\\ajiva-mmo\\WgslGenerator\\WgslGenerator.Sample\\TempleShader.cs"))
             },
             new[]
             {
