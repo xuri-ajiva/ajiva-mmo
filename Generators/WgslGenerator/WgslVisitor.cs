@@ -503,6 +503,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
 
     public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
     {
+        _typemapper.KnownMethods.Add(node.Identifier.Text);
         _writer.WriteLine();
         var attributes = node.AttributeLists.SelectMany(a => a.Attributes);
         foreach (var attribute in attributes)
@@ -664,20 +665,23 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         };
 
         var methodName = identifierIdentifier.Text;
-        if (char.IsUpper(methodName[0]))
-        {
-            // _diagnosticsHelper.ReportWarning("Method was made lowercase", "Method was made lowercase", node.GetLocation());
-            methodName = string.Concat(char.ToLower(methodName[0]), methodName.Substring(1));
-        }
-
         if (!_typemapper.KnownMethods.Contains(methodName))
         {
-            // _diagnosticsHelper.ReportWarning($"Unknown method {identifierIdentifier.Text}", "Unknown method", node.GetLocation());
-            methodName = methodName switch
+            if (char.IsUpper(methodName[0]))
             {
-                "normalized" => "normalize",
-                _ => methodName,
-            };
+                // _diagnosticsHelper.ReportWarning("Method was made lowercase", "Method was made lowercase", node.GetLocation());
+                methodName = string.Concat(char.ToLower(methodName[0]), methodName.Substring(1));
+            }
+
+            if (!_typemapper.KnownMethods.Contains(methodName))
+            {
+                // _diagnosticsHelper.ReportWarning($"Unknown method {identifierIdentifier.Text}", "Unknown method", node.GetLocation());
+                methodName = methodName switch
+                {
+                    "normalized" => "normalize",
+                    _ => methodName,
+                };
+            }
         }
 
         _writer.Write(methodName);

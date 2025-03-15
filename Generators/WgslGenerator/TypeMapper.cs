@@ -34,8 +34,8 @@ public class TypeMapper
             "float" => "f32",
             "int" => "i32",
             "uint" => "u32",
-            _ => throw new NotImplementedException(
-                $"Predefined type {predefinedTypeSyntax.Keyword.Text} is not implemented.")
+            "void" => "void",
+            _ => "_"
         };
     }
 

@@ -70,6 +70,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
     private const string PipelineLayout = "global::Silk.NET.WebGPU.Safe.PipelineLayoutPtr";
     private const string VertexBufferLayout = "global::Silk.NET.WebGPU.Safe.VertexBufferLayout";
     private const string VertexAttribute = "global::Silk.NET.WebGPU.VertexAttribute";
+    private const string ShaderModuleHint = "global::Silk.NET.WebGPU.Safe.ShaderModuleCompilationHint";
 
     private const string CreateLayoutEntries = "global::Silk.NET.WebGPU.Safe.BindGroupLayoutEntries";
     private const string BindGroupEntries = "global::Silk.NET.WebGPU.Safe.BindGroupEntries";
@@ -184,11 +185,14 @@ public class WgslShaderGenerator : IIncrementalGenerator
                 members.Add(GenerateInstanceBufferLayoutMethod(instanceAttributes));
             }
 
+            // Generate pipeline layout method
+            members.Add(GenerateGetPipelineLayoutMethod(bindGroups.Keys.OrderBy(k => k), className));
+            
             // Generate shader entry points method
             members.Add(GenerateGetShaderEntryPointsMethod(entryPoints));
 
-            // Generate pipeline layout method
-            members.Add(GenerateGetPipelineLayoutMethod(bindGroups.Keys.OrderBy(k => k), className));
+            // Generate create shader module method
+            members.Add(GenerateCreateShaderModuleMethod(className, entryPoints));
 
             // Using compilation unit to build the partial class
             var partialClass = CompilationUnit()
@@ -510,6 +514,43 @@ public class WgslShaderGenerator : IIncrementalGenerator
         statements.Add(ParseStatement($"return (\"{vertexEntry}\", \"{fragmentEntry}\");"));
 
         return methodDeclaration.WithBody(Block(statements));
+    }
+
+    private MemberDeclarationSyntax GenerateCreateShaderModuleMethod(string className, ShaderEntryInfo entryPoints)
+    {
+        // Method signature: public ShaderModulePtr CreateShaderModule(Device device)
+
+        var methodDeclaration = MethodDeclaration(
+            ParseTypeName("ShaderModulePtr"),
+            "CreateShaderModule"
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+
+        // Add parameters
+        var parameters = new List<ParameterSyntax>
+        {
+            Parameter(Identifier("device"))
+                .WithType(ParseTypeName(Device)),
+            Parameter(Identifier("pipelineLayout"))
+                .WithType(ParseTypeName(PipelineLayout))
+        };
+
+        // Add label parameter
+        parameters.Add(Parameter(Identifier("label"))
+            .WithType(ParseTypeName("string"))
+            .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::ShaderModule\""))));
+
+        methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
+
+        return methodDeclaration.WithBody(
+            Block(ReturnStatement(ParseExpression(
+                $"""
+                 device.CreateShaderModuleWGSL(ShaderSource, [{(entryPoints.FragmentEntryPoint != null
+                     ? $"new {ShaderModuleHint}(\"{entryPoints.FragmentEntryPoint}\", pipelineLayout), "
+                     : "")}{(entryPoints.VertexEntryPoint != null
+                     ? $"new {ShaderModuleHint}(\"{entryPoints.VertexEntryPoint}\", pipelineLayout)"
+                     : "")}], label: label)
+                 """
+            ))));
     }
 
     private string GetVertexFormatName(VertexFormat format)
