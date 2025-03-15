@@ -1,13 +1,11 @@
 ﻿using System;
 using System.CodeDom.Compiler;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System;
 using System.Collections.Generic;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
@@ -757,6 +755,6 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         Visit(node.WhenFalse);
         _writer.Write("}");
     }
-    
+
     #endregion
 }

@@ -43,7 +43,7 @@ using mat4x4f = GlmSharp.mat4;
 
 
 
-public static partial class BuildIn
+public partial class BuiltIn
 {
 
     public partial class texture_1d<T>;
@@ -437,7 +437,7 @@ public static partial class BuildIn
     {
         yield return "// " + func.OriginalSignature;
         var result = "";
-        if (func.Name == "textureLoad")
+        if (func.Name == "textureDimensions")
         {
         }
 
@@ -465,6 +465,12 @@ public static partial class BuildIn
             {
                 funcParameter.Type = mapped;
                 continue;
+            }
+
+            if (funcParameter.Type is "L" or "A")
+            {
+                funcParameter.Type = "u32";
+                funcParameter.Name += " = default!";
             }
 
             if (funcParameter.Type.Length < 3)
@@ -524,6 +530,7 @@ public static partial class BuildIn
         if (func.returnType.Contains("<CF>"))
         {
             func.returnType = func.returnType.Replace("<CF>", "<ST>");
+            generics.Remove("CF");
         }
 
         if (func.returnType.StartsWith("vec"))
@@ -541,7 +548,7 @@ public static partial class BuildIn
             func.returnType = mapped2;
         }
 
-        if (func.returnType.StartsWith("_"))
+        if (func.returnType.StartsWith('_'))
         {
             // write struct here
             yield return $"public partial class {func.returnType};";
@@ -574,7 +581,17 @@ public static partial class BuildIn
                 ref var parameter = ref func.parameters[index];
                 parameter.Type = parameter.Type.Replace("T", "ST");
             }
+
+            generics.Remove("T");
         }
+
+        generics.Remove("ST");
+        generics.Remove("CR");
+        generics.Remove("N");
+        generics.Remove("u32");
+        generics.Remove("i32");
+        generics.Remove("f32");
+        generics.Remove("f16");
 
         var genericPart = "";
         if (generics.Count > 0)

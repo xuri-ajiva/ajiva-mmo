@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.IO;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -18,7 +17,7 @@ namespace WgslGenerator;
 /// When using the source code as a baseline, an incremental source generator is preferable because it reduces the performance overhead.
 /// </summary>
 [Generator]
-public class SourceGeneratorWithAttributes : IIncrementalGenerator
+public class WgslShaderGenerator : IIncrementalGenerator
 {
     private const string Namespace = "Generators";
     private const string AttributeName = "GenerateShaderAttribute";
@@ -146,7 +145,7 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
             var instanceAttributes = wgslVisitor.GetInstanceAttributes();
             var entryPoints = wgslVisitor.GetEntryPoints();
             var structAttributes = wgslVisitor.GetStructAttributes();
-            var generatedStructs= wgslVisitor.GetGeneratedStructs();
+            var generatedStructs = wgslVisitor.GetGeneratedStructs();
 
             // Generate a partial class with a ShaderSource constant
             var className = classDeclarationSyntax.Identifier.Text;
@@ -480,7 +479,7 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
         parameters.Add(Parameter(Identifier("label"))
             .WithType(ParseTypeName("string"))
             .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::PipelineLayout\""))));
-        
+
         var methodDeclaration = MethodDeclaration(
                 ParseTypeName(PipelineLayout),
                 "CreatePipelineLayout"

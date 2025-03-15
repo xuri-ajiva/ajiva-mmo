@@ -1,6 +1,4 @@
 using System.IO;
-using System.Linq;
-using System.Net;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
@@ -13,23 +11,25 @@ public class SourceGeneratorWithAttributesTests
     public void GenerateReportMethod()
     {
         // Create an instance of the source generator.
-        var generator = new SourceGeneratorWithAttributes();
+        var generator = new WgslShaderGenerator();
 
         // Source generators should be tested using 'GeneratorDriver'.
         var driver = CSharpGeneratorDriver.Create(generator);
 
         // We need to create a compilation with the required source code.
         var compilation = CSharpCompilation.Create(nameof(SourceGeneratorWithAttributesTests),
-            new[]
-            {
+            [
                 CSharpSyntaxTree.ParseText(
-                    File.ReadAllText("I:\\ajiva-mmo\\WgslGenerator\\WgslGenerator.Sample\\TempleShader.cs"))
-            },
-            new[]
-            {
+                    File.ReadAllText("../../Client.Shaders/TempleShader.cs")),
+                CSharpSyntaxTree.ParseText(
+                    File.ReadAllText("../../Client.Shaders/DeferredShader.cs")),
+                CSharpSyntaxTree.ParseText(
+                    File.ReadAllText("../../Client.Shaders/ComplexShader.cs"))
+            ],
+            [
                 // To support 'System.Attribute' inheritance, add reference to 'System.Private.CoreLib'.
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location)
-            });
+            ]);
 
         // Run generators and retrieve all results.
         driver.RunGenerators(compilation).GetRunResult();

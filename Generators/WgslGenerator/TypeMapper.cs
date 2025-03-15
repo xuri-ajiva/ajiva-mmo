@@ -92,7 +92,7 @@ public static class StringExtensions
             return str;
         return char.ToLowerInvariant(str[0]) + str.Substring(1);
     }
-    
+
     public static string ToPascalCase(this string str)
     {
         if (string.IsNullOrEmpty(str) || !char.IsLower(str[0]))
