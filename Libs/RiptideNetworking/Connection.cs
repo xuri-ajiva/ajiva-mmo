@@ -10,7 +10,7 @@ using Riptide.Utils;
 namespace Riptide
 {
     /// <summary>The state of a connection.</summary>
-    internal enum ConnectionState : byte
+    public enum ConnectionState : byte
     {
         /// <summary>Not connected. No connection has been established or the connection has been closed.</summary>
         NotConnected,
@@ -44,16 +44,16 @@ namespace Riptide
         public ushort Id { get; internal set; }
 
         /// <summary>Whether or not the connection is currently <i>not</i> trying to connect, pending, nor actively connected.</summary>
-        public bool IsNotConnected => _state == ConnectionState.NotConnected;
+        public bool IsNotConnected => State == ConnectionState.NotConnected;
 
         /// <summary>Whether or not the connection is currently in the process of connecting.</summary>
-        public bool IsConnecting => _state == ConnectionState.Connecting;
+        public bool IsConnecting => State == ConnectionState.Connecting;
 
         /// <summary>Whether or not the connection is currently pending (waiting to be accepted/rejected by the server).</summary>
-        public bool IsPending => _state == ConnectionState.Pending;
+        public bool IsPending => State == ConnectionState.Pending;
 
         /// <summary>Whether or not the connection is currently connected.</summary>
-        public bool IsConnected => _state == ConnectionState.Connected;
+        public bool IsConnected => State == ConnectionState.Connected;
 
         /// <summary>The round trip time (ping) of the connection, in milliseconds. -1 if not calculated yet.</summary>
         public short Rtt
@@ -124,6 +124,9 @@ namespace Riptide
         internal bool HasConnectAttemptTimedOut =>
             _canTimeout && Peer.CurrentTime - _lastHeartbeat > Peer.ConnectTimeoutTime;
 
+        /// <summary>The connection's current state.</summary>
+        public ConnectionState State { get; private set; }
+
         /// <summary>The sequencer for notify messages.</summary>
         private readonly NotifySequencer _notify;
 
@@ -132,9 +135,6 @@ namespace Riptide
 
         /// <summary>The currently pending reliably sent messages whose delivery has not been acknowledged yet. Stored by sequence ID.</summary>
         private readonly Dictionary<ushort, PendingMessage> _pendingMessages;
-
-        /// <summary>The connection's current state.</summary>
-        private ConnectionState _state;
 
         /// <summary>The number of consecutive times that the <see cref="MaxAvgSendAttempts"/> threshold was exceeded.</summary>
         private int _sendAttemptsViolations;
@@ -160,7 +160,7 @@ namespace Riptide
             Metrics = new ConnectionMetrics();
             _notify = new NotifySequencer(this);
             _reliable = new ReliableSequencer(this);
-            _state = ConnectionState.Connecting;
+            State = ConnectionState.Connecting;
             _rtt = -1;
             SmoothRtt = -1;
             _canTimeout = true;
@@ -264,7 +264,7 @@ namespace Riptide
         /// <summary>Cleans up the local side of the connection.</summary>
         internal void LocalDisconnect()
         {
-            _state = ConnectionState.NotConnected;
+            State = ConnectionState.NotConnected;
 
             foreach (PendingMessage pendingMessage in _pendingMessages.Values)
                 pendingMessage.Clear();
@@ -298,7 +298,7 @@ namespace Riptide
         {
             if (IsConnecting)
             {
-                _state = ConnectionState.Pending;
+                State = ConnectionState.Pending;
                 ResetTimeout();
             }
         }
@@ -387,7 +387,7 @@ namespace Riptide
             if (Id != id)
                 Peer.Logger.LogError("Error: Client has assumed ID {id} instead of {Id}!", id, Id);
 
-            _state = ConnectionState.Connected;
+            State = ConnectionState.Connected;
             ResetTimeout();
             return true;
         }
@@ -423,7 +423,7 @@ namespace Riptide
         internal void HandleWelcome(Message message)
         {
             Id = message.GetUShort();
-            _state = ConnectionState.Connected;
+            State = ConnectionState.Connected;
             ResetTimeout();
 
             RespondWelcome();

@@ -32,7 +32,7 @@ namespace Riptide.Transports.Udp
 
         /// <inheritdoc/>
         /// <remarks>Expects the host address to consist of an IP and port, separated by a colon. For example: <c>127.0.0.1:7777</c>.</remarks>
-        public bool Connect(string hostAddress,[NotNullWhen(true)] out Connection? connection, out string connectError)
+        public bool Connect(string hostAddress, [NotNullWhen(true)] out Connection? connection, out string connectError)
         {
             connectError =
                 $"Invalid host address '{hostAddress}'! IP and port should be separated by a colon, for example: '127.0.0.1:7777'.";

@@ -56,19 +56,15 @@ namespace Riptide
     {
         /// <summary>The connection from which the message was received.</summary>
         public readonly Connection FromConnection;
-        /// <summary>The ID of the message.</summary>
-        public readonly ushort MessageId;
         /// <summary>The received message.</summary>
         public readonly Message? Message;
 
         /// <summary>Initializes event data.</summary>
         /// <param name="fromConnection">The connection from which the message was received.</param>
-        /// <param name="messageId">The ID of the message.</param>
         /// <param name="message">The received message.</param>
-        public MessageReceivedEventArgs(Connection fromConnection, ushort messageId, Message? message)
+        public MessageReceivedEventArgs(Connection fromConnection, Message? message)
         {
             FromConnection = fromConnection;
-            MessageId = messageId;
             Message = message;
         }
     }

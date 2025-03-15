@@ -60,9 +60,6 @@ namespace Riptide
         /// or <see cref="Reject(Connection, Message)"/>. Not doing so will result in the connection hanging until the client times out.</remarks>
         public ConnectionAttemptHandler? HandleConnection;
 
-        /// <summary>Stores which message IDs have auto relaying enabled. Relaying is disabled entirely when this is <see langword="null"/>.</summary>
-        public MessageRelayFilter? RelayFilter;
-
         /// <summary>Currently pending connections which are waiting to be accepted or rejected.</summary>
         private readonly List<Connection> _pendingConnections;
 
@@ -122,7 +119,7 @@ namespace Riptide
             StartTime();
             Heartbeat();
             IsRunning = true;
-            Logger.Log(LogLevel.Information, $"Started on port {port}.");
+            Logger.Log(LogLevel.Information, "Started on port {port}.", port);
         }
 
         /// <summary>Subscribes appropriate methods to the transport's events.</summary>
@@ -552,15 +549,7 @@ namespace Riptide
         /// <param name="fromConnection">The client from which the message was received.</param>
         protected virtual void OnMessageReceived(Message message, Connection fromConnection)
         {
-            ushort messageId = (ushort)message.GetVarULong();
-            if (RelayFilter != null && RelayFilter.ShouldRelay(messageId))
-            {
-                // The message should be automatically relayed to clients instead of being handled on the server
-                SendToAll(message, fromConnection.Id);
-                return;
-            }
-
-            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(fromConnection, messageId, message));
+            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(fromConnection, message));
         }
 
         /// <summary>Invokes the <see cref="ClientDisconnected"/> event.</summary>

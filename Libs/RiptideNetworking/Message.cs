@@ -37,11 +37,11 @@ namespace Riptide
         /// <summary>A bitmask that, when applied, only keeps the bits corresponding to the <see cref="MessageHeader"/> value.</summary>
         internal const byte HeaderBitmask = (1 << HeaderBits) - 1;
 
-        /// <summary>The header size for unreliable messages. Does not count the 2 bytes used for the message ID.</summary>
+        /// <summary>The header size for unreliable messages.</summary>
         /// <remarks>4 bits - header.</remarks>
         internal const int UnreliableHeaderBits = HeaderBits;
 
-        /// <summary>The header size for reliable messages. Does not count the 2 bytes used for the message ID.</summary>
+        /// <summary>The header size for reliable messages.</summary>
         /// <remarks>4 bits - header, 16 bits - sequence ID.</remarks>
         internal const int ReliableHeaderBits = HeaderBits + 2 * BitsPerByte;
 
@@ -175,27 +175,9 @@ namespace Riptide
         /// <summary>Gets a message instance that can be used for sending.</summary>
         /// <param name="sendMode">The mode in which the message should be sent.</param>
         /// <returns>A message instance ready to be sent.</returns>
-        /// <remarks>This method is primarily intended for use with <see cref="MessageSendMode.Notify"/> as notify messages don't have a built-in message ID, and unlike
-        /// <see cref="Create(MessageSendMode, ushort)"/> and <see cref="Create(MessageSendMode, Enum)"/>, this overload does not add a message ID to the message.</remarks>
         public static Message Create(MessageSendMode sendMode)
         {
             return RetrieveFromPool().Init((MessageHeader)sendMode);
-        }
-
-        /// <summary>Gets a message instance that can be used for sending.</summary>
-        /// <param name="sendMode">The mode in which the message should be sent.</param>
-        /// <param name="id">The message ID.</param>
-        /// <returns>A message instance ready to be sent.</returns>
-        public static Message Create(MessageSendMode sendMode, ushort id)
-        {
-            return RetrieveFromPool().Init((MessageHeader)sendMode).AddVarULong(id);
-        }
-
-        /// <inheritdoc cref="Create(MessageSendMode, ushort)"/>
-        /// <remarks>NOTE: <paramref name="id"/> will be cast to a <see cref="ushort"/>. You should ensure that its value never exceeds that of <see cref="ushort.MaxValue"/>, otherwise you'll encounter unexpected behaviour when handling messages.</remarks>
-        public static Message Create(MessageSendMode sendMode, Enum id)
-        {
-            return Create(sendMode, (ushort)(object)id);
         }
 
         /// <summary>Gets a message instance that can be used for sending.</summary>
@@ -2145,6 +2127,133 @@ namespace Riptide
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Message Add<T>(T[] array, bool includeLength = true) where T : IMessageSerializable, new() =>
             AddSerializables(array, includeLength);
+
+
+        /// <inheritdoc cref="AddSerializable{T}(T)"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="AddSerializable{T}(T)"/>.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Message Add<T>(T? value) where T : struct, IMessageSerializable
+        {
+            if (value.HasValue)
+                AddSerializable(value.Value);
+            return this;
+        }
+
+        #endregion
+
+        #region Overload Versions Getters
+
+        /// <inheritdoc cref="GetByte()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetByte()"/>.</remarks>
+        public Message Get(out byte value)
+        {
+            value = GetByte();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetSByte()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetSByte()"/>.</remarks>
+        public Message Get(out sbyte value)
+        {
+            value = GetSByte();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetBool()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetBool()"/>.</remarks>
+        public Message Get(out bool value)
+        {
+            value = GetBool();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetShort()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetShort()"/>.</remarks>
+        public Message Get(out short value)
+        {
+            value = GetShort();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetUShort()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetUShort()"/>.</remarks>
+        public Message Get(out ushort value)
+        {
+            value = GetUShort();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetInt()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetInt()"/>.</remarks>
+        public Message Get(out int value)
+        {
+            value = GetInt();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetUInt()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetUInt()"/>.</remarks>
+        public Message Get(out uint value)
+        {
+            value = GetUInt();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetLong()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetLong()"/>.</remarks>
+        public Message Get(out long value)
+        {
+            value = GetLong();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetULong()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetULong()"/>.</remarks>
+        public Message Get(out ulong value)
+        {
+            value = GetULong();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetFloat()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetFloat()"/>.</remarks>
+        public Message Get(out float value)
+        {
+            value = GetFloat();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetDouble()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetDouble()"/>.</remarks>
+        public Message Get(out double value)
+        {
+            value = GetDouble();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetString()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetString()"/>.</remarks>
+        public Message Get(out string value)
+        {
+            value = GetString();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetSerializable{T}()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetSerializable{T}()"/>.</remarks>
+        public Message Get<T>(out T value) where T : IMessageSerializable, new()
+        {
+            value = GetSerializable<T>();
+            return this;
+        }
+
+        /// <inheritdoc cref="GetSerializables{T}()"/>
+        /// <remarks>This method is simply an alternative way of calling <see cref="GetSerializables{T}()"/>.</remarks>
+        public Message Get<T>(out T[] value) where T : IMessageSerializable, new()
+        {
+            value = GetSerializables<T>();
+            return this;
+        }
 
         #endregion
 

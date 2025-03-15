@@ -62,6 +62,9 @@ namespace Riptide
         /// <summary>Whether or not the client is currently connected.</summary>
         public bool IsConnected => !(_connection is null) && _connection.IsConnected;
 
+        /// <summary>The current state of the connection.</summary>
+        public ConnectionState? State => _connection?.State;
+
         /// <summary>The client's connection to a server.</summary>
         // Not an auto property because properties can't be passed as ref/out parameters. Could
         // use a local variable in the Connect method, but that's arguably not any cleaner. This
@@ -356,8 +359,7 @@ namespace Riptide
         /// <param name="message">The received message.</param>
         protected virtual void OnMessageReceived(Message message)
         {
-            ushort messageId = (ushort)message.GetVarULong();
-            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(_connection!, messageId, message));
+            MessageReceived?.Invoke(this, new MessageReceivedEventArgs(_connection!, message));
         }
 
         /// <summary>Invokes the <see cref="Disconnected"/> event.</summary>

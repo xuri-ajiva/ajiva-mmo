@@ -77,13 +77,13 @@ namespace Riptide
         internal static int ActiveCount { get; private set; }
 
         /// <summary>The time (in milliseconds) for which to wait before giving up on a connection attempt.</summary>
-        internal int ConnectTimeoutTime { get; set; } = 10000;
+        internal int ConnectTimeoutTime { get; set; } = 100000;
 
         /// <summary>The current time.</summary>
         internal long CurrentTime { get; private set; }
 
         /// <summary>The default time (in milliseconds) after which to disconnect if no heartbeats are received.</summary>
-        protected int DefaultTimeout = 5000;
+        protected int DefaultTimeout = 50000;
 
         /// <summary>A stopwatch used to track how much time has passed.</summary>
         private readonly System.Diagnostics.Stopwatch _time = new System.Diagnostics.Stopwatch();
