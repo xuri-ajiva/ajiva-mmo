@@ -9,6 +9,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
+using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
 namespace WgslGenerator;
 
@@ -146,6 +147,8 @@ internal class WgslVisitor : CSharpSyntaxVisitor
     // Collection of shader structs
     private readonly Dictionary<string, List<VertexAttributeInfo>> _structAttributes = new();
 
+    private readonly List<MemberDeclarationSyntax> _generatedStructs = new();
+
     public WgslVisitor(SourceProductionContext context,
         Compilation compilation,
         ClassDeclarationSyntax classDeclarationSyntax)
@@ -166,6 +169,8 @@ internal class WgslVisitor : CSharpSyntaxVisitor
     public ShaderEntryInfo GetEntryPoints() => _entryPoints;
 
     public IReadOnlyDictionary<string, List<VertexAttributeInfo>> GetStructAttributes() => _structAttributes;
+
+    public IReadOnlyList<MemberDeclarationSyntax> GetGeneratedStructs() => _generatedStructs;
 
     public string GetResult()
     {
@@ -198,30 +203,9 @@ internal class WgslVisitor : CSharpSyntaxVisitor
 
     public override void VisitStructDeclaration(StructDeclarationSyntax node)
     {
-        _typemapper.KnownTypes.Add(node.Identifier.Text);
-        _writer.WriteLine($"struct {node.Identifier.Text} {{");
-        _writer.Indent++;
-        foreach (var member in node.Members)
-        {
-            Visit(member);
-        }
-
-        _writer.Indent--;
-        _writer.WriteLine("}");
-    }
-
-    // Override for struct declarations to collect vertex attribute information
-    public override void VisitRecordDeclaration(RecordDeclarationSyntax node)
-    {
-        if (node.ClassOrStructKeyword.Text == "class")
-            throw new NotImplementedException("Only structs are allowed");
-        if (node.Members.OfType<PropertyDeclarationSyntax>().Any() || node.Members.OfType<FieldDeclarationSyntax>().Any())
-            throw new NotImplementedException("Record should use primary constructor");
-
         var structName = node.Identifier.Text;
         _typemapper.KnownTypes.Add(structName);
         _writer.WriteLine($"struct {structName} {{");
-
         var attributeList = new List<VertexAttributeInfo>();
         _structAttributes[structName] = attributeList;
 
@@ -229,13 +213,56 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         bool isInstance = structName.Equals("Instance", StringComparison.OrdinalIgnoreCase);
         bool isVertexAttributes = structName.Equals("Attributes", StringComparison.OrdinalIgnoreCase);
 
+        StructDeclarationSyntax fieldsImple = StructDeclaration(Identifier(structName))
+            .WithModifiers(node.Modifiers);
+
         if (node.ParameterList is not null)
         {
             _writer.Indent++;
-            foreach (var member in node.ParameterList.Parameters)
+            foreach (var parameter in node.ParameterList.Parameters)
             {
+                // add fields to struct
+                var fieldName = parameter.Identifier.Text.ToPascalCase();
+                fieldsImple = fieldsImple.AddMembers(FieldDeclaration(
+                        VariableDeclaration(parameter.Type!)
+                            .WithVariables(SingletonSeparatedList(
+                                VariableDeclarator(Identifier(fieldName))
+                                    .WithInitializer(EqualsValueClause(IdentifierName(parameter.Identifier.Text)
+                                    ))))
+                    )
+                    .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword)))
+                );
+                // for vectors generate reinterpretcast using:
+                // public unsafe ref Vector4 NormalVector => ref Unsafe.AsRef<Vector4>(Unsafe.AsPointer(ref Normal));
+                if (parameter.Type!.ToString().Contains("vec"))
+                {
+                    var dimension = uint.Parse(parameter.Type!.ToString().Substring(3, 1));
+                    fieldsImple = fieldsImple.AddMembers(PropertyDeclaration(ParseTypeName($"Vector{dimension}"),
+                            Identifier(fieldName + "Ref"))
+                        .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.UnsafeKeyword),
+                            Token(SyntaxKind.RefKeyword)))
+                        .WithExpressionBody(ArrowExpressionClause(
+                            ParseExpression($"ref Unsafe.AsRef<Vector{dimension}>(Unsafe.AsPointer(ref {fieldName}))")))
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                    );
+                }
+                else if (parameter.Type!.ToString().Contains("mat"))
+                {
+                    var dimension = uint.Parse(parameter.Type!.ToString().Substring(3, 1));
+                    fieldsImple = fieldsImple.AddMembers(PropertyDeclaration(
+                            ParseTypeName($"Matrix{dimension}x{dimension}"),
+                            Identifier(fieldName + "Ref"))
+                        .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.UnsafeKeyword),
+                            Token(SyntaxKind.RefKeyword)))
+                        .WithExpressionBody(ArrowExpressionClause(
+                            ParseExpression(
+                                $"ref Unsafe.AsRef<Matrix{dimension}x{dimension}>(Unsafe.AsPointer(ref {fieldName}))")))
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                    );
+                }
+
                 uint location = 0;
-                var attributes = member.AttributeLists.SelectMany(a => a.Attributes).ToList();
+                var attributes = parameter.AttributeLists.SelectMany(a => a.Attributes).ToList();
 
                 foreach (var attribute in attributes)
                 {
@@ -251,17 +278,17 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 if (attributes.Any())
                     _writer.WriteLine();
 
-                _writer.WriteLine($"{member.Identifier.Text}: {_typemapper.Map(member.Type!)},");
+                _writer.WriteLine($"{fieldName}: {_typemapper.Map(parameter.Type!)},");
 
                 // Record vertex attribute information
                 var attrInfo = new VertexAttributeInfo
                 {
-                    Name = member.Identifier.Text,
+                    Name = fieldName,
                     Location = location,
-                    TypeName = member.Type!.ToString(),
+                    TypeName = parameter.Type!.ToString(),
                     StructName = structName,
                     IsInstance = isInstance,
-                    VertexFormat = _typemapper.MapTypeToVertexFormat(member.Type!.ToString())
+                    VertexFormat = _typemapper.MapTypeToVertexFormat(parameter.Type!.ToString())
                 };
 
                 attributeList.Add(attrInfo);
@@ -280,6 +307,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             _writer.Indent--;
         }
 
+        _generatedStructs.Add(fieldsImple);
         _writer.WriteLine("}");
         _writer.WriteLine();
     }
@@ -629,10 +657,32 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             return;
         }
 
-        if (node.Expression is not IdentifierNameSyntax identifier)
-            throw new NotImplementedException("Expression should be an identifier");
+        var identifierIdentifier = node.Expression switch
+        {
+            GenericNameSyntax genericNameSyntax => genericNameSyntax.Identifier,
+            IdentifierNameSyntax identifier => identifier.Identifier,
+            _ => throw new NotImplementedException("For now only generic and identifier names are supported, got: " +
+                                                   node.Expression.GetType().Name)
+        };
 
-        _writer.Write(_typemapper.MapMethod(identifier.Identifier.Text));
+        var methodName = identifierIdentifier.Text;
+        if (char.IsUpper(methodName[0]))
+        {
+            // _diagnosticsHelper.ReportWarning("Method was made lowercase", "Method was made lowercase", node.GetLocation());
+            methodName = string.Concat(char.ToLower(methodName[0]), methodName.Substring(1));
+        }
+
+        if (!_typemapper.KnownMethods.Contains(methodName))
+        {
+            // _diagnosticsHelper.ReportWarning($"Unknown method {identifierIdentifier.Text}", "Unknown method", node.GetLocation());
+            methodName = methodName switch
+            {
+                "normalized" => "normalize",
+                _ => methodName,
+            };
+        }
+
+        _writer.Write(methodName);
         _writer.Write("(");
         for (var index = 0; index < node.ArgumentList.Arguments.Count; index++)
         {
@@ -707,6 +757,6 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         Visit(node.WhenFalse);
         _writer.Write("}");
     }
-
+    
     #endregion
 }

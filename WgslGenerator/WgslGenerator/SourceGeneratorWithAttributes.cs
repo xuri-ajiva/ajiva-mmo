@@ -146,6 +146,7 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
             var instanceAttributes = wgslVisitor.GetInstanceAttributes();
             var entryPoints = wgslVisitor.GetEntryPoints();
             var structAttributes = wgslVisitor.GetStructAttributes();
+            var generatedStructs= wgslVisitor.GetGeneratedStructs();
 
             // Generate a partial class with a ShaderSource constant
             var className = classDeclarationSyntax.Identifier.Text;
@@ -196,6 +197,9 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
                     UsingDirective(ParseName("System")),
                     UsingDirective(ParseName("System.Collections.Generic")),
                     UsingDirective(ParseName("System.Runtime.InteropServices")),
+                    UsingDirective(ParseName("System.Runtime.CompilerServices")),
+                    UsingDirective(ParseName("System.Numerics")),
+                    UsingDirective(ParseName("GlmSharp")),
                     UsingDirective(ParseName("Silk.NET.WebGPU")),
                     UsingDirective(ParseName("Silk.NET.WebGPU.Safe"))
                 )
@@ -208,6 +212,7 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
                                     .WithInitializer(assignment))
                         ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.ConstKeyword)))
                         .AddMembers(members.ToArray())
+                        .AddMembers(generatedStructs.ToArray())
                 );
 
             var sourceText = partialClass.NormalizeWhitespace().ToFullString();
@@ -415,7 +420,7 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
         {
             var formatName = GetVertexFormatName(attr.VertexFormat);
             vertexAttributesCode.Add(
-                $"new {VertexAttribute}(VertexFormat.{formatName}, {attr.Location}, (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})))");
+                $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})), shaderLocation: {attr.Location})");
         }
 
         statements.Add(ParseStatement(
@@ -442,7 +447,7 @@ public class SourceGeneratorWithAttributes : IIncrementalGenerator
         {
             var formatName = GetVertexFormatName(attr.VertexFormat);
             instanceAttributesCode.Add(
-                $"new {VertexAttribute}(VertexFormat.{formatName}, {attr.Location}, (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})))");
+                $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})), shaderLocation: {attr.Location})");
         }
 
         statements.Add(ParseStatement(

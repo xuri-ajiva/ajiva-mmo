@@ -68,18 +68,6 @@ public class TypeMapper
         "normalize", "cross", "reflect", "refract", "mix", "step", "smoothstep", "distance", "fma"
     ];
 
-    public string MapMethod(string name)
-    {
-        if (char.IsUpper(name[0]))
-            name = string.Concat(char.ToLower(name[0]), name.Substring(1));
-        if (KnownMethods.Contains(name)) return name;
-        return name switch
-        {
-            "normalized" => "normalize",
-            _ => throw new NotImplementedException($"Method {name} is not implemented.")
-        };
-    }
-
     // Helper method to map C# types to WebGPU vertex formats
     public VertexFormat MapTypeToVertexFormat(string typeName)
     {
@@ -93,5 +81,22 @@ public class TypeMapper
             "int" => VertexFormat.Sint32,
             _ => VertexFormat.Float32x4 // Default format for unknown types
         };
+    }
+}
+
+public static class StringExtensions
+{
+    public static string ToCamelCase(this string str)
+    {
+        if (string.IsNullOrEmpty(str) || !char.IsUpper(str[0]))
+            return str;
+        return char.ToLowerInvariant(str[0]) + str.Substring(1);
+    }
+    
+    public static string ToPascalCase(this string str)
+    {
+        if (string.IsNullOrEmpty(str) || !char.IsLower(str[0]))
+            return str;
+        return char.ToUpperInvariant(str[0]) + str.Substring(1);
     }
 }
