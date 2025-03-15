@@ -10,8 +10,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
 {
     public void Emit(LogEvent logEvent)
     {
-        var message = logEvent.RenderMessage(_formatProvider);
-        //Console.WriteLine(DateTimeOffset.Now.ToString() + " " + message);
+        logEvent.AddPropertyIfAbsent(new LogEventProperty("SourceContext", new ScalarValue("unknown")));
         _messageList.Add(logEvent);
     }
 
@@ -60,6 +59,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
             Log.Warning("This is a WARNING message");
             Log.Error("This is an ERROR message");
             Log.Fatal("This is a FATAL message");
+            Log.Error(new Exception("This is an exception"), "This is an exception message");
         }
 
         for (var index = 0; index < _levels.Length; index++)
@@ -96,9 +96,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
                     91);
                 ImGui.TableSetupColumn("Context", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.DefaultHide,
                     200);
-                ImGui.TableSetupColumn("Message", ImGuiTableColumnFlags.WidthStretch);
-                ImGui.TableSetupColumn("Exception", ImGuiTableColumnFlags.WidthFixed, 100);
-
+                ImGui.TableSetupColumn("Message or Exception", ImGuiTableColumnFlags.WidthStretch);
                 ImGui.TableHeadersRow();
 
                 foreach (var record in _messageList)
@@ -127,11 +125,11 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
                     ImGui.TableNextColumn();
                     ImGui.Text(record.Timestamp.ToString("HH:mm:ss.fff"));
                     ImGui.TableNextColumn();
-                    ImGui.Text(record.Properties["SourceContext"]?.ToString() ?? "");
+                    ImGui.Text(record.Properties["SourceContext"].ToString());
                     ImGui.TableNextColumn();
-                    ImGui.TextWrapped(record.RenderMessage());
-                    ImGui.TableNextColumn();
-                    ImGui.TextWrapped(record.Exception?.ToString() ?? "");
+                    ImGui.TextWrapped(record.Exception is not null
+                        ? (record.RenderMessage() +" : "+ record.Exception)
+                        : record.RenderMessage());
 
                     ImGui.PopStyleColor();
                     ImGui.TableNextColumn();
