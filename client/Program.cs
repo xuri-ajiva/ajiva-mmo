@@ -1,9 +1,9 @@
-using client;
-using client.LayerSystem;
-using client.Networking;
-using client.Platform;
-using client.Renderer;
-using client.Renderer.PbrRenderer;
+using Client;
+using Client.LayerSystem;
+using Client.Networking;
+using Client.Platform;
+using Client.Renderer;
+using Client.Renderer.PbrRenderer;
 using Riptide;
 using Serilog;
 using ServiceDefaults;
@@ -38,7 +38,7 @@ builder.AddServiceDefaults();
     services.AddSingleton<PlatformSystem>();
     services.AddSingleton<Ecs>();
 
-    services.AddSingleton<AjivaImGuiLayerSystem>();
+    services.AddSingleton<IAjivaLayerSystem, AjivaImGuiLayerSystem>();
     services.AddSingleton<Instanced3dDeferredRenderer>();
     services.AddSingleton<ClientConnectionLayer>();
 
@@ -49,7 +49,7 @@ builder.AddServiceDefaults();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RendererApi>());
     // services.AddSingleton<RendererApi>(provider => provider.GetRequiredService<RendererApi>());
 
-    services.AddSingleton<Client>();
+    services.AddSingleton<Riptide.Client>();
     services.AddHostedService<ClientWorker>();
     services.AddHostedService<Application>();
 }

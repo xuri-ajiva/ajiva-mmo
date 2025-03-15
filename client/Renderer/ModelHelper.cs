@@ -1,7 +1,7 @@
 ﻿using System.Numerics;
 using Silk.NET.Assimp;
 
-namespace client.Renderer;
+namespace Client.Renderer;
 
 internal static unsafe class ModelHelper
 {

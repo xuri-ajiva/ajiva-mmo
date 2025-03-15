@@ -1,14 +1,12 @@
 ﻿using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using client.LayerSystem;
-using client.VirtualFramebuffers;
+using Client.LayerSystem;
+using Client.VirtualFramebuffers;
+using GlmSharp;
 using ImGuiNET;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
-using static Silk.NET.WebGPU.Safe.BindGroupLayoutEntries;
-using static Silk.NET.WebGPU.Safe.BindGroupEntries;
 using Color = Silk.NET.WebGPU.Color;
 using ColorTargetState = Silk.NET.WebGPU.Safe.ColorTargetState;
 using FragmentState = Silk.NET.WebGPU.Safe.FragmentState;
@@ -16,10 +14,12 @@ using PrimitiveState = Silk.NET.WebGPU.Safe.PrimitiveState;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 using RenderPassDepthStencilAttachment = Silk.NET.WebGPU.Safe.RenderPassDepthStencilAttachment;
 using ShaderModuleCompilationHint = Silk.NET.WebGPU.Safe.ShaderModuleCompilationHint;
-using VertexBufferLayout = Silk.NET.WebGPU.Safe.VertexBufferLayout;
+using TempleShader = Client.Renderer.TempleShader;
 using VertexState = Silk.NET.WebGPU.Safe.VertexState;
 
-namespace client.Renderer.PbrRenderer;
+namespace Client.Renderer.PbrRenderer;
+
+using static TempleShader;
 
 public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 {
@@ -36,15 +36,28 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private InstancedMeshBuffer<ModelUniform, Instance>[] _meshBuffers = [];
     private GBuffer? _sceneGBuffer;
     private RenderTexture? _finalSceneTexture;
-    private SceneLights _sceneLights;
+    private SceneLights _sceneLights = null!;
     private BufferRange _lightsBuffer;
+    private readonly TempleShader _templeShader;
+    private readonly DragCamera _camera;
 
+    public ref bool Enabled => ref _enabled;
+
+    private (TexturePtr tex, TextureViewPtr view)? _requestedCubeTexture = null;
+
+    private bool _isSceneViewHovered;
+    private DeferredShader _deferredShader;
+    private Compositor _compositor;
+    private SceneUniform _sceneUniform;
+    private bool _enabled = true;
+    
     public Instanced3dDeferredRenderer(ILogger<Instanced3dDeferredRenderer> logger, RendererApi api, Ecs ecs)
     {
         _logger = logger;
         _api = api;
         _ecs = ecs;
         _camera = new DragCamera();
+        _templeShader = new TempleShader();
     }
 
     private InstancedMeshBuffer<ModelUniform, Instance>[] CreateModelBuffers(string path, string? label = null)
@@ -57,18 +70,18 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         {
             var mdl = models[iModel];
 
-            var modelVertices = new Vertex[mdl.Positions.Length];
+            var modelVertices = new Attributes[mdl.Positions.Length];
 
             for (var iVertex = 0; iVertex < mdl.Positions.Length; iVertex++)
             {
-                modelVertices[iVertex].Position = mdl.Positions[iVertex];
-                modelVertices[iVertex].TexCoord0 = mdl.TexCoords0[iVertex];
-                modelVertices[iVertex].TexCoord1 = mdl.TexCoords1[iVertex];
-                modelVertices[iVertex].Normal = mdl.Normals[iVertex];
-                modelVertices[iVertex].Tangent = mdl.Tangents[iVertex];
+                modelVertices[iVertex].PositionRef = mdl.Positions[iVertex];
+                modelVertices[iVertex].Tex0CoordRef = mdl.TexCoords0[iVertex];
+                modelVertices[iVertex].Tex1CoordRef = mdl.TexCoords1[iVertex];
+                modelVertices[iVertex].NormalRef = mdl.Normals[iVertex];
+                modelVertices[iVertex].TangentRef = mdl.Tangents[iVertex];
             }
 
-            var vertexBuffer = _api.CreateBufferWithData<Vertex>(BufferUsage.Vertex | BufferUsage.CopyDst,
+            var vertexBuffer = _api.CreateBufferWithData<Attributes>(BufferUsage.Vertex | BufferUsage.CopyDst,
                 modelVertices,
                 label == null ? null : $"{label}::VertexBuffer");
 
@@ -81,14 +94,14 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 new InstancedMeshBuffer<ModelUniform, Instance>(vertexBuffer, indexBuffer,
                     new ModelUniform
                     {
-                        Transform = Matrix4x4.Identity, Tex0Color = new Vector3(1, 1, 1), ModelId = (u32)iModel,
-                        Tex1Color = new Vector3(1, 1, 1), NormalMapStrength = 1
+                        Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)iModel,
+                        Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
                     }, instances
                 );
         }
 
         {
-            Span<Vertex> cubeVertices = stackalloc Vertex[6 * 4];
+            Span<Attributes> cubeVertices = stackalloc Attributes[6 * 4];
             Span<u32> indices = stackalloc u32[6 * 6];
             Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0);
 
@@ -106,37 +119,37 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             {
                 var normal = Vector3D.Transform(new Vector3D<f32>(0, 0, 1), rot).ToSystem();
                 var tangent = Vector3D.Transform(new Vector3D<f32>(1, 0, 0), rot).ToSystem();
-                var a = new Vertex
+                var a = new Attributes
                 {
-                    Position = Vector3D.Transform(new Vector3D<f32>(-1, 1, 1), rot).ToSystem(),
-                    TexCoord0 = new Vector2(0, 0),
-                    TexCoord1 = new Vector2(0, 0),
-                    Normal = normal,
-                    Tangent = tangent
+                    PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, 1, 1), rot).ToSystem(),
+                    Tex0CoordRef = new Vector2(0, 0),
+                    Tex1CoordRef = new Vector2(0, 0),
+                    NormalRef = normal,
+                    TangentRef = tangent
                 };
-                var b = new Vertex
+                var b = new Attributes
                 {
-                    Position = Vector3D.Transform(new Vector3D<f32>(1, 1, 1), rot).ToSystem(),
-                    TexCoord0 = new Vector2(1, 0),
-                    TexCoord1 = new Vector2(1, 0),
-                    Normal = normal,
-                    Tangent = tangent
+                    PositionRef = Vector3D.Transform(new Vector3D<f32>(1, 1, 1), rot).ToSystem(),
+                    Tex0CoordRef = new Vector2(1, 0),
+                    Tex1CoordRef = new Vector2(1, 0),
+                    NormalRef = normal,
+                    TangentRef = tangent
                 };
-                var c = new Vertex
+                var c = new Attributes
                 {
-                    Position = Vector3D.Transform(new Vector3D<f32>(-1, -1, 1), rot).ToSystem(),
-                    TexCoord0 = new Vector2(0, 1),
-                    TexCoord1 = new Vector2(0, 1),
-                    Normal = normal,
-                    Tangent = tangent
+                    PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, -1, 1), rot).ToSystem(),
+                    Tex0CoordRef = new Vector2(0, 1),
+                    Tex1CoordRef = new Vector2(0, 1),
+                    NormalRef = normal,
+                    TangentRef = tangent
                 };
-                var d = new Vertex
+                var d = new Attributes
                 {
-                    Position = Vector3D.Transform(new Vector3D<f32>(1, -1, 1), rot).ToSystem(),
-                    TexCoord0 = new Vector2(1, 1),
-                    TexCoord1 = new Vector2(1, 1),
-                    Normal = normal,
-                    Tangent = tangent
+                    PositionRef = Vector3D.Transform(new Vector3D<f32>(1, -1, 1), rot).ToSystem(),
+                    Tex0CoordRef = new Vector2(1, 1),
+                    Tex1CoordRef = new Vector2(1, 1),
+                    NormalRef = normal,
+                    TangentRef = tangent
                 };
 
                 /*cubeVertices[index++] = b;
@@ -163,20 +176,20 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             instances[0].SetTransform(Matrix4x4.Identity);
 
             buffers[^1] = new InstancedMeshBuffer<ModelUniform, Instance>(
-                _api.CreateBufferWithData<Vertex>(BufferUsage.Vertex | BufferUsage.CopyDst, cubeVertices,
+                _api.CreateBufferWithData<Attributes>(BufferUsage.Vertex | BufferUsage.CopyDst, cubeVertices,
                     label == null ? null : $"{label}::VertexBuffer"),
                 _api.CreateBufferWithData<u32>(BufferUsage.Index | BufferUsage.CopyDst, indices,
                     label == null ? null : $"{label}::IndexBuffer"),
                 new ModelUniform
                 {
-                    Transform = Matrix4x4.Identity, Tex0Color = new Vector3(1, 1, 1), ModelId = (u32)models.Count,
-                    Tex1Color = new Vector3(1, 1, 1), NormalMapStrength = 1
+                    Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)models.Count,
+                    Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
                 }, instances
             );
         }
 
-        buffers[2].InstanceInfos[0].HighlightColor = new Vector4(1, 1, 0.5f, 0.5f);
-        buffers[1].InstanceInfos[0].HighlightColor = new Vector4(0.5f, 1, 1, 0.5f);
+        buffers[2].InstanceInfos[0].HighlightColor = new vec4(1, 1, 0.5f, 0.5f);
+        buffers[1].InstanceInfos[0].HighlightColor = new vec4(0.5f, 1, 1, 0.5f);
 
         return buffers;
     }
@@ -193,35 +206,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _finalSceneTexture = RenderTexture.Create(_api.Device, TextureFormat.Rgba8Unorm, label: "FinalSceneTexture");
 
         _logger.LogDebug("Creating BindGroupLayouts");
-        var sceneBindGroupLayout = _api.Device.CreateBindGroupLayout(
-            [Buffer(0, ShaderStage.Vertex, BufferBindingType.Uniform, (u32)Marshal.SizeOf<SceneUniform>())],
-            label: "SceneBindGroupLayout"
-        );
+        var sceneBindGroupLayout = _templeShader.CreateBindGroupLayout0(_api.Device);
+        _modelBindGroupLayout = _templeShader.CreateBindGroupLayout1(_api.Device);
 
-        _modelBindGroupLayout = _api.Device.CreateBindGroupLayout(
-            [
-                // ReSharper disable once BitwiseOperatorOnEnumWithoutFlags
-                Buffer(0, ShaderStage.Vertex | ShaderStage.Fragment, BufferBindingType.Uniform,
-                    (u64)Unsafe.SizeOf<ModelUniform>()),
-                Sampler(1, ShaderStage.Fragment, SamplerBindingType.Filtering),
-                Texture(2, ShaderStage.Fragment, TextureSampleType.Float, TextureViewDimension.Dimension2D,
-                    multisampled: false),
-                Texture(3, ShaderStage.Fragment, TextureSampleType.Float, TextureViewDimension.Dimension2D,
-                    multisampled: false),
-                Texture(4, ShaderStage.Fragment, TextureSampleType.Float, TextureViewDimension.Dimension2D,
-                    multisampled: false)
-            ],
-            label: "ModelBindGroupLayout"
-        );
-
-        var pipelineLayout = _api.Device.CreatePipelineLayout(
-            new[]
-            {
-                sceneBindGroupLayout,
-                _modelBindGroupLayout
-            },
-            label: "PipelineLayout"
-        );
+        var pipelineLayout =
+            _templeShader.CreatePipelineLayout(_api.Device, sceneBindGroupLayout, _modelBindGroupLayout);
 
         _logger.LogDebug("Creating Model Buffers");
         _meshBuffers = CreateModelBuffers("resources/Temple/TempleModel.glb", "Temple");
@@ -252,11 +241,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _lightsBuffer = _api.CreateBufferWithData(BufferUsage.Storage | BufferUsage.CopyDst, _sceneLights.LightData,
             "LightBuffer");
 
-        _sceneBindGroup = _api.Device.CreateBindGroup(
-            bindGroupLayout: sceneBindGroupLayout,
-            [Buffer(0, _sceneUniformBuffer.Buffer, _sceneUniformBuffer.Offset, _sceneUniformBuffer.Size)],
-            label: "SceneBindGroup"
-        );
+        _sceneBindGroup = _templeShader.CreateBindGroup0(_api.Device, sceneBindGroupLayout, _sceneUniformBuffer.Buffer,
+            _sceneUniformBuffer.Offset, _sceneUniformBuffer.Size);
+        sceneBindGroupLayout.Release();
 
         foreach (var instancedMeshBuffer in _meshBuffers)
         {
@@ -270,10 +257,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         _logger.LogDebug("Compiling Shader");
 
-
-        var shaderModule = _api.CreateShaderModuleFromFile("resources/Temple/TempleShader.wgsl", "TempleShaderModule",
-            new ShaderModuleCompilationHint("vs_main", pipelineLayout),
-            new ShaderModuleCompilationHint("fs_main", pipelineLayout));
+        var (vertexEntryPoint, fragmentEntryPoint) = _templeShader.GetShaderEntryPoints();
+        var shaderModule = _api.Device.CreateShaderModuleWGSL(ShaderSource, [
+            new ShaderModuleCompilationHint(fragmentEntryPoint, pipelineLayout),
+            new ShaderModuleCompilationHint(vertexEntryPoint, pipelineLayout)
+        ], "TempleShaderModule");
 
         // ReSharper disable once MethodHasAsyncOverload
         _modelPipeline = _api.Device.CreateRenderPipeline(
@@ -286,38 +274,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 Constants = [],
                 Buffers =
                 [
-                    // vertex buffer
-                    new VertexBufferLayout(
-                        (u32)Marshal.SizeOf<Vertex>(), VertexStepMode.Vertex,
-                        [
-                            new VertexAttribute(VertexFormat.Float32x3, shaderLocation: 0, offset:
-                                (u32)Marshal.OffsetOf<Vertex>(nameof(Vertex.Position))),
-                            new VertexAttribute(VertexFormat.Float32x2, shaderLocation: 1, offset:
-                                (u32)Marshal.OffsetOf<Vertex>(nameof(Vertex.TexCoord0))),
-                            new VertexAttribute(VertexFormat.Float32x2, shaderLocation: 2, offset:
-                                (u32)Marshal.OffsetOf<Vertex>(nameof(Vertex.TexCoord1))),
-                            new VertexAttribute(VertexFormat.Float32x3, shaderLocation: 3, offset:
-                                (u32)Marshal.OffsetOf<Vertex>(nameof(Vertex.Normal))),
-                            new VertexAttribute(VertexFormat.Float32x3, shaderLocation: 4, offset:
-                                (u32)Marshal.OffsetOf<Vertex>(nameof(Vertex.Tangent))),
-                        ]
-                    ),
-                    // instance buffer
-                    new VertexBufferLayout(
-                        (u32)Marshal.SizeOf<Instance>(), VertexStepMode.Instance,
-                        [
-                            new VertexAttribute(VertexFormat.Float32x4, shaderLocation: 5, offset:
-                                (u32)Marshal.OffsetOf<Instance>(nameof(Instance.Transform0))),
-                            new VertexAttribute(VertexFormat.Float32x4, shaderLocation: 6, offset:
-                                (u32)Marshal.OffsetOf<Instance>(nameof(Instance.Transform1))),
-                            new VertexAttribute(VertexFormat.Float32x4, shaderLocation: 7, offset:
-                                (u32)Marshal.OffsetOf<Instance>(nameof(Instance.Transform2))),
-                            new VertexAttribute(VertexFormat.Float32x4, shaderLocation: 8, offset:
-                                (u32)Marshal.OffsetOf<Instance>(nameof(Instance.Transform3))),
-                            new VertexAttribute(VertexFormat.Float32x4, shaderLocation: 9, offset:
-                                (u32)Marshal.OffsetOf<Instance>(nameof(Instance.HighlightColor))),
-                        ]
-                    )
+                    _templeShader.GetVertexBufferLayout(),
+                    _templeShader.GetInstanceBufferLayout(),
                 ]
             },
             primitive: new PrimitiveState
@@ -378,17 +336,15 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private void RecreateBindGroup(InstancedMeshBuffer<ModelUniform, Instance> instancedMeshBuffer)
     {
         instancedMeshBuffer.ModelBindGroup?.Release();
-        instancedMeshBuffer.ModelBindGroup = _api.Device.CreateBindGroup(
-            bindGroupLayout: _modelBindGroupLayout,
-            [
-                Buffer(0, instancedMeshBuffer.ModelUniformBuffer.Buffer, instancedMeshBuffer.ModelUniformBuffer.Offset,
-                    instancedMeshBuffer.ModelUniformBuffer.Size),
-                Sampler(1, _linearSampler),
-                Texture(2, instancedMeshBuffer.AlbedoTexture.View),
-                Texture(3, instancedMeshBuffer.NormalTexture.View),
-                Texture(4, instancedMeshBuffer.EmissionTexture.View),
-            ],
-            label: "ModelBindGroup"
+        instancedMeshBuffer.ModelBindGroup = _templeShader.CreateBindGroup1(_api.Device,
+            _modelBindGroupLayout,
+            instancedMeshBuffer.ModelUniformBuffer.Buffer,
+            _linearSampler,
+            instancedMeshBuffer.AlbedoTexture.View,
+            instancedMeshBuffer.NormalTexture.View,
+            instancedMeshBuffer.EmissionTexture.View,
+            ubModelOffset: instancedMeshBuffer.ModelUniformBuffer.Offset,
+            ubModelSize: instancedMeshBuffer.ModelUniformBuffer.Size
         );
     }
 
@@ -400,17 +356,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             _camera.Update();
         }
     }
-
-    public ref bool Enabled => ref _enabled;
-
-    private (TexturePtr tex, TextureViewPtr view)? _requestedCubeTexture = null;
-
-    private bool _isSceneViewHovered;
-    private DeferredShader _deferredShader;
-    private Compositor _compositor;
-    private DragCamera _camera;
-    private SceneUniform _sceneUniform;
-    private bool _enabled = true;
 
     public void Render(UpdateInfo info, RenderTarget target, Extent3D sceneViewport)
     {
@@ -446,8 +391,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         _sceneUniform = new SceneUniform
         {
-            ViewProjection = _camera.GetViewMatrix(aspectRatio),
-            CameraPosition = _camera.Position,
+            ViewProjectionRef = _camera.GetViewMatrix(aspectRatio),
+            CameraPositionRef = _camera.Position,
             Time = info.TotalTime
         };
 
@@ -511,7 +456,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         pass.End();
         queue.Submit(new[] { cmd.Finish() });
     }
-    
+
 
     private void WriteBuffer(QueuePtr queue, InstancedMeshBuffer<ModelUniform, Instance> buffer)
     {
@@ -553,7 +498,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             var queue = target.QueuePtr;
             Render(info, target, new Extent3D(width, height, 1));
 
-            if (!Matrix4x4.Invert(_sceneUniform.ViewProjection, out var invViewProjection))
+            if (!Matrix4x4.Invert(_sceneUniform.ViewProjectionRef, out var invViewProjection))
                 throw new InvalidOperationException("ViewProjection Matrix could not be inverted");
 
             _deferredShader.Apply(queue, albedo.View, normal.View, depth.DepthOnlyView, emission.View,
@@ -622,12 +567,12 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 {
                     ref var instance = ref buffer.InstanceInfos[i];
                     ImGui.Text($"Instance {hi}");
-                    ImGui.DragFloat4($"##Position{hi}", ref instance.Transform0, 0.1f);
-                    ImGui.DragFloat4($"##Rotation{hi}", ref instance.Transform1, 0.1f);
-                    ImGui.DragFloat4($"##Scale{hi}", ref instance.Transform2, 0.1f);
-                    ImGui.DragFloat4($"##ScaleA{hi}", ref instance.Transform3, 0.1f);
+                    ImGui.DragFloat4($"##Position{hi}", ref instance.Transform0Ref, 0.1f);
+                    ImGui.DragFloat4($"##Rotation{hi}", ref instance.Transform1Ref, 0.1f);
+                    ImGui.DragFloat4($"##Scale{hi}", ref instance.Transform2Ref, 0.1f);
+                    ImGui.DragFloat4($"##ScaleA{hi}", ref instance.Transform3Ref, 0.1f);
                     ImGui.Text("Highlight Color");
-                    ImGui.ColorEdit4($"##HighlightColor{hi}", ref instance.HighlightColor);
+                    ImGui.ColorEdit4($"##HighlightColor{hi}", ref instance.HighlightColorRef);
                     hi++;
                 }
             }

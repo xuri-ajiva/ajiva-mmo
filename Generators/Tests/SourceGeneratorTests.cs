@@ -20,11 +20,11 @@ public class SourceGeneratorWithAttributesTests
         var compilation = CSharpCompilation.Create(nameof(SourceGeneratorWithAttributesTests),
             [
                 CSharpSyntaxTree.ParseText(
-                    File.ReadAllText("../../Client.Shaders/TempleShader.cs")),
+                    File.ReadAllText("../../Client.Renderer/TempleShader.cs")),
                 CSharpSyntaxTree.ParseText(
-                    File.ReadAllText("../../Client.Shaders/DeferredShader.cs")),
+                    File.ReadAllText("../../Client.Renderer/DeferredShader.cs")),
                 CSharpSyntaxTree.ParseText(
-                    File.ReadAllText("../../Client.Shaders/ComplexShader.cs"))
+                    File.ReadAllText("../../Client.Renderer/ComplexShader.cs"))
             ],
             [
                 // To support 'System.Attribute' inheritance, add reference to 'System.Private.CoreLib'.

@@ -1,7 +1,7 @@
 ﻿using Generators;
 using GlmSharp;
 
-namespace WgslGenerator.Sample;
+namespace Client.Renderer;
 
 [GenerateShader]
 public partial class ComplexShader : BuiltIn
@@ -33,7 +33,7 @@ public partial class ComplexShader : BuiltIn
 
     [Group(1)] [Binding(1)] private sampler textureSampler;
 
-    [Group(1)] [Binding(2)] private texture_2d<float> tex0;
+    [Group(1)] [Binding(2)] private texture_2d<f32> tex0;
 
 
     [VertexShader]

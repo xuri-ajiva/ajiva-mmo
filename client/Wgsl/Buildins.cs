@@ -1,8 +1,7 @@
 ﻿// ReSharper disable ClassNeverInstantiated.Global
 // ReSharper disable PreferConcreteValueOverDefault
 // ReSharper disable InconsistentNaming
-// ReSharper disable once CheckNamespace
-namespace WgslGenerator;
+namespace Client.Renderer;
 
 public partial class BuiltIn
 {
@@ -26,7 +25,6 @@ public partial class BuiltIn
     public static T dot<T>(T a, T b) => default!;
     public static T normalize<T>(T v, f32 l) => default!;
     public static T fma<T>(T a, f32 b, f32 c) => default!;*/
-
     public static T[] array<T>(params T[] value) => default!;
 }
 

@@ -2,9 +2,9 @@
 using Riptide;
 using ServiceDefaults;
 
-namespace client.LayerSystem;
+namespace Client.LayerSystem;
 
-public class ClientConnectionLayer(Client client, Ecs ecs) : IUiRenderLayer
+public class ClientConnectionLayer(Riptide.Client client, Ecs ecs) : IUiRenderLayer
 {
     public Task Attach() => Task.CompletedTask;
 

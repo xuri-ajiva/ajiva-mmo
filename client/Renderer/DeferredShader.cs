@@ -6,7 +6,7 @@ using Safe = Silk.NET.WebGPU.Safe;
 using static Silk.NET.WebGPU.Safe.BindGroupLayoutEntries;
 using static Silk.NET.WebGPU.Safe.BindGroupEntries;
 
-namespace client.Renderer
+namespace Client.Renderer
 {
     internal class DeferredShader
     {
@@ -94,7 +94,7 @@ namespace client.Renderer
                 },
                 fragment: new Safe.FragmentState
                 {
-                    Constants = Array.Empty<(string, f64)>(),
+                    Constants = [],
                     EntryPoint = "fs_main",
                     Module = module,
                     Targets =

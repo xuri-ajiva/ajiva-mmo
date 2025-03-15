@@ -1,4 +1,6 @@
-﻿namespace client.Platform;
+﻿using Microsoft.Extensions.Logging;
+
+namespace Client.Platform;
 
 public class PlatformSystem
 {

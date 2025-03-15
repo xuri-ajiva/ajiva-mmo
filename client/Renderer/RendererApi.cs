@@ -6,7 +6,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using ImageCopyTexture = Silk.NET.WebGPU.Safe.ImageCopyTexture;
 using ShaderModuleCompilationHint = Silk.NET.WebGPU.Safe.ShaderModuleCompilationHint;
 
-namespace client.Renderer;
+namespace Client.Renderer;
 
 public class RendererApi(ILogger<RendererApi> logger)
     : IHostedLifecycleService

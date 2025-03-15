@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 
-namespace client.Renderer;
+namespace Client.Renderer;
 
 internal class SceneLights
 {

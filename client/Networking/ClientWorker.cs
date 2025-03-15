@@ -3,15 +3,15 @@ using NetworkPackets;
 using Riptide;
 using ServiceDefaults;
 
-namespace client.Networking;
+namespace Client.Networking;
 
 public class ClientWorker : BackgroundService, IUniversalMessageHandler
 {
     private readonly ILogger<ClientWorker> _logger;
-    private readonly Client _client;
+    private readonly Riptide.Client _client;
     private readonly Ecs _ecs;
 
-    public ClientWorker(ILogger<ClientWorker> logger, Client client, Ecs ecs)
+    public ClientWorker(ILogger<ClientWorker> logger, Riptide.Client client, Ecs ecs)
     {
         _logger = logger;
         _client = client;

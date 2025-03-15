@@ -5,7 +5,7 @@ using Safe = Silk.NET.WebGPU.Safe;
 using static Silk.NET.WebGPU.Safe.BindGroupLayoutEntries;
 using static Silk.NET.WebGPU.Safe.BindGroupEntries;
 
-namespace client.Renderer
+namespace Client.Renderer
 {
     internal class Compositor
     {
@@ -125,7 +125,7 @@ namespace client.Renderer
             pass.Draw(6, 1, 0, 0);
             pass.End();
 
-            queue.Submit(new ReadOnlySpan<CommandBufferPtr>(cmd.Finish()));
+            queue.Submit(cmd.Finish());
         }
     }
 }

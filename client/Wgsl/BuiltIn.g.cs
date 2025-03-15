@@ -2,10 +2,12 @@
 using System;
 using System.Collections.Generic;
 using GlmSharp;
+#pragma warning disable CS8981 // The type name only contains lower-cased ascii characters. Such names may become reserved for the language.
 
-namespace WgslGenerator;
+namespace Client.Renderer;
 
 using AbstractInt = System.Int32;
+using AbstractFloat = System.Single;
 
 using u32 = System.UInt32;
 using i32 = System.Int32;

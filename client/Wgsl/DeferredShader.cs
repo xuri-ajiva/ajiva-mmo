@@ -1,9 +1,9 @@
 ﻿using Generators;
 using GlmSharp;
-using static WgslGenerator.BuiltIn;
+using static Client.Renderer.BuiltIn;
 using static GlmSharp.glm;
 
-namespace WgslGenerator.Sample;
+namespace Client.Renderer.Wgsl;
 
 [GenerateShader]
 public partial class DeferredShader
@@ -21,7 +21,7 @@ public partial class DeferredShader
     public partial struct LightData(
         vec4 position,
         vec3 color,
-        float radius
+        f32 radius
     );
 
     public partial struct LightsBuffer(
@@ -35,8 +35,8 @@ public partial class DeferredShader
     [Group(0), Binding(1), Access(ShaderAccess.Storage | ShaderAccess.Read)]
     public LightsBuffer lightsBuffer;
 
-    [Group(0), Binding(2)] public texture_2d<float> uAlbedo;
-    [Group(0), Binding(3)] public texture_2d<float> uNormal;
+    [Group(0), Binding(2)] public texture_2d<f32> uAlbedo;
+    [Group(0), Binding(3)] public texture_2d<f32> uNormal;
     [Group(0), Binding(4)] public texture_depth_2d uDepth;
 
 
@@ -62,9 +62,9 @@ public partial class DeferredShader
     [FragmentShader]
     public vec4 fs_main(Varyings v)
     {
-        var albedo = textureLoad(uAlbedo, new ivec2((int)floor(v.Position.x), (int)floor(v.Position.y))).rgb;
-        var normal = textureLoad(uNormal, new ivec2((int)floor(v.Position.x), (int)floor(v.Position.y))).xyz;
-        var depth = textureLoad(uDepth, new ivec2((int)floor(v.Position.x), (int)floor(v.Position.y)));
+        var albedo = textureLoad(uAlbedo, new ivec2((int)floor<f32>(v.Position.x), (int)floor<f32>(v.Position.y))).rgb;
+        var normal = textureLoad(uNormal, new ivec2((int)floor<f32>(v.Position.x), (int)floor<f32>(v.Position.y))).xyz;
+        var depth = textureLoad(uDepth, new ivec2((int)floor<f32>(v.Position.x), (int)floor<f32>(v.Position.y)));
 
         var nrm = normal * 2.0f - new vec3(1.0f);
         var _position = ub.InverseViewProjection * new vec4(v.TexCoord * 2.0f - new vec2(1.0f), depth, 1.0f);
@@ -74,7 +74,7 @@ public partial class DeferredShader
         for (var i = 0u; i < ub.LightCount; i++)
         {
             var L = lightsBuffer.Lights[i].Position.xyz - position;
-            var distance = length<vec3, float>(L);
+            var distance = length<vec3, f32>(L);
             if (distance > lightsBuffer.Lights[i].Radius)
             {
                 continue;

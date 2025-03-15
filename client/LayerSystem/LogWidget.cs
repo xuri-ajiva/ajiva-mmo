@@ -4,7 +4,7 @@ using Serilog;
 using Serilog.Core;
 using Serilog.Events;
 
-namespace client.LayerSystem;
+namespace Client.LayerSystem;
 
 public class LogWidget : ILogEventSink, IUiRenderLayer
 {

@@ -2,9 +2,10 @@
 using Generators;
 using GlmSharp;
 
-namespace WgslGenerator.Sample;
+using static Client.Renderer.BuiltIn;
+using static GlmSharp.glm;
 
-using static WgslGenerator.BuiltIn;
+namespace Client.Renderer;
 
 [GenerateShader]
 public partial class TempleShader
@@ -12,7 +13,7 @@ public partial class TempleShader
     public partial struct SceneUniform(
         mat4 viewProjection,
         vec3 cameraPosition,
-        float time
+        f32 time
     );
 
     public partial struct ModelUniform(
@@ -20,7 +21,7 @@ public partial class TempleShader
         vec3 tex0Color,
         uint modelId,
         vec3 tex1Color,
-        float normalMapStrength
+        f32 normalMapStrength
     );
 
     public partial struct Attributes(
@@ -73,9 +74,9 @@ public partial class TempleShader
     private ModelUniform ubModel;
 
     [Group(1)] [Binding(1)] private sampler uSampler;
-    [Group(1)] [Binding(2)] private texture_2d<float> uAlbedo;
-    [Group(1)] [Binding(3)] private texture_2d<float> uNormal;
-    [Group(1)] [Binding(4)] private texture_2d<float> uEmission;
+    [Group(1)] [Binding(2)] private texture_2d<f32> uAlbedo;
+    [Group(1)] [Binding(3)] private texture_2d<f32> uNormal;
+    [Group(1)] [Binding(4)] private texture_2d<f32> uEmission;
 
     [VertexShader]
     public Varyings vs_main(Attributes a, Instance i, [Builtin("instance_index")] uint iId)

@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Numerics;
 
-namespace client;
+namespace Client;
 
 public class Ecs
 {

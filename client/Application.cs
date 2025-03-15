@@ -1,17 +1,16 @@
-﻿using client.LayerSystem;
-using client.Renderer;
-using client.Renderer.PbrRenderer;
+﻿using Client.LayerSystem;
+using Client.Renderer.PbrRenderer;
 
-namespace client;
+namespace Client;
 
 public class Application : IHostedLifecycleService
 {
     private readonly ILogger<Application> _logger;
     private readonly IServiceProvider _serviceProvider;
-    private readonly AjivaImGuiLayerSystem _layerSystem;
+    private readonly IAjivaLayerSystem _layerSystem;
 
     public Application(ILogger<Application> logger,
-        IServiceProvider serviceProvider, AjivaImGuiLayerSystem layerSystem)
+        IServiceProvider serviceProvider, IAjivaLayerSystem layerSystem)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
@@ -47,9 +46,9 @@ public class Application : IHostedLifecycleService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        /*await _layerSystem.PushLayer<LogWidget>();
+        await _layerSystem.PushLayer<LogWidget>();
         await _layerSystem.PushLayer<Instanced3dDeferredRenderer>();
-        await _layerSystem.PushLayer<ClientConnectionLayer>();*/
+        await _layerSystem.PushLayer<ClientConnectionLayer>();
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

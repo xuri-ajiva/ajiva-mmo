@@ -2,8 +2,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Reflection;
-using client.Platform;
-using client.Renderer;
+using Client.Platform;
+using Client.Renderer;
 using ImGuiNET;
 using Silk.NET.Input;
 using Silk.NET.WebGPU;
@@ -11,9 +11,9 @@ using Silk.NET.WebGPU.Extensions.ImGui;
 using Silk.NET.WebGPU.Safe;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 
-namespace client.LayerSystem;
+namespace Client.LayerSystem;
 
-public class AjivaImGuiLayerSystem
+public class AjivaImGuiLayerSystem : IAjivaLayerSystem
 {
     private bool _initialized;
 
@@ -36,9 +36,14 @@ public class AjivaImGuiLayerSystem
         _logger = logger;
         _api = api;
         // find alll types that implement IAjivaLayer
-        _layerTypes = typeof(AjivaImGuiLayerSystem).Assembly.DefinedTypes
-            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IAjivaLayer).IsAssignableFrom(t))
-            .ToArray();
+#if DEBUG
+        _layerTypes =
+            GetType().Assembly.DefinedTypes
+                .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IAjivaLayer).IsAssignableFrom(t))
+                .ToArray();
+#else
+_layerTypes = [];
+#endif
     }
 
     public void Attach(AjivaWindow parent)
@@ -152,12 +157,12 @@ public class AjivaImGuiLayerSystem
                 uiRenderLayer.RenderUi(info);
         }
 
-        /*if (_showOverlay)
-            RenderMetrics(info);*/
+        if (_showOverlay)
+            RenderMetrics(info);
         if (_demoWindow)
             ImGui.ShowDemoWindow();
 
-        //RenderLayerControls();
+        RenderLayerControls();
 
         ImGui.PopFont();
         ImGui.PopStyleVar();
@@ -226,7 +231,9 @@ public class AjivaImGuiLayerSystem
             }
 
             if (ImGui.Button("GC"))
+            {
                 GC.Collect();
+            }
         }
 
         ImGui.End();
@@ -302,56 +309,4 @@ public class AjivaImGuiLayerSystem
 
         ImGui.End();
     }
-}
-
-public ref struct UpdateInfo(u64 ticks, f32 deltaTime, f32 totalTime)
-{
-    public UpdateInfo(AjivaClock updateClock) : this(
-        updateClock.Ticks,
-        (f32)updateClock.DeltaTime.TotalSeconds,
-        (f32)updateClock.Total.TotalSeconds)
-    {
-    }
-
-    public readonly u64 Ticks = ticks;
-    public readonly f32 DeltaTime = deltaTime;
-    public readonly f32 TotalTime = totalTime;
-}
-
-public ref struct RenderTarget(QueuePtr queuePtr, ImGuiController imguiController)
-{
-    public readonly QueuePtr QueuePtr = queuePtr;
-    public readonly ImGuiController ImguiController = imguiController;
-}
-
-public interface IAjivaLayer
-{
-    Task Attach();
-    void Update(UpdateInfo info);
-    Task Detach();
-    ref bool Enabled { get; }
-}
-
-public interface IRenderLayer : IAjivaLayer
-{
-    void Render(UpdateInfo info, RenderTarget target);
-}
-
-public interface IUiRenderLayer : IAjivaLayer
-{
-    void RenderUi(UpdateInfo info);
-}
-
-public interface IVirtualView
-{
-    string Name { get; }
-    Task Render(UpdateInfo info, RenderTarget target);
-}
-
-public class DelegateView(string name, Func<UpdateInfo, RenderTarget, Task> renderFunc)
-    : IVirtualView
-{
-    public string Name { get; } = name;
-
-    public Task Render(UpdateInfo info, RenderTarget target) => renderFunc(info, target);
 }

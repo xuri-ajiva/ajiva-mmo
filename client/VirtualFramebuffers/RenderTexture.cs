@@ -1,7 +1,7 @@
 ﻿using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
-namespace client.VirtualFramebuffers
+namespace Client.VirtualFramebuffers
 {
     internal class RenderTexture
     {
