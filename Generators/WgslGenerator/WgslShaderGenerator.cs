@@ -51,15 +51,26 @@ public class WgslShaderGenerator : IIncrementalGenerator
           public partial class Binding(uint id) : Attribute;
 
           [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-          public partial class Access(ShaderAccess access) : Attribute;
+          public partial class BindingMode(BindingType access) : Attribute;
 
-          [Flags]
-          public enum ShaderAccess
+          public enum BindingType
           {
+              [global::System.ObsoleteAttribute]
+              Undefined,
+          
+              // BufferBindingType
               Uniform,
               Storage,
-              Read,
-              Write,
+              ReadOnlyStorage,
+              
+              // SamplerBindingType
+              Filtering,
+              NonFiltering,
+              Comparison,
+              
+              // textures, do not use this
+              [global::System.ObsoleteAttribute]
+              Texture,
           }
           #pragma warning restore CS9113
           """;
@@ -103,14 +114,14 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var classDeclarationSyntax = (ClassDeclarationSyntax)context.Node;
 
         // Go through all attributes of the class.
-        foreach (AttributeListSyntax attributeListSyntax in classDeclarationSyntax.AttributeLists)
-        foreach (AttributeSyntax attributeSyntax in attributeListSyntax.Attributes)
+        foreach (var attributeListSyntax in classDeclarationSyntax.AttributeLists)
+        foreach (var attributeSyntax in attributeListSyntax.Attributes)
         {
             if (ModelExtensions.GetSymbolInfo(context.SemanticModel, attributeSyntax).Symbol is not IMethodSymbol
                 attributeSymbol)
                 continue; // if we can't get the symbol, ignore it
 
-            string attributeName = attributeSymbol.ContainingType.ToDisplayString();
+            var attributeName = attributeSymbol.ContainingType.ToDisplayString();
 
             // Check the full name of the [Report] attribute.
             if (attributeName == $"{Namespace}.{AttributeName}")
@@ -187,7 +198,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
             // Generate pipeline layout method
             members.Add(GenerateGetPipelineLayoutMethod(bindGroups.Keys.OrderBy(k => k), className));
-            
+
             // Generate shader entry points method
             members.Add(GenerateGetShaderEntryPointsMethod(entryPoints));
 
@@ -232,7 +243,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(BindGroupLayout),
             methodName
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
 
         // Add parameters for customizable options
         var parameters = new List<ParameterSyntax>
@@ -244,31 +255,54 @@ public class WgslShaderGenerator : IIncrementalGenerator
         // Add specific parameters for each binding entry
         foreach (var entry in bindGroup.Entries)
         {
-            if (entry.BindingType == BindingType.UniformBuffer || entry.BindingType == BindingType.StorageBuffer)
+            switch (entry.BindingType)
             {
-                // Add hasDynamicOffset parameter for buffers
-                parameters.Add(Parameter(Identifier($"{entry.Name}HasDynamicOffset"))
-                    .WithType(ParseTypeName("bool"))
-                    .WithDefault(EqualsValueClause(ParseExpression("false"))));
-            }
-            else if (entry.BindingType == BindingType.Texture)
-            {
-                // Add multisampled parameter for textures
-                parameters.Add(Parameter(Identifier($"{entry.Name}Multisampled"))
-                    .WithType(ParseTypeName("bool"))
-                    .WithDefault(EqualsValueClause(ParseExpression("false"))));
+                case BindingType.Uniform or BindingType.ReadOnlyStorage or BindingType.Storage:
+                    // Add hasDynamicOffset parameter for buffers
+                    parameters.Add(Parameter(Identifier($"{entry.Name}HasDynamicOffset"))
+                        .WithType(ParseTypeName("bool"))
+                        .WithDefault(EqualsValueClause(ParseExpression("false"))));
+                    break;
+                case BindingType.Texture:
+                {
+                    // Add multisampled parameter for textures
+                    parameters.Add(Parameter(Identifier($"{entry.Name}Multisampled"))
+                        .WithType(ParseTypeName("bool"))
+                        .WithDefault(EqualsValueClause(ParseExpression("false"))));
 
-                // Add viewDimension - determine default from type name
-                string defaultDimension = "TextureViewDimension.Dimension2D"; // Default to 2D
-                if (entry.TypeName.Contains("3d"))
-                    defaultDimension = "TextureViewDimension.Dimension3D";
-                else if (entry.TypeName.Contains("1d"))
-                    defaultDimension = "TextureViewDimension.Dimension1D";
+                    // Add viewDimension - determine default from type name
+                    var defaultDimension = "TextureViewDimension.Dimension2D"; // Default to 2D
+                    if (entry.TypeName.Contains("3d"))
+                        defaultDimension = "TextureViewDimension.Dimension3D";
+                    else if (entry.TypeName.Contains("1d"))
+                        defaultDimension = "TextureViewDimension.Dimension1D";
+                    else if (entry.TypeName.Contains("2d_array"))
+                        defaultDimension = "TextureViewDimension.Dimension2DArray";
+                    else if (entry.TypeName.Contains("cube_array"))
+                        defaultDimension = "TextureViewDimension.DimensionCubeArray";
+                    else if (entry.TypeName.Contains("cube"))
+                        defaultDimension = "TextureViewDimension.DimensionCube";
 
-                parameters.Add(Parameter(Identifier($"{entry.Name}ViewDimension"))
-                    .WithType(ParseTypeName("TextureViewDimension"))
-                    .WithDefault(EqualsValueClause(ParseExpression(defaultDimension))));
+                    parameters.Add(Parameter(Identifier($"{entry.Name}ViewDimension"))
+                        .WithType(ParseTypeName("TextureViewDimension"))
+                        .WithDefault(EqualsValueClause(ParseExpression(defaultDimension))));
+                    break;
+                }
+                case BindingType.Filtering or BindingType.NonFiltering or BindingType.Comparison:
+                    // there are none! throw new NotImplementedException("Sry I haven't implemented Samplers");
+                    break;
             }
+        }
+        
+        // optional parameters with default values
+        foreach (var entry in bindGroup.Entries)
+        {
+            if (entry.BindingType is not (BindingType.Uniform or BindingType.ReadOnlyStorage or BindingType.Storage))
+                continue;
+            // Add minSize parameter for buffers
+            parameters.Add(Parameter(Identifier($"{entry.Name}MinSize"))
+                .WithType(ParseTypeName("ulong?"))
+                .WithDefault(EqualsValueClause(ParseExpression("null"))));
         }
 
         // Add label parameter
@@ -278,25 +312,20 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
         methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
 
-        // Method body
-        var statements = new List<StatementSyntax>();
-
         // Create entries array
         var entries = new List<string>();
         foreach (var entry in bindGroup.Entries)
         {
-            string entryCode = entry.BindingType switch
+            var shaderStage = "ShaderStage.Vertex | ShaderStage.Fragment";
+            var entryCode = entry.BindingType switch
             {
-                BindingType.UniformBuffer =>
-                    $"{CreateLayoutEntries}.Buffer({entry.Binding}, ShaderStage.Vertex | ShaderStage.Fragment, " +
-                    $"BufferBindingType.Uniform, (ulong)Marshal.SizeOf<{entry.TypeName}>(), {entry.Name}HasDynamicOffset)",
-                BindingType.StorageBuffer =>
-                    $"{CreateLayoutEntries}.Buffer({entry.Binding}, ShaderStage.Vertex | ShaderStage.Fragment, " +
-                    $"BufferBindingType.Storage, (ulong)Marshal.SizeOf<{entry.TypeName}>(), {entry.Name}HasDynamicOffset)",
-                BindingType.Sampler =>
-                    $"{CreateLayoutEntries}.Sampler({entry.Binding}, ShaderStage.Fragment, SamplerBindingType.Filtering)",
+                BindingType.Storage or BindingType.ReadOnlyStorage or BindingType.Uniform =>
+                    $"{CreateLayoutEntries}.Buffer({entry.Binding}, {shaderStage}, " +
+                    $"BufferBindingType.{entry.BindingType}, {entry.Name}MinSize ?? (ulong)Marshal.SizeOf<{entry.TypeName}>(), {entry.Name}HasDynamicOffset)",
+                BindingType.Filtering or BindingType.NonFiltering or BindingType.Comparison =>
+                    $"{CreateLayoutEntries}.Sampler({entry.Binding}, {shaderStage}, SamplerBindingType.{entry.BindingType})",
                 BindingType.Texture =>
-                    $"{CreateLayoutEntries}.Texture({entry.Binding}, ShaderStage.Fragment, TextureSampleType.Float, " +
+                    $"{CreateLayoutEntries}.Texture({entry.Binding}, {shaderStage}, TextureSampleType.{entry.TextureFormat}, " +
                     $"{entry.Name}ViewDimension, {entry.Name}Multisampled)",
                 _ => throw new NotImplementedException($"Binding type {entry.BindingType} not implemented")
             };
@@ -305,9 +334,8 @@ public class WgslShaderGenerator : IIncrementalGenerator
         }
 
         var entriesArray = $"[{string.Join(",\r\n", entries)}]";
-        statements.Add(ReturnStatement(ParseExpression($"device.CreateBindGroupLayout({entriesArray}, label: label)")));
-
-        return methodDeclaration.WithBody(Block(statements));
+        return methodDeclaration.WithBody(
+            Block(ReturnStatement(ParseExpression($"device.CreateBindGroupLayout({entriesArray}, label: label)"))));
     }
 
     private MemberDeclarationSyntax GenerateCreateBindGroupMethod(uint groupId, BindGroupInfo bindGroup,
@@ -318,7 +346,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(BindGroup),
             methodName
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
 
         // Add parameters
         var parameters = new List<ParameterSyntax>
@@ -334,13 +362,12 @@ public class WgslShaderGenerator : IIncrementalGenerator
         {
             switch (entry.BindingType)
             {
-                case BindingType.UniformBuffer:
-                case BindingType.StorageBuffer:
+                case BindingType.Uniform or BindingType.ReadOnlyStorage or BindingType.Storage:
                     parameters.Add(Parameter(Identifier($"{entry.Name}Buffer"))
                         .WithType(ParseTypeName("BufferPtr")));
                     break;
 
-                case BindingType.Sampler:
+                case BindingType.Filtering or BindingType.NonFiltering or BindingType.Comparison:
                     parameters.Add(Parameter(Identifier(entry.Name))
                         .WithType(ParseTypeName("SamplerPtr")));
                     break;
@@ -355,17 +382,15 @@ public class WgslShaderGenerator : IIncrementalGenerator
         // Add optional parameters with default values after all required parameters
         foreach (var entry in bindGroup.Entries)
         {
-            if (entry.BindingType == BindingType.UniformBuffer || entry.BindingType == BindingType.StorageBuffer)
-            {
-                // Add offset and size parameters for buffers
-                parameters.Add(Parameter(Identifier($"{entry.Name}Offset"))
-                    .WithType(ParseTypeName("ulong"))
-                    .WithDefault(EqualsValueClause(ParseExpression("0"))));
-
-                parameters.Add(Parameter(Identifier($"{entry.Name}Size"))
-                    .WithType(ParseTypeName("ulong?"))
-                    .WithDefault(EqualsValueClause(ParseExpression("null"))));
-            }
+            if (entry.BindingType is not (BindingType.Uniform or BindingType.ReadOnlyStorage or BindingType.Storage))
+                continue;
+            // Add offset and size parameters for buffers
+            parameters.Add(Parameter(Identifier($"{entry.Name}Offset"))
+                .WithType(ParseTypeName("ulong"))
+                .WithDefault(EqualsValueClause(ParseExpression("0"))));
+            parameters.Add(Parameter(Identifier($"{entry.Name}Size"))
+                .WithType(ParseTypeName("ulong?"))
+                .WithDefault(EqualsValueClause(ParseExpression("null"))));
         }
 
         // Add label parameter
@@ -375,19 +400,16 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
         methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
 
-        // Method body
-        var statements = new List<StatementSyntax>();
-
         // Create bindGroup entries
         var entries = new List<string>();
         foreach (var entry in bindGroup.Entries)
         {
-            string entryCode = entry.BindingType switch
+            var entryCode = entry.BindingType switch
             {
-                BindingType.UniformBuffer or BindingType.StorageBuffer =>
+                BindingType.Uniform or BindingType.Storage or BindingType.ReadOnlyStorage =>
                     $"{BindGroupEntries}.Buffer({entry.Binding}, {entry.Name}Buffer, {entry.Name}Offset, {entry.Name}Size ?? (ulong)Marshal.SizeOf<{entry.TypeName}>())",
 
-                BindingType.Sampler =>
+                BindingType.Filtering or BindingType.NonFiltering or BindingType.Comparison =>
                     $"{BindGroupEntries}.Sampler({entry.Binding}, {entry.Name})",
 
                 BindingType.Texture =>
@@ -400,10 +422,9 @@ public class WgslShaderGenerator : IIncrementalGenerator
         }
 
         var entriesArray = $"[{string.Join(",\r\n", entries)}]";
-        statements.Add(
-            ReturnStatement(ParseExpression($"device.CreateBindGroup(layout, {entriesArray}, label: label)")));
 
-        return methodDeclaration.WithBody(Block(statements));
+        return methodDeclaration.WithBody(Block(
+            ReturnStatement(ParseExpression($"device.CreateBindGroup(layout, {entriesArray}, label: label)"))));
     }
 
     private MemberDeclarationSyntax GenerateVertexBufferLayoutMethod(
@@ -413,10 +434,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(VertexBufferLayout),
             "GetVertexBufferLayout"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
-
-        // Method body
-        var statements = new List<StatementSyntax>();
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
 
         var vertexAttributesCode = new List<string>();
         foreach (var attr in vertexAttributes)
@@ -426,11 +444,9 @@ public class WgslShaderGenerator : IIncrementalGenerator
                 $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})), shaderLocation: {attr.Location})");
         }
 
-        statements.Add(ParseStatement(
+        return methodDeclaration.WithBody(Block(ParseStatement(
             $"return new {VertexBufferLayout}((uint)Marshal.SizeOf<{vertexAttributes[0].StructName}>(), VertexStepMode.Vertex, " +
-            $"[{string.Join(",\r\n", vertexAttributesCode)}]);"));
-
-        return methodDeclaration.WithBody(Block(statements));
+            $"[{string.Join(",\r\n", vertexAttributesCode)}]);")));
     }
 
     private MemberDeclarationSyntax GenerateInstanceBufferLayoutMethod(
@@ -440,10 +456,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(VertexBufferLayout),
             "GetInstanceBufferLayout"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
-
-        // Method body
-        var statements = new List<StatementSyntax>();
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
 
         var instanceAttributesCode = new List<string>();
         foreach (var attr in instanceAttributes)
@@ -453,11 +466,9 @@ public class WgslShaderGenerator : IIncrementalGenerator
                 $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})), shaderLocation: {attr.Location})");
         }
 
-        statements.Add(ParseStatement(
+        return methodDeclaration.WithBody(Block(ParseStatement(
             $"return new {VertexBufferLayout}((uint)Marshal.SizeOf<{instanceAttributes[0].StructName}>(), VertexStepMode.Instance, " +
-            $"[{string.Join(",\r\n", instanceAttributesCode)}]);"));
-
-        return methodDeclaration.WithBody(Block(statements));
+            $"[{string.Join(",\r\n", instanceAttributesCode)}]);")));
     }
 
     private MemberDeclarationSyntax GenerateGetPipelineLayoutMethod(IEnumerable<uint> groupIds, string className)
@@ -487,7 +498,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
                 ParseTypeName(PipelineLayout),
                 "CreatePipelineLayout"
-            ).AddModifiers(Token(SyntaxKind.PublicKeyword))
+            ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
             .WithParameterList(ParameterList(SeparatedList(parameters)));
 
         // Create array of layouts
@@ -502,18 +513,15 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName("(string VertexEntryPoint, string FragmentEntryPoint)"),
             "GetShaderEntryPoints"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
 
         // Method body
-        var statements = new List<StatementSyntax>();
 
         // Return statement
-        string vertexEntry = entryPoints.VertexEntryPoint ?? "null";
-        string fragmentEntry = entryPoints.FragmentEntryPoint ?? "null";
+        var vertexEntry = entryPoints.VertexEntryPoint ?? "null";
+        var fragmentEntry = entryPoints.FragmentEntryPoint ?? "null";
 
-        statements.Add(ParseStatement($"return (\"{vertexEntry}\", \"{fragmentEntry}\");"));
-
-        return methodDeclaration.WithBody(Block(statements));
+        return methodDeclaration.WithBody(Block(ParseStatement($"return (\"{vertexEntry}\", \"{fragmentEntry}\");")));
     }
 
     private MemberDeclarationSyntax GenerateCreateShaderModuleMethod(string className, ShaderEntryInfo entryPoints)
@@ -523,7 +531,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName("ShaderModulePtr"),
             "CreateShaderModule"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword));
+        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
 
         // Add parameters
         var parameters = new List<ParameterSyntax>
@@ -531,13 +539,11 @@ public class WgslShaderGenerator : IIncrementalGenerator
             Parameter(Identifier("device"))
                 .WithType(ParseTypeName(Device)),
             Parameter(Identifier("pipelineLayout"))
-                .WithType(ParseTypeName(PipelineLayout))
+                .WithType(ParseTypeName(PipelineLayout)),
+            Parameter(Identifier("label"))
+                .WithType(ParseTypeName("string"))
+                .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::ShaderModule\"")))
         };
-
-        // Add label parameter
-        parameters.Add(Parameter(Identifier("label"))
-            .WithType(ParseTypeName("string"))
-            .WithDefault(EqualsValueClause(ParseExpression($"\"{className}::ShaderModule\""))));
 
         methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
 

@@ -41,33 +41,42 @@ public class TypeMapper
 
     private string MapString(string a)
     {
-        if (KnownTypes.Contains(a)) return a;
+        if (KnownTypes.Contains(a) || UserTypes.Contains(a)) return a;
         return a switch
         {
-            "vec2" => $"vec2<f32>",
-            "vec3" => $"vec3<f32>",
-            "vec4" => $"vec4<f32>",
-            "mat2" => $"mat2x2<f32>",
-            "mat3" => $"mat3x3<f32>",
-            "mat4" => $"mat4x4<f32>",
-            "ivec2" => $"vec2<i32>",
-            "ivec3" => $"vec3<i32>",
-            "ivec4" => $"vec4<i32>",
-            "uvec2" => $"vec2<u32>",
-            "uvec3" => $"vec3<u32>",
-            "uvec4" => $"vec4<u32>",
+            "vec2" => "vec2<f32>",
+            "vec3" => "vec3<f32>",
+            "vec4" => "vec4<f32>",
+            "mat2" => "mat2x2<f32>",
+            "mat3" => "mat3x3<f32>",
+            "mat4" => "mat4x4<f32>",
+            "ivec2" => "vec2<i32>",
+            "ivec3" => "vec3<i32>",
+            "ivec4" => "vec4<i32>",
+            "uvec2" => "vec2<u32>",
+            "uvec3" => "vec3<u32>",
+            "uvec4" => "vec4<u32>",
             "var" => "var", // att let promotion pass
             _ => throw new NotImplementedException($"Type {a} is not implemented.")
         };
     }
+
+    public HashSet<string> UserTypes { get; } = [];
 
     public HashSet<string> KnownTypes { get; } =
     [
         "f32", "i32", "u32", "f16",
 
         "AbstractInt", "AbstractFloat",
+
         "vec2i", "vec3i", "vec4i", "vec2u", "vec3u", "vec4u", "vec2f", "vec3f", "vec4f",
+        "vec2<f32>", "vec3<f32>", "vec4<f32>",
+        "vec2<i32>", "vec3<i32>", "vec4<i32>",
+        "vec2<u32>", "vec3<u32>", "vec4<u32>",
+
         "mat2x2f", "mat2x3f", "mat2x4f", "mat3x2f", "mat3x3f", "mat3x4f", "mat4x2f", "mat4x3f", "mat4x4f",
+        "mat2x2<f32>", "mat2x3<f32>", "mat2x4<f32>", "mat3x2<f32>", "mat3x3<f32>", "mat3x4<f32>", "mat4x2<f32>",
+        "mat4x3<f32>", "mat4x4<f32>",
 
         "texture_1d", "texture_2d", "texture_2d_array", "texture_3d", "texture_cube", "texture_cube_array",
         "texture_multisampled_2d", "texture_storage_1d", "texture_storage_2d", "texture_storage_2d_array",
