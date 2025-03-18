@@ -1,16 +1,17 @@
-﻿using System.Numerics;
+﻿using GlmSharp;
+using static Client.Wgsl.DeferredShader;
 
 namespace Client.Renderer;
 
 internal class SceneLights
 {
     public u32 LightCount => (u32)_lightData.Length;
-    public ReadOnlySpan<DeferredShader.LightData> LightData => _lightData;
+    public ReadOnlySpan<LightData> LightData => _lightData;
 
     private f32 _time;
 
-    private readonly DeferredShader.LightData[] _lightData =
-        new DeferredShader.LightData[8];
+    private readonly LightData[] _lightData =
+        new LightData[8];
 
     public SceneLights() => Update();
 
@@ -73,17 +74,16 @@ internal class SceneLights
             col: (1, 1, 1),
             intensity: 2, radius: 10
         );
-        return;
-
-        static DeferredShader.LightData Light(f32 x, f32 y, f32 z, (f32 r, f32 g, f32 b) col,
-            f32 intensity, f32 radius)
-            => new()
-            {
-                Position = new Vector4(x, y, z, 1),
-                Color = new Vector3(col.r, col.g, col.b) * intensity,
-                Radius = radius
-            };
     }
+
+    private static LightData Light(f32 x, f32 y, f32 z, (f32 r, f32 g, f32 b) col,
+        f32 intensity, f32 radius)
+        => new()
+        {
+            Position = new vec4(x, y, z, 1),
+            Color = new vec3(col.r, col.g, col.b) * intensity,
+            Radius = radius
+        };
 
     public void Animate(f32 deltaTime)
     {

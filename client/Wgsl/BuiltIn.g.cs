@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using GlmSharp;
 #pragma warning disable CS8981 // The type name only contains lower-cased ascii characters. Such names may become reserved for the language.
 
-namespace Client.Renderer;
+namespace Client.Wgsl;
 
 using AbstractInt = System.Int32;
 using AbstractFloat = System.Single;
@@ -693,23 +693,23 @@ public partial class BuiltIn
     // fn textureDimensions(t: T) -> u32
     public static u32 textureDimensions<T>(T t) => default!;
     // fn textureDimensions(t: T, level: L) -> u32
-    public static u32 textureDimensions<T>(T t, u32 level = default!) => default!;
+    public static u32 textureDimensions<T>(T t, u32 level/* = default!*/) => default!;
     // fn textureDimensions(t: T) -> vec2<u32>
     // public static vec2u textureDimensions(f32 t) => default!;
     // public static vec2u textureDimensions(i32 t) => default!;
     // public static vec2u textureDimensions(u32 t) => default!;
     // fn textureDimensions(t: T, level: L) -> vec2<u32>
-    // public static vec2u textureDimensions(f32 t, u32 level = default!) => default!;
-    // public static vec2u textureDimensions(i32 t, u32 level = default!) => default!;
-    // public static vec2u textureDimensions(u32 t, u32 level = default!) => default!;
+    // public static vec2u textureDimensions(f32 t, u32 level/* = default!*/) => default!;
+    // public static vec2u textureDimensions(i32 t, u32 level/* = default!*/) => default!;
+    // public static vec2u textureDimensions(u32 t, u32 level/* = default!*/) => default!;
     // fn textureDimensions(t: T) -> vec3<u32>
     public static vec3u textureDimensions(f32 t) => default!;
     public static vec3u textureDimensions(i32 t) => default!;
     public static vec3u textureDimensions(u32 t) => default!;
     // fn textureDimensions(t: T, level: L) -> vec3<u32>
-    public static vec3u textureDimensions(f32 t, u32 level = default!) => default!;
-    public static vec3u textureDimensions(i32 t, u32 level = default!) => default!;
-    public static vec3u textureDimensions(u32 t, u32 level = default!) => default!;
+    public static vec3u textureDimensions(f32 t, u32 level/* = default!*/) => default!;
+    public static vec3u textureDimensions(i32 t, u32 level/* = default!*/) => default!;
+    public static vec3u textureDimensions(u32 t, u32 level/* = default!*/) => default!;
     // fn textureGather(component: C, t: texture_2d<ST>, s: sampler, coords: vec2<f32>) -> vec4<ST>
     public static vec4f textureGather<C, VM1>(C component, texture_2d<f32> t, sampler s, VM1 coords) => default!;
     public static vec4i textureGather<C, VM1>(C component, texture_2d<i32> t, sampler s, VM1 coords) => default!;
@@ -719,21 +719,21 @@ public partial class BuiltIn
     public static vec4i textureGather<C, VM1, VM2>(C component, texture_2d<i32> t, sampler s, VM1 coords, VM2 offset) => default!;
     public static vec4u textureGather<C, VM1, VM2>(C component, texture_2d<u32> t, sampler s, VM1 coords, VM2 offset) => default!;
     // fn textureGather(component: C, t: texture_2d_array<ST>, s: sampler, coords: vec2<f32>, array_index: A) -> vec4<ST>
-    public static vec4f textureGather<C, VM1>(C component, texture_2d_array<f32> t, sampler s, VM1 coords, u32 array_index = default!) => default!;
-    public static vec4i textureGather<C, VM1>(C component, texture_2d_array<i32> t, sampler s, VM1 coords, u32 array_index = default!) => default!;
-    public static vec4u textureGather<C, VM1>(C component, texture_2d_array<u32> t, sampler s, VM1 coords, u32 array_index = default!) => default!;
+    public static vec4f textureGather<C, VM1>(C component, texture_2d_array<f32> t, sampler s, VM1 coords, u32 array_index/* = default!*/) => default!;
+    public static vec4i textureGather<C, VM1>(C component, texture_2d_array<i32> t, sampler s, VM1 coords, u32 array_index/* = default!*/) => default!;
+    public static vec4u textureGather<C, VM1>(C component, texture_2d_array<u32> t, sampler s, VM1 coords, u32 array_index/* = default!*/) => default!;
     // fn textureGather(component: C, t: texture_2d_array<ST>, s: sampler, coords: vec2<f32>, array_index: A, offset: vec2<i32>) -> vec4<ST>
-    public static vec4f textureGather<C, VM1, VM2>(C component, texture_2d_array<f32> t, sampler s, VM1 coords, u32 array_index = default!, VM2 offset = default!) => default!;
-    public static vec4i textureGather<C, VM1, VM2>(C component, texture_2d_array<i32> t, sampler s, VM1 coords, u32 array_index = default!, VM2 offset = default!) => default!;
-    public static vec4u textureGather<C, VM1, VM2>(C component, texture_2d_array<u32> t, sampler s, VM1 coords, u32 array_index = default!, VM2 offset = default!) => default!;
+    public static vec4f textureGather<C, VM1, VM2>(C component, texture_2d_array<f32> t, sampler s, VM1 coords, u32 array_index/* = default!*/, VM2 offset/* = default!*/) => default!;
+    public static vec4i textureGather<C, VM1, VM2>(C component, texture_2d_array<i32> t, sampler s, VM1 coords, u32 array_index/* = default!*/, VM2 offset/* = default!*/) => default!;
+    public static vec4u textureGather<C, VM1, VM2>(C component, texture_2d_array<u32> t, sampler s, VM1 coords, u32 array_index/* = default!*/, VM2 offset/* = default!*/) => default!;
     // fn textureGather(component: C, t: texture_cube<ST>, s: sampler, coords: vec3<f32>) -> vec4<ST>
     public static vec4f textureGather<C, VM1>(C component, texture_cube<f32> t, sampler s, VM1 coords) => default!;
     public static vec4i textureGather<C, VM1>(C component, texture_cube<i32> t, sampler s, VM1 coords) => default!;
     public static vec4u textureGather<C, VM1>(C component, texture_cube<u32> t, sampler s, VM1 coords) => default!;
     // fn textureGather(component: C, t: texture_cube_array<ST>, s: sampler, coords: vec3<f32>, array_index: A) -> vec4<ST>
-    public static vec4f textureGather<C, VM1>(C component, texture_cube_array<f32> t, sampler s, VM1 coords, u32 array_index = default!) => default!;
-    public static vec4i textureGather<C, VM1>(C component, texture_cube_array<i32> t, sampler s, VM1 coords, u32 array_index = default!) => default!;
-    public static vec4u textureGather<C, VM1>(C component, texture_cube_array<u32> t, sampler s, VM1 coords, u32 array_index = default!) => default!;
+    public static vec4f textureGather<C, VM1>(C component, texture_cube_array<f32> t, sampler s, VM1 coords, u32 array_index/* = default!*/) => default!;
+    public static vec4i textureGather<C, VM1>(C component, texture_cube_array<i32> t, sampler s, VM1 coords, u32 array_index/* = default!*/) => default!;
+    public static vec4u textureGather<C, VM1>(C component, texture_cube_array<u32> t, sampler s, VM1 coords, u32 array_index/* = default!*/) => default!;
     // fn textureGather(t: texture_depth_2d, s: sampler, coords: vec2<f32>) -> vec4<f32>
     public static vec4f textureGather<VM0>(texture_depth_2d t, sampler s, VM0 coords) => default!;
     // fn textureGather(t: texture_depth_2d, s: sampler, coords: vec2<f32>, offset: vec2<i32>) -> vec4<f32>
@@ -741,11 +741,11 @@ public partial class BuiltIn
     // fn textureGather(t: texture_depth_cube, s: sampler, coords: vec3<f32>) -> vec4<f32>
     public static vec4f textureGather<VM0>(texture_depth_cube t, sampler s, VM0 coords) => default!;
     // fn textureGather(t: texture_depth_2d_array, s: sampler, coords: vec2<f32>, array_index: A) -> vec4<f32>
-    public static vec4f textureGather<VM0>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index = default!) => default!;
+    public static vec4f textureGather<VM0>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index/* = default!*/) => default!;
     // fn textureGather(t: texture_depth_2d_array, s: sampler, coords: vec2<f32>, array_index: A, offset: vec2<i32>) -> vec4<f32>
-    public static vec4f textureGather<VM0, VM1>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index = default!, VM1 offset = default!) => default!;
+    public static vec4f textureGather<VM0, VM1>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureGather(t: texture_depth_cube_array, s: sampler, coords: vec3<f32>, array_index: A) -> vec4<f32>
-    public static vec4f textureGather<VM0>(texture_depth_cube_array t, sampler s, VM0 coords, u32 array_index = default!) => default!;
+    public static vec4f textureGather<VM0>(texture_depth_cube_array t, sampler s, VM0 coords, u32 array_index/* = default!*/) => default!;
     // fn gather_x_components(c: vec2<f32>) -> vec4<f32>
     public static vec4f gather_x_components<VM0>(VM0 c) => default!;
     // fn gather_y_components(c: vec2<f32>) -> vec4<f32>
@@ -759,39 +759,39 @@ public partial class BuiltIn
     // fn textureGatherCompare(t: texture_depth_2d, s: sampler_comparison, coords: vec2<f32>, depth_ref: f32, offset: vec2<i32>) -> vec4<f32>
     public static vec4f textureGatherCompare<VM0, VM1>(texture_depth_2d t, sampler_comparison s, VM0 coords, f32 depth_ref, VM1 offset) => default!;
     // fn textureGatherCompare(t: texture_depth_2d_array, s: sampler_comparison, coords: vec2<f32>, array_index: A, depth_ref: f32) -> vec4<f32>
-    public static vec4f textureGatherCompare<VM0>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!) => default!;
+    public static vec4f textureGatherCompare<VM0>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/) => default!;
     // fn textureGatherCompare(t: texture_depth_2d_array, s: sampler_comparison, coords: vec2<f32>, array_index: A, depth_ref: f32, offset: vec2<i32>) -> vec4<f32>
-    public static vec4f textureGatherCompare<VM0, VM1>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!, VM1 offset = default!) => default!;
+    public static vec4f textureGatherCompare<VM0, VM1>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureGatherCompare(t: texture_depth_cube, s: sampler_comparison, coords: vec3<f32>, depth_ref: f32) -> vec4<f32>
     public static vec4f textureGatherCompare<VM0>(texture_depth_cube t, sampler_comparison s, VM0 coords, f32 depth_ref) => default!;
     // fn textureGatherCompare(t: texture_depth_cube_array, s: sampler_comparison, coords: vec3<f32>, array_index: A, depth_ref: f32) -> vec4<f32>
-    public static vec4f textureGatherCompare<VM0>(texture_depth_cube_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!) => default!;
+    public static vec4f textureGatherCompare<VM0>(texture_depth_cube_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/) => default!;
     // fn gather_depth_compare(c: vec2<f32>, depth_ref: f32) -> vec4<f32>
     public static vec4f gather_depth_compare<VM0>(VM0 c, f32 depth_ref) => default!;
     // fn textureLoad(t: texture_1d<ST>, coords: C, level: L) -> vec4<ST>
-    public static vec4f textureLoad<C>(texture_1d<f32> t, C coords, u32 level = default!) => default!;
-    public static vec4i textureLoad<C>(texture_1d<i32> t, C coords, u32 level = default!) => default!;
-    public static vec4u textureLoad<C>(texture_1d<u32> t, C coords, u32 level = default!) => default!;
+    public static vec4f textureLoad<C>(texture_1d<f32> t, C coords, u32 level/* = default!*/) => default!;
+    public static vec4i textureLoad<C>(texture_1d<i32> t, C coords, u32 level/* = default!*/) => default!;
+    public static vec4u textureLoad<C>(texture_1d<u32> t, C coords, u32 level/* = default!*/) => default!;
     // fn textureLoad(t: texture_2d<ST>, coords: vec2<C>, level: L) -> vec4<ST>
-    public static vec4f textureLoad<VM0>(texture_2d<f32> t, VM0 coords, u32 level = default!) => default!;
-    public static vec4i textureLoad<VM0>(texture_2d<i32> t, VM0 coords, u32 level = default!) => default!;
-    public static vec4u textureLoad<VM0>(texture_2d<u32> t, VM0 coords, u32 level = default!) => default!;
+    public static vec4f textureLoad<VM0>(texture_2d<f32> t, VM0 coords, u32 level/* = default!*/) => default!;
+    public static vec4i textureLoad<VM0>(texture_2d<i32> t, VM0 coords, u32 level/* = default!*/) => default!;
+    public static vec4u textureLoad<VM0>(texture_2d<u32> t, VM0 coords, u32 level/* = default!*/) => default!;
     // fn textureLoad(t: texture_2d_array<ST>, coords: vec2<C>, array_index: A, level: L) -> vec4<ST>
-    public static vec4f textureLoad<VM0>(texture_2d_array<f32> t, VM0 coords, u32 array_index = default!, u32 level = default!) => default!;
-    public static vec4i textureLoad<VM0>(texture_2d_array<i32> t, VM0 coords, u32 array_index = default!, u32 level = default!) => default!;
-    public static vec4u textureLoad<VM0>(texture_2d_array<u32> t, VM0 coords, u32 array_index = default!, u32 level = default!) => default!;
+    public static vec4f textureLoad<VM0>(texture_2d_array<f32> t, VM0 coords, u32 array_index/* = default!*/, u32 level/* = default!*/) => default!;
+    public static vec4i textureLoad<VM0>(texture_2d_array<i32> t, VM0 coords, u32 array_index/* = default!*/, u32 level/* = default!*/) => default!;
+    public static vec4u textureLoad<VM0>(texture_2d_array<u32> t, VM0 coords, u32 array_index/* = default!*/, u32 level/* = default!*/) => default!;
     // fn textureLoad(t: texture_3d<ST>, coords: vec3<C>, level: L) -> vec4<ST>
-    public static vec4f textureLoad<VM0>(texture_3d<f32> t, VM0 coords, u32 level = default!) => default!;
-    public static vec4i textureLoad<VM0>(texture_3d<i32> t, VM0 coords, u32 level = default!) => default!;
-    public static vec4u textureLoad<VM0>(texture_3d<u32> t, VM0 coords, u32 level = default!) => default!;
+    public static vec4f textureLoad<VM0>(texture_3d<f32> t, VM0 coords, u32 level/* = default!*/) => default!;
+    public static vec4i textureLoad<VM0>(texture_3d<i32> t, VM0 coords, u32 level/* = default!*/) => default!;
+    public static vec4u textureLoad<VM0>(texture_3d<u32> t, VM0 coords, u32 level/* = default!*/) => default!;
     // fn textureLoad(t: texture_multisampled_2d<ST>, coords: vec2<C>, sample_index: S)-> vec4<ST>
     public static vec4f textureLoad<VM0, S>(texture_multisampled_2d<f32> t, VM0 coords, S sample_index) => default!;
     public static vec4i textureLoad<VM0, S>(texture_multisampled_2d<i32> t, VM0 coords, S sample_index) => default!;
     public static vec4u textureLoad<VM0, S>(texture_multisampled_2d<u32> t, VM0 coords, S sample_index) => default!;
     // fn textureLoad(t: texture_depth_2d, coords: vec2<C>, level: L) -> f32
-    public static f32 textureLoad<VM0>(texture_depth_2d t, VM0 coords, u32 level = default!) => default!;
+    public static f32 textureLoad<VM0>(texture_depth_2d t, VM0 coords, u32 level/* = default!*/) => default!;
     // fn textureLoad(t: texture_depth_2d_array, coords: vec2<C>, array_index: A, level: L) -> f32
-    public static f32 textureLoad<VM0>(texture_depth_2d_array t, VM0 coords, u32 array_index = default!, u32 level = default!) => default!;
+    public static f32 textureLoad<VM0>(texture_depth_2d_array t, VM0 coords, u32 array_index/* = default!*/, u32 level/* = default!*/) => default!;
     // fn textureLoad(t: texture_depth_multisampled_2d, coords: vec2<C>, sample_index: S)-> f32
     public static f32 textureLoad<VM0, T>(texture_depth_multisampled_2d t, VM0 coords, T sample_index) => default!;
     // public static f32 textureLoad<VM0, T>(texture_depth_multisampled_2d t, VM0 coords, T sample_index) => default!;
@@ -807,9 +807,9 @@ public partial class BuiltIn
     public static vec4i textureLoad<VM0>(texture_storage_2d<i32> t, VM0 coords) => default!;
     public static vec4u textureLoad<VM0>(texture_storage_2d<u32> t, VM0 coords) => default!;
     // fn textureLoad(t : texture_storage_2d_array<F, AM>, coords : vec2<C>, array_index : A) -> vec4<CF>
-    public static vec4f textureLoad<VM0>(texture_storage_2d_array<f32> t, VM0 coords, u32 array_index = default!) => default!;
-    public static vec4i textureLoad<VM0>(texture_storage_2d_array<i32> t, VM0 coords, u32 array_index = default!) => default!;
-    public static vec4u textureLoad<VM0>(texture_storage_2d_array<u32> t, VM0 coords, u32 array_index = default!) => default!;
+    public static vec4f textureLoad<VM0>(texture_storage_2d_array<f32> t, VM0 coords, u32 array_index/* = default!*/) => default!;
+    public static vec4i textureLoad<VM0>(texture_storage_2d_array<i32> t, VM0 coords, u32 array_index/* = default!*/) => default!;
+    public static vec4u textureLoad<VM0>(texture_storage_2d_array<u32> t, VM0 coords, u32 array_index/* = default!*/) => default!;
     // fn textureLoad(t : texture_storage_3d<F, AM>, coords : vec3<C>) -> vec4<CF>
     public static vec4f textureLoad<VM0>(texture_storage_3d<f32> t, VM0 coords) => default!;
     public static vec4i textureLoad<VM0>(texture_storage_3d<i32> t, VM0 coords) => default!;
@@ -827,9 +827,9 @@ public partial class BuiltIn
     // fn textureSample(t: texture_2d<f32>, s: sampler, coords: vec2<f32>, offset: vec2<i32>) -> vec4<f32>
     public static vec4f textureSample<VM0, VM1>(texture_2d<f32> t, sampler s, VM0 coords, VM1 offset) => default!;
     // fn textureSample(t: texture_2d_array<f32>, s: sampler, coords: vec2<f32>, array_index: A) -> vec4<f32>
-    public static vec4f textureSample<VM0>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index = default!) => default!;
+    public static vec4f textureSample<VM0>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/) => default!;
     // fn textureSample(t: texture_2d_array<f32>, s: sampler, coords: vec2<f32>, array_index: A, offset: vec2<i32>) -> vec4<f32>
-    public static vec4f textureSample<VM0, VM1>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, VM1 offset = default!) => default!;
+    public static vec4f textureSample<VM0, VM1>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSample(t: T, s: sampler, coords: vec3<f32>) -> vec4<f32>
     public static vec4f textureSample<VM1>(f32 t, sampler s, VM1 coords) => default!;
     public static vec4f textureSample<VM1>(i32 t, sampler s, VM1 coords) => default!;
@@ -837,27 +837,27 @@ public partial class BuiltIn
     // fn textureSample(t: texture_3d<f32>, s: sampler, coords: vec3<f32>, offset: vec3<i32>) -> vec4<f32>
     public static vec4f textureSample<VM0, VM1>(texture_3d<f32> t, sampler s, VM0 coords, VM1 offset) => default!;
     // fn textureSample(t: texture_cube_array<f32>, s: sampler, coords: vec3<f32>, array_index: A) -> vec4<f32>
-    public static vec4f textureSample<VM0>(texture_cube_array<f32> t, sampler s, VM0 coords, u32 array_index = default!) => default!;
+    public static vec4f textureSample<VM0>(texture_cube_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/) => default!;
     // fn textureSample(t: texture_depth_2d, s: sampler, coords: vec2<f32>) -> f32
     public static f32 textureSample<VM0>(texture_depth_2d t, sampler s, VM0 coords) => default!;
     // fn textureSample(t: texture_depth_2d, s: sampler, coords: vec2<f32>, offset: vec2<i32>) -> f32
     public static f32 textureSample<VM0, VM1>(texture_depth_2d t, sampler s, VM0 coords, VM1 offset) => default!;
     // fn textureSample(t: texture_depth_2d_array, s: sampler, coords: vec2<f32>, array_index: A) -> f32
-    public static f32 textureSample<VM0>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index = default!) => default!;
+    public static f32 textureSample<VM0>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index/* = default!*/) => default!;
     // fn textureSample(t: texture_depth_2d_array, s: sampler, coords: vec2<f32>, array_index: A, offset: vec2<i32>) -> f32
-    public static f32 textureSample<VM0, VM1>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index = default!, VM1 offset = default!) => default!;
+    public static f32 textureSample<VM0, VM1>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSample(t: texture_depth_cube, s: sampler, coords: vec3<f32>) -> f32
     public static f32 textureSample<VM0>(texture_depth_cube t, sampler s, VM0 coords) => default!;
     // fn textureSample(t: texture_depth_cube_array, s: sampler, coords: vec3<f32>, array_index: A) -> f32
-    public static f32 textureSample<VM0>(texture_depth_cube_array t, sampler s, VM0 coords, u32 array_index = default!) => default!;
+    public static f32 textureSample<VM0>(texture_depth_cube_array t, sampler s, VM0 coords, u32 array_index/* = default!*/) => default!;
     // fn textureSampleBias(t: texture_2d<f32>, s: sampler, coords: vec2<f32>, bias: f32) -> vec4<f32>
     public static vec4f textureSampleBias<VM0>(texture_2d<f32> t, sampler s, VM0 coords, f32 bias) => default!;
     // fn textureSampleBias(t: texture_2d<f32>, s: sampler, coords: vec2<f32>, bias: f32, offset: vec2<i32>) -> vec4<f32>
     public static vec4f textureSampleBias<VM0, VM1>(texture_2d<f32> t, sampler s, VM0 coords, f32 bias, VM1 offset) => default!;
     // fn textureSampleBias(t: texture_2d_array<f32>, s: sampler, coords: vec2<f32>, array_index: A, bias: f32) -> vec4<f32>
-    public static vec4f textureSampleBias<VM0>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, f32 bias = default!) => default!;
+    public static vec4f textureSampleBias<VM0>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, f32 bias/* = default!*/) => default!;
     // fn textureSampleBias(t: texture_2d_array<f32>, s: sampler, coords: vec2<f32>, array_index: A, bias: f32, offset: vec2<i32>) -> vec4<f32>
-    public static vec4f textureSampleBias<VM0, VM1>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, f32 bias = default!, VM1 offset = default!) => default!;
+    public static vec4f textureSampleBias<VM0, VM1>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, f32 bias/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSampleBias(t: T, s: sampler, coords: vec3<f32>, bias: f32) -> vec4<f32>
     public static vec4f textureSampleBias<VM1>(f32 t, sampler s, VM1 coords, f32 bias) => default!;
     public static vec4f textureSampleBias<VM1>(i32 t, sampler s, VM1 coords, f32 bias) => default!;
@@ -865,39 +865,39 @@ public partial class BuiltIn
     // fn textureSampleBias(t: texture_3d<f32>, s: sampler, coords: vec3<f32>, bias: f32, offset: vec3<i32>) -> vec4<f32>
     public static vec4f textureSampleBias<VM0, VM1>(texture_3d<f32> t, sampler s, VM0 coords, f32 bias, VM1 offset) => default!;
     // fn textureSampleBias(t: texture_cube_array<f32>, s: sampler, coords: vec3<f32>, array_index: A, bias: f32) -> vec4<f32>
-    public static vec4f textureSampleBias<VM0>(texture_cube_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, f32 bias = default!) => default!;
+    public static vec4f textureSampleBias<VM0>(texture_cube_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, f32 bias/* = default!*/) => default!;
     // fn textureSampleCompare(t: texture_depth_2d, s: sampler_comparison, coords: vec2<f32>, depth_ref: f32) -> f32
     public static f32 textureSampleCompare<VM0>(texture_depth_2d t, sampler_comparison s, VM0 coords, f32 depth_ref) => default!;
     // fn textureSampleCompare(t: texture_depth_2d, s: sampler_comparison, coords: vec2<f32>, depth_ref: f32, offset: vec2<i32>) -> f32
     public static f32 textureSampleCompare<VM0, VM1>(texture_depth_2d t, sampler_comparison s, VM0 coords, f32 depth_ref, VM1 offset) => default!;
     // fn textureSampleCompare(t: texture_depth_2d_array, s: sampler_comparison, coords: vec2<f32>, array_index: A, depth_ref: f32) -> f32
-    public static f32 textureSampleCompare<VM0>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!) => default!;
+    public static f32 textureSampleCompare<VM0>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/) => default!;
     // fn textureSampleCompare(t: texture_depth_2d_array, s: sampler_comparison, coords: vec2<f32>, array_index: A, depth_ref: f32, offset: vec2<i32>) -> f32
-    public static f32 textureSampleCompare<VM0, VM1>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!, VM1 offset = default!) => default!;
+    public static f32 textureSampleCompare<VM0, VM1>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSampleCompare(t: texture_depth_cube, s: sampler_comparison, coords: vec3<f32>, depth_ref: f32) -> f32
     public static f32 textureSampleCompare<VM0>(texture_depth_cube t, sampler_comparison s, VM0 coords, f32 depth_ref) => default!;
     // fn textureSampleCompare(t: texture_depth_cube_array, s: sampler_comparison, coords: vec3<f32>, array_index: A, depth_ref: f32) -> f32
-    public static f32 textureSampleCompare<VM0>(texture_depth_cube_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!) => default!;
+    public static f32 textureSampleCompare<VM0>(texture_depth_cube_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/) => default!;
     // fn textureSampleCompareLevel(t: texture_depth_2d, s: sampler_comparison, coords: vec2<f32>, depth_ref: f32) -> f32
     public static f32 textureSampleCompareLevel<VM0>(texture_depth_2d t, sampler_comparison s, VM0 coords, f32 depth_ref) => default!;
     // fn textureSampleCompareLevel(t: texture_depth_2d, s: sampler_comparison, coords: vec2<f32>, depth_ref: f32, offset: vec2<i32>) -> f32
     public static f32 textureSampleCompareLevel<VM0, VM1>(texture_depth_2d t, sampler_comparison s, VM0 coords, f32 depth_ref, VM1 offset) => default!;
     // fn textureSampleCompareLevel(t: texture_depth_2d_array, s: sampler_comparison, coords: vec2<f32>, array_index: A, depth_ref: f32) -> f32
-    public static f32 textureSampleCompareLevel<VM0>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!) => default!;
+    public static f32 textureSampleCompareLevel<VM0>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/) => default!;
     // fn textureSampleCompareLevel(t: texture_depth_2d_array, s: sampler_comparison, coords: vec2<f32>, array_index: A, depth_ref: f32, offset: vec2<i32>) -> f32
-    public static f32 textureSampleCompareLevel<VM0, VM1>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!, VM1 offset = default!) => default!;
+    public static f32 textureSampleCompareLevel<VM0, VM1>(texture_depth_2d_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSampleCompareLevel(t: texture_depth_cube, s: sampler_comparison, coords: vec3<f32>, depth_ref: f32) -> f32
     public static f32 textureSampleCompareLevel<VM0>(texture_depth_cube t, sampler_comparison s, VM0 coords, f32 depth_ref) => default!;
     // fn textureSampleCompareLevel(t: texture_depth_cube_array, s: sampler_comparison, coords: vec3<f32>, array_index: A, depth_ref: f32) -> f32
-    public static f32 textureSampleCompareLevel<VM0>(texture_depth_cube_array t, sampler_comparison s, VM0 coords, u32 array_index = default!, f32 depth_ref = default!) => default!;
+    public static f32 textureSampleCompareLevel<VM0>(texture_depth_cube_array t, sampler_comparison s, VM0 coords, u32 array_index/* = default!*/, f32 depth_ref/* = default!*/) => default!;
     // fn textureSampleGrad(t: texture_2d<f32>, s: sampler, coords: vec2<f32>, ddx: vec2<f32>, ddy: vec2<f32>) -> vec4<f32>
     public static vec4f textureSampleGrad<VM0>(texture_2d<f32> t, sampler s, VM0 coords, VM0 ddx, VM0 ddy) => default!;
     // fn textureSampleGrad(t: texture_2d<f32>, s: sampler, coords: vec2<f32>, ddx: vec2<f32>, ddy: vec2<f32>, offset: vec2<i32>) -> vec4<f32>
     public static vec4f textureSampleGrad<VM0, VM1>(texture_2d<f32> t, sampler s, VM0 coords, VM0 ddx, VM0 ddy, VM1 offset) => default!;
     // fn textureSampleGrad(t: texture_2d_array<f32>, s: sampler, coords: vec2<f32>, array_index: A, ddx: vec2<f32>, ddy: vec2<f32>) -> vec4<f32>
-    public static vec4f textureSampleGrad<VM0>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, VM0 ddx = default!, VM0 ddy = default!) => default!;
+    public static vec4f textureSampleGrad<VM0>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, VM0 ddx/* = default!*/, VM0 ddy/* = default!*/) => default!;
     // fn textureSampleGrad(t: texture_2d_array<f32>, s: sampler, coords: vec2<f32>, array_index: A, ddx: vec2<f32>, ddy: vec2<f32>, offset: vec2<i32>) -> vec4<f32>
-    public static vec4f textureSampleGrad<VM0, VM1>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, VM0 ddx = default!, VM0 ddy = default!, VM1 offset = default!) => default!;
+    public static vec4f textureSampleGrad<VM0, VM1>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, VM0 ddx/* = default!*/, VM0 ddy/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSampleGrad(t: T, s: sampler, coords: vec3<f32>, ddx: vec3<f32>, ddy: vec3<f32>) -> vec4<f32>
     public static vec4f textureSampleGrad<VM1>(f32 t, sampler s, VM1 coords, VM1 ddx, VM1 ddy) => default!;
     public static vec4f textureSampleGrad<VM1>(i32 t, sampler s, VM1 coords, VM1 ddx, VM1 ddy) => default!;
@@ -905,15 +905,15 @@ public partial class BuiltIn
     // fn textureSampleGrad(t: texture_3d<f32>, s: sampler, coords: vec3<f32>, ddx: vec3<f32>, ddy: vec3<f32>, offset: vec3<i32>) -> vec4<f32>
     public static vec4f textureSampleGrad<VM0, VM1>(texture_3d<f32> t, sampler s, VM0 coords, VM0 ddx, VM0 ddy, VM1 offset) => default!;
     // fn textureSampleGrad(t: texture_cube_array<f32>, s: sampler, coords: vec3<f32>, array_index: A, ddx: vec3<f32>, ddy: vec3<f32>) -> vec4<f32>
-    public static vec4f textureSampleGrad<VM0>(texture_cube_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, VM0 ddx = default!, VM0 ddy = default!) => default!;
+    public static vec4f textureSampleGrad<VM0>(texture_cube_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, VM0 ddx/* = default!*/, VM0 ddy/* = default!*/) => default!;
     // fn textureSampleLevel(t: texture_2d<f32>, s: sampler, coords: vec2<f32>, level: f32) -> vec4<f32>
     public static vec4f textureSampleLevel<VM0>(texture_2d<f32> t, sampler s, VM0 coords, f32 level) => default!;
     // fn textureSampleLevel(t: texture_2d<f32>, s: sampler, coords: vec2<f32>, level: f32, offset: vec2<i32>) -> vec4<f32>
     public static vec4f textureSampleLevel<VM0, VM1>(texture_2d<f32> t, sampler s, VM0 coords, f32 level, VM1 offset) => default!;
     // fn textureSampleLevel(t: texture_2d_array<f32>, s: sampler, coords: vec2<f32>, array_index: A, level: f32) -> vec4<f32>
-    public static vec4f textureSampleLevel<VM0>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, f32 level = default!) => default!;
+    public static vec4f textureSampleLevel<VM0>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, f32 level/* = default!*/) => default!;
     // fn textureSampleLevel(t: texture_2d_array<f32>, s: sampler, coords: vec2<f32>, array_index: A, level: f32, offset: vec2<i32>) -> vec4<f32>
-    public static vec4f textureSampleLevel<VM0, VM1>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, f32 level = default!, VM1 offset = default!) => default!;
+    public static vec4f textureSampleLevel<VM0, VM1>(texture_2d_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, f32 level/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSampleLevel(t: T, s: sampler, coords: vec3<f32>, level: f32) -> vec4<f32>
     public static vec4f textureSampleLevel<VM1>(f32 t, sampler s, VM1 coords, f32 level) => default!;
     public static vec4f textureSampleLevel<VM1>(i32 t, sampler s, VM1 coords, f32 level) => default!;
@@ -921,19 +921,19 @@ public partial class BuiltIn
     // fn textureSampleLevel(t: texture_3d<f32>, s: sampler, coords: vec3<f32>, level: f32, offset: vec3<i32>) -> vec4<f32>
     public static vec4f textureSampleLevel<VM0, VM1>(texture_3d<f32> t, sampler s, VM0 coords, f32 level, VM1 offset) => default!;
     // fn textureSampleLevel(t: texture_cube_array<f32>, s: sampler, coords: vec3<f32>, array_index: A, level: f32) -> vec4<f32>
-    public static vec4f textureSampleLevel<VM0>(texture_cube_array<f32> t, sampler s, VM0 coords, u32 array_index = default!, f32 level = default!) => default!;
+    public static vec4f textureSampleLevel<VM0>(texture_cube_array<f32> t, sampler s, VM0 coords, u32 array_index/* = default!*/, f32 level/* = default!*/) => default!;
     // fn textureSampleLevel(t: texture_depth_2d, s: sampler, coords: vec2<f32>, level: L) -> f32
-    public static f32 textureSampleLevel<VM0>(texture_depth_2d t, sampler s, VM0 coords, u32 level = default!) => default!;
+    public static f32 textureSampleLevel<VM0>(texture_depth_2d t, sampler s, VM0 coords, u32 level/* = default!*/) => default!;
     // fn textureSampleLevel(t: texture_depth_2d, s: sampler, coords: vec2<f32>, level: L, offset: vec2<i32>) -> f32
-    public static f32 textureSampleLevel<VM0, VM1>(texture_depth_2d t, sampler s, VM0 coords, u32 level = default!, VM1 offset = default!) => default!;
+    public static f32 textureSampleLevel<VM0, VM1>(texture_depth_2d t, sampler s, VM0 coords, u32 level/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSampleLevel(t: texture_depth_2d_array, s: sampler, coords: vec2<f32>, array_index: A, level: L) -> f32
-    public static f32 textureSampleLevel<VM0>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index = default!, u32 level = default!) => default!;
+    public static f32 textureSampleLevel<VM0>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index/* = default!*/, u32 level/* = default!*/) => default!;
     // fn textureSampleLevel(t: texture_depth_2d_array, s: sampler, coords: vec2<f32>, array_index: A, level: L, offset: vec2<i32>) -> f32
-    public static f32 textureSampleLevel<VM0, VM1>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index = default!, u32 level = default!, VM1 offset = default!) => default!;
+    public static f32 textureSampleLevel<VM0, VM1>(texture_depth_2d_array t, sampler s, VM0 coords, u32 array_index/* = default!*/, u32 level/* = default!*/, VM1 offset/* = default!*/) => default!;
     // fn textureSampleLevel(t: texture_depth_cube, s: sampler, coords: vec3<f32>, level: L) -> f32
-    public static f32 textureSampleLevel<VM0>(texture_depth_cube t, sampler s, VM0 coords, u32 level = default!) => default!;
+    public static f32 textureSampleLevel<VM0>(texture_depth_cube t, sampler s, VM0 coords, u32 level/* = default!*/) => default!;
     // fn textureSampleLevel(t: texture_depth_cube_array, s: sampler, coords: vec3<f32>, array_index: A, level: L) -> f32
-    public static f32 textureSampleLevel<VM0>(texture_depth_cube_array t, sampler s, VM0 coords, u32 array_index = default!, u32 level = default!) => default!;
+    public static f32 textureSampleLevel<VM0>(texture_depth_cube_array t, sampler s, VM0 coords, u32 array_index/* = default!*/, u32 level/* = default!*/) => default!;
     // fn textureSampleBaseClampToEdge(t: T, s: sampler, coords: vec2<f32>) -> vec4<f32>
     public static vec4f textureSampleBaseClampToEdge<VM1>(f32 t, sampler s, VM1 coords) => default!;
     public static vec4f textureSampleBaseClampToEdge<VM1>(i32 t, sampler s, VM1 coords) => default!;

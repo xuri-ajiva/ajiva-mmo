@@ -1,7 +1,7 @@
 ﻿// ReSharper disable ClassNeverInstantiated.Global
 // ReSharper disable PreferConcreteValueOverDefault
 // ReSharper disable InconsistentNaming
-namespace Client.Renderer;
+namespace Client.Wgsl;
 
 public partial class BuiltIn
 {

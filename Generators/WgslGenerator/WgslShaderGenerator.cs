@@ -86,6 +86,8 @@ public class WgslShaderGenerator : IIncrementalGenerator
     private const string CreateLayoutEntries = "global::Silk.NET.WebGPU.Safe.BindGroupLayoutEntries";
     private const string BindGroupEntries = "global::Silk.NET.WebGPU.Safe.BindGroupEntries";
 
+    private readonly SyntaxToken[] _modifiers = [Token(SyntaxKind.PublicKeyword) /*, Token(SyntaxKind.StaticKeyword)*/];
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         context.RegisterPostInitializationOutput(ctx => ctx.AddSource(
@@ -175,6 +177,9 @@ public class WgslShaderGenerator : IIncrementalGenerator
             // Generate bind layout properties and methods
             var members = new List<MemberDeclarationSyntax>();
 
+            // Generate shader entry points method
+            members.AddRange(GenerateGetShaderEntryPointPorps(entryPoints));
+
             // Add layout properties for each bind group
             foreach (var group in bindGroups)
             {
@@ -184,6 +189,13 @@ public class WgslShaderGenerator : IIncrementalGenerator
                 // Generate bind group method
                 members.Add(GenerateCreateBindGroupMethod(group.Key, group.Value, className));
             }
+
+            /*// Generate bind group layouts method
+            members.Add(GenerateBindGroupLayoutsMethod(bindGroups));
+
+            // Generate bind groups methods
+            members.Add(GenerateCreateBindGroupsMethod(bindGroups));*/
+
 
             // Generate buffer layout methods
             if (vertexAttributes.Any())
@@ -198,9 +210,6 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
             // Generate pipeline layout method
             members.Add(GenerateGetPipelineLayoutMethod(bindGroups.Keys.OrderBy(k => k), className));
-
-            // Generate shader entry points method
-            members.Add(GenerateGetShaderEntryPointsMethod(entryPoints));
 
             // Generate create shader module method
             members.Add(GenerateCreateShaderModuleMethod(className, entryPoints));
@@ -220,11 +229,14 @@ public class WgslShaderGenerator : IIncrementalGenerator
                 .AddMembers(FileScopedNamespaceDeclaration(ParseName(namespaceName)),
                     ClassDeclaration(className)
                         .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.PartialKeyword))
-                        .AddMembers(FieldDeclaration(
-                            VariableDeclaration(ParseTypeName("string"))
-                                .AddVariables(VariableDeclarator("ShaderSource")
-                                    .WithInitializer(assignment))
-                        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.ConstKeyword)))
+                        .AddMembers(PropertyDeclaration(ParseTypeName("string"), "ShaderSource")
+                            .WithInitializer(assignment)
+                            .WithAccessorList(AccessorList([
+                                AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                            ]))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword)))
                         .AddMembers(members.ToArray())
                         .AddMembers(generatedStructs.ToArray())
                 );
@@ -243,7 +255,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(BindGroupLayout),
             methodName
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
+        ).AddModifiers(_modifiers);
 
         // Add parameters for customizable options
         var parameters = new List<ParameterSyntax>
@@ -293,7 +305,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
                     break;
             }
         }
-        
+
         // optional parameters with default values
         foreach (var entry in bindGroup.Entries)
         {
@@ -346,7 +358,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(BindGroup),
             methodName
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
+        ).AddModifiers(_modifiers);
 
         // Add parameters
         var parameters = new List<ParameterSyntax>
@@ -434,7 +446,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(VertexBufferLayout),
             "GetVertexBufferLayout"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
+        ).AddModifiers(_modifiers);
 
         var vertexAttributesCode = new List<string>();
         foreach (var attr in vertexAttributes)
@@ -456,7 +468,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(VertexBufferLayout),
             "GetInstanceBufferLayout"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
+        ).AddModifiers(_modifiers);
 
         var instanceAttributesCode = new List<string>();
         foreach (var attr in instanceAttributes)
@@ -498,7 +510,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
                 ParseTypeName(PipelineLayout),
                 "CreatePipelineLayout"
-            ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+            ).AddModifiers(_modifiers)
             .WithParameterList(ParameterList(SeparatedList(parameters)));
 
         // Create array of layouts
@@ -507,21 +519,28 @@ public class WgslShaderGenerator : IIncrementalGenerator
             Block(ReturnStatement(ParseExpression($"device.CreatePipelineLayout([{layoutsArray}], label: label)"))));
     }
 
-    private MemberDeclarationSyntax GenerateGetShaderEntryPointsMethod(ShaderEntryInfo entryPoints)
+    private IEnumerable<MemberDeclarationSyntax> GenerateGetShaderEntryPointPorps(ShaderEntryInfo entryPoints)
     {
-        // Method signature: public (string VertexEntryPoint, string FragmentEntryPoint) GetShaderEntryPoints()
-        var methodDeclaration = MethodDeclaration(
-            ParseTypeName("(string VertexEntryPoint, string FragmentEntryPoint)"),
-            "GetShaderEntryPoints"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
+        // public string VertexEntryPoint { get; }
+        // public string FragmentEntryPoint { get; }
 
-        // Method body
+        yield return PropertyDeclaration(ParseTypeName("string"), "VertexEntryPoint")
+            .WithInitializer(EqualsValueClause(ParseExpression($"\"{entryPoints.VertexEntryPoint ?? "null"}\"")))
+            .WithAccessorList(AccessorList([
+                AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+            ]))
+            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+            .AddModifiers(Token(SyntaxKind.PublicKeyword));
 
-        // Return statement
-        var vertexEntry = entryPoints.VertexEntryPoint ?? "null";
-        var fragmentEntry = entryPoints.FragmentEntryPoint ?? "null";
-
-        return methodDeclaration.WithBody(Block(ParseStatement($"return (\"{vertexEntry}\", \"{fragmentEntry}\");")));
+        yield return PropertyDeclaration(ParseTypeName("string"), "FragmentEntryPoint")
+            .WithInitializer(EqualsValueClause(ParseExpression($"\"{entryPoints.FragmentEntryPoint ?? "null"}\"")))
+            .WithAccessorList(AccessorList([
+                AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+            ]))
+            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+            .AddModifiers(Token(SyntaxKind.PublicKeyword));
     }
 
     private MemberDeclarationSyntax GenerateCreateShaderModuleMethod(string className, ShaderEntryInfo entryPoints)
@@ -531,7 +550,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var methodDeclaration = MethodDeclaration(
             ParseTypeName("ShaderModulePtr"),
             "CreateShaderModule"
-        ).AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword));
+        ).AddModifiers(_modifiers);
 
         // Add parameters
         var parameters = new List<ParameterSyntax>

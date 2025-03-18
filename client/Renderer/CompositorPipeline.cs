@@ -1,74 +1,52 @@
 ﻿using System.Runtime.InteropServices;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
+using Client.Wgsl;
 using Safe = Silk.NET.WebGPU.Safe;
-using static Silk.NET.WebGPU.Safe.BindGroupLayoutEntries;
-using static Silk.NET.WebGPU.Safe.BindGroupEntries;
+using static Client.Wgsl.CompositorShader;
 
 namespace Client.Renderer
 {
-    internal class Compositor
+    public class CompositorPipeline : IDisposable
     {
-        private struct Uniforms
-        {
-            public f32 Gamma;
-            private u32 _padding0;
-            private u32 _padding1;
-            private u32 _padding2;
-        }
-
-        private static readonly BindGroupLayoutEntry[] _bindGroupLayoutEntries =
-        [
-            Buffer(0, ShaderStage.Fragment, BufferBindingType.Uniform, (u64)Marshal.SizeOf<Uniforms>()),
-            Texture(1, ShaderStage.Fragment, TextureSampleType.Float, TextureViewDimension.Dimension2D, false),
-            Texture(4, ShaderStage.Fragment, TextureSampleType.Depth, TextureViewDimension.Dimension2D, false)
-        ];
-
-        private BindGroupPtr CreateBindGroup(TextureViewPtr inColor, TextureViewPtr inDepth)
-        {
-            return _api.Device.CreateBindGroup(_textureBindGroupLayout, [
-                Buffer(0, _uniformBuffer, 0, (u64)Marshal.SizeOf<Uniforms>()),
-                Texture(1, inColor),
-                Texture(4, inDepth),
-            ]);
-        }
-
         private readonly RendererApi _api;
         private readonly RenderPipelinePtr _pipeline;
         private readonly BindGroupLayoutPtr _textureBindGroupLayout;
         private readonly BufferPtr _uniformBuffer;
+        private readonly CompositorShader _shader;
 
         private BindGroupPtr? _textureBindGroup;
 
-        private Compositor(RendererApi api, RenderPipelinePtr pipeline, BindGroupLayoutPtr textureBindGroupLayout,
-            BufferPtr uniformBuffer)
+        private CompositorPipeline(RendererApi api, RenderPipelinePtr pipeline,
+            BindGroupLayoutPtr textureBindGroupLayout,
+            BufferPtr uniformBuffer, CompositorShader shader)
         {
             _api = api;
             _pipeline = pipeline;
             _textureBindGroupLayout = textureBindGroupLayout;
             _uniformBuffer = uniformBuffer;
+            _shader = shader;
         }
 
-        public static Compositor Create(RendererApi api, TextureFormat outputTextureFormat)
+        public static CompositorPipeline Create(RendererApi api, CompositorShader shader,
+            TextureFormat outputTextureFormat)
         {
             var device = api.Device;
             var uniformBuffer = device.CreateBuffer(BufferUsage.CopyDst | BufferUsage.Uniform,
                 (u64)Marshal.SizeOf<Uniforms>());
 
-            var textureBindGroupLayout = device.CreateBindGroupLayout(_bindGroupLayoutEntries);
+            var textureBindGroupLayout = shader.CreateBindGroupLayout0(device);
 
-            var module = api.CreateShaderModuleFromFile("resources/builtin/compositor.wgsl", "compositor");
+            var pipelineLayout = shader.CreatePipelineLayout(device, textureBindGroupLayout);
 
-            var pipelineLayout = device.CreatePipelineLayout(
-                new ReadOnlySpan<BindGroupLayoutPtr>(ref textureBindGroupLayout)
-            );
+            var module = shader.CreateShaderModule(api.Device, pipelineLayout);
 
             var pipeline = device.CreateRenderPipeline(
                 pipelineLayout,
                 vertex: new Safe.VertexState
                 {
                     Buffers = [],
-                    EntryPoint = "vs_main",
+                    EntryPoint = shader.VertexEntryPoint,
                     Constants = [],
                     Module = module
                 },
@@ -88,7 +66,7 @@ namespace Client.Renderer
                 fragment: new Safe.FragmentState
                 {
                     Constants = [],
-                    EntryPoint = "fs_main",
+                    EntryPoint = shader.FragmentEntryPoint,
                     Module = module,
                     Targets =
                     [
@@ -98,7 +76,9 @@ namespace Client.Renderer
                 }
             );
 
-            return new Compositor(api, pipeline, textureBindGroupLayout, uniformBuffer);
+            module.Release();
+            pipelineLayout.Release();
+            return new CompositorPipeline(api, pipeline, textureBindGroupLayout, uniformBuffer, shader);
         }
 
         public void Apply(QueuePtr queue, TextureViewPtr inColor, TextureViewPtr inDepth, TextureViewPtr output)
@@ -111,8 +91,7 @@ namespace Client.Renderer
             };
 
             queue.WriteBuffer(_uniformBuffer, 0, new ReadOnlySpan<Uniforms>(ref uniforms));
-
-            _textureBindGroup = CreateBindGroup(inColor, inDepth);
+            _textureBindGroup = _shader.CreateBindGroup0(_api.Device, _textureBindGroupLayout, _uniformBuffer, inColor, inDepth);
 
             var cmd = _api.Device.CreateCommandEncoder();
             var pass = cmd.BeginRenderPass([
@@ -126,6 +105,14 @@ namespace Client.Renderer
             pass.End();
 
             queue.Submit(cmd.Finish());
+        }
+
+        public void Dispose()
+        {
+            _textureBindGroup?.Release();
+            _pipeline.Release();
+            _textureBindGroupLayout.Release();
+            _uniformBuffer.Destroy();
         }
     }
 }

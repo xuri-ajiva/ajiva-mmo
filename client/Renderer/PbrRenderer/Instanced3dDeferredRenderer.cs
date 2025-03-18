@@ -1,7 +1,9 @@
-﻿using System.Numerics;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Client.LayerSystem;
 using Client.VirtualFramebuffers;
+using Client.Wgsl;
 using GlmSharp;
 using ImGuiNET;
 using Silk.NET.Maths;
@@ -13,13 +15,11 @@ using FragmentState = Silk.NET.WebGPU.Safe.FragmentState;
 using PrimitiveState = Silk.NET.WebGPU.Safe.PrimitiveState;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 using RenderPassDepthStencilAttachment = Silk.NET.WebGPU.Safe.RenderPassDepthStencilAttachment;
-using ShaderModuleCompilationHint = Silk.NET.WebGPU.Safe.ShaderModuleCompilationHint;
-using TempleShader = Client.Renderer.TempleShader;
 using VertexState = Silk.NET.WebGPU.Safe.VertexState;
 
 namespace Client.Renderer.PbrRenderer;
 
-using static TempleShader;
+using static Wgsl.TempleShader;
 
 public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 {
@@ -46,11 +46,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private (TexturePtr tex, TextureViewPtr view)? _requestedCubeTexture = null;
 
     private bool _isSceneViewHovered;
-    private DeferredShader _deferredShader;
-    private Compositor _compositor;
+    private DeferredPipeline? _deferredPipeline;
+    private CompositorPipeline? _compositorPipeline;
     private SceneUniform _sceneUniform;
     private bool _enabled = true;
-    
+
     public Instanced3dDeferredRenderer(ILogger<Instanced3dDeferredRenderer> logger, RendererApi api, Ecs ecs)
     {
         _logger = logger;
@@ -257,11 +257,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         _logger.LogDebug("Compiling Shader");
 
-        var (vertexEntryPoint, fragmentEntryPoint) = _templeShader.GetShaderEntryPoints();
-        var shaderModule = _api.Device.CreateShaderModuleWGSL(ShaderSource, [
-            new ShaderModuleCompilationHint(fragmentEntryPoint, pipelineLayout),
-            new ShaderModuleCompilationHint(vertexEntryPoint, pipelineLayout)
-        ], "TempleShaderModule");
+        var shaderModule = _templeShader.CreateShaderModule(_api.Device, pipelineLayout);
 
         // ReSharper disable once MethodHasAsyncOverload
         _modelPipeline = _api.Device.CreateRenderPipeline(
@@ -326,11 +322,19 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         _logger.LogDebug("Creating DeferredShader and Compositor");
 
-        _deferredShader = DeferredShader.Create(_api, _sceneGBuffer.LightChannelFormat);
-
-        _compositor = Compositor.Create(_api, _sceneGBuffer.AlbedoChannelFormat);
+        CreateOtherPipelines();
 
         _logger.LogDebug("Done");
+    }
+
+    [MemberNotNull(nameof(_deferredPipeline), nameof(_compositorPipeline))]
+    private void CreateOtherPipelines()
+    {
+        _deferredPipeline?.Dispose();
+        _deferredPipeline = DeferredPipeline.Create(_api, new(), _sceneGBuffer!.LightChannelFormat);
+        _compositorPipeline?.Dispose();
+        _compositorPipeline =
+            CompositorPipeline.Create(_api, new CompositorShader(), _sceneGBuffer.AlbedoChannelFormat);
     }
 
     private void RecreateBindGroup(InstancedMeshBuffer<ModelUniform, Instance> instancedMeshBuffer)
@@ -457,7 +461,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         queue.Submit(new[] { cmd.Finish() });
     }
 
-
     private void WriteBuffer(QueuePtr queue, InstancedMeshBuffer<ModelUniform, Instance> buffer)
     {
         queue.WriteBuffer(buffer.ModelUniformBuffer.Buffer, buffer.ModelUniformBuffer.Offset,
@@ -491,6 +494,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         var hasPrev = _finalSceneTexture.TryGetTargets(out var prevView);
         _sceneGBuffer.EnsureSize(width, height);
         _finalSceneTexture.EnsureSize(width, height);
+        CreateOtherPipelines();
 
         if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission, out var depth) &&
             _finalSceneTexture.TryGetTargets(out var colorOutput))
@@ -501,10 +505,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             if (!Matrix4x4.Invert(_sceneUniform.ViewProjectionRef, out var invViewProjection))
                 throw new InvalidOperationException("ViewProjection Matrix could not be inverted");
 
-            _deferredShader.Apply(queue, albedo.View, normal.View, depth.DepthOnlyView, emission.View,
+            _deferredPipeline.Apply(queue, albedo.View, normal.View, depth.DepthOnlyView, emission.View,
                 invViewProjection, _lightsBuffer.Buffer, _sceneLights.LightCount);
 
-            _compositor.Apply(queue, emission.View, depth.DepthOnlyView, colorOutput.View);
+            _compositorPipeline.Apply(queue, emission.View, depth.DepthOnlyView, colorOutput.View);
 
 
             if (prevWidth != width && prevHeight != height && hasPrev)
@@ -581,13 +585,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         ImGui.End();
     }
 
-
     public Task Detach()
     {
         _sceneGBuffer?.Release();
         _finalSceneTexture?.Release();
         _linearSampler.Release();
-        _sceneUniformBuffer.Buffer.Release();
         _sceneBindGroup.Release();
         _modelBindGroupLayout.Release();
         _modelPipeline.Release();
@@ -600,7 +602,25 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             buffer.InstanceBuffer?.Buffer.Release();
         }
 
-        _lightsBuffer.Buffer.Release();
+        _compositorPipeline?.Dispose();
+        _deferredPipeline?.Dispose();
+
+        _sceneUniformBuffer.Buffer.Destroy();
+        _lightsBuffer.Buffer.Destroy();
+
+        // set all null
+        _sceneGBuffer = null;
+        _finalSceneTexture = null;
+        _linearSampler = default;
+        _sceneBindGroup = default;
+        _modelBindGroupLayout = default;
+        _modelPipeline = default;
+        _meshBuffers = [];
+        _compositorPipeline = null;
+        _deferredPipeline = null;
+        _sceneUniformBuffer = default;
+        _lightsBuffer = default;
+
         return Task.CompletedTask;
     }
 }
