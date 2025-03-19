@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System.Collections.Concurrent;
+using System.Numerics;
 using ImGuiNET;
 using Serilog;
 using Serilog.Core;
@@ -15,7 +16,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
     }
 
     private bool _logOpen = true;
-    private readonly List<LogEvent> _messageList = [];
+    private readonly ConcurrentBag<LogEvent> _messageList = [];
 
     private readonly (LogEventLevel level, Vector4 color, bool filter)[] _levels;
     private readonly IFormatProvider? _formatProvider;
@@ -86,7 +87,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
 
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0, 0));
 
-            if (ImGui.BeginTable("log", 5,
+            if (ImGui.BeginTable("log", 4,
                     ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable |
                     ImGuiTableFlags.Reorderable | ImGuiTableFlags.Hideable | ImGuiTableFlags.ScrollX |
                     ImGuiTableFlags.SizingStretchProp))
@@ -99,7 +100,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
                 ImGui.TableSetupColumn("Message or Exception", ImGuiTableColumnFlags.WidthStretch);
                 ImGui.TableHeadersRow();
 
-                foreach (var record in _messageList)
+                foreach (var record in _messageList.OrderBy(x => x.Timestamp))
                 {
                     var severity = record.Level;
                     ref var level = ref _levels[(i32)severity];
@@ -128,7 +129,7 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
                     ImGui.Text(record.Properties["SourceContext"].ToString());
                     ImGui.TableNextColumn();
                     ImGui.TextWrapped(record.Exception is not null
-                        ? (record.RenderMessage() +" : "+ record.Exception)
+                        ? (record.RenderMessage() + " : " + record.Exception)
                         : record.RenderMessage());
 
                     ImGui.PopStyleColor();
