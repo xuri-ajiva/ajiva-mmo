@@ -4,7 +4,7 @@ using Client.Networking;
 using Client.Platform;
 using Client.Renderer;
 using Client.Renderer.PbrRenderer;
-using Riptide;
+using Client.Wgsl;
 using Serilog;
 using ServiceDefaults;
 
@@ -38,6 +38,7 @@ builder.AddServiceDefaults();
     services.AddSingleton<PlatformSystem>();
     services.AddSingleton<Ecs>();
 
+
     services.AddSingleton<IAjivaLayerSystem, AjivaImGuiLayerSystem>();
     services.AddSingleton<Instanced3dDeferredRenderer>();
     services.AddSingleton<ClientConnectionLayer>();
@@ -48,6 +49,10 @@ builder.AddServiceDefaults();
     services.AddSingleton<RendererApi>();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RendererApi>());
     // services.AddSingleton<RendererApi>(provider => provider.GetRequiredService<RendererApi>());
+    
+    services.AddSingleton<ShaderReloadManager>();
+    services.AddSingleton<IShaderManager>(provider => provider.GetRequiredService<ShaderReloadManager>()); 
+    services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<ShaderReloadManager>());
 
     services.AddSingleton<Riptide.Client>();
     services.AddHostedService<ClientWorker>();

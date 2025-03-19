@@ -13,13 +13,13 @@ namespace Client.Renderer
         private readonly RenderPipelinePtr _pipeline;
         private readonly BindGroupLayoutPtr _textureBindGroupLayout;
         private readonly BufferPtr _uniformBuffer;
-        private readonly CompositorShader _shader;
+        private readonly ICompositorShader _shader;
 
         private BindGroupPtr? _textureBindGroup;
 
         private CompositorPipeline(RendererApi api, RenderPipelinePtr pipeline,
             BindGroupLayoutPtr textureBindGroupLayout,
-            BufferPtr uniformBuffer, CompositorShader shader)
+            BufferPtr uniformBuffer, ICompositorShader shader)
         {
             _api = api;
             _pipeline = pipeline;
@@ -28,7 +28,7 @@ namespace Client.Renderer
             _shader = shader;
         }
 
-        public static CompositorPipeline Create(RendererApi api, CompositorShader shader,
+        public static CompositorPipeline Create(RendererApi api, ICompositorShader shader,
             TextureFormat outputTextureFormat)
         {
             var device = api.Device;

@@ -8,7 +8,6 @@ namespace Client.Wgsl;
 [GenerateShader]
 public partial class TempleShader
 {
-    
     public partial struct SceneUniform(
         mat4 viewProjection,
         vec3 cameraPosition,
@@ -120,9 +119,9 @@ public partial class TempleShader
     [FragmentShader]
     public ColorTargets fs_main(Varyings v)
     {
-        var oAlbedo = textureSample<vec2>(uAlbedo, uSampler, v.Tex0Coord) * new vec4(ubModel.Tex0Color, 1.0f);
+        var oAlbedo = textureSample(uAlbedo, uSampler, v.Tex0Coord) * new vec4(ubModel.Tex0Color, 1.0f);
 
-        var normalMap = textureSample<vec2>(uNormal, uSampler, v.Tex0Coord).xyz;
+        var normalMap = textureSample(uNormal, uSampler, v.Tex0Coord).xyz;
         var nrm =
             fma(normalMap.r, 2.0f, -1.0f) * v.Tangent +
             fma(normalMap.g, 2.0f, -1.0f) * v.Bitangent +
@@ -130,10 +129,10 @@ public partial class TempleShader
 
         var ambient = new vec3(0.0f, 0.0f, 0.1f);
 
-        var emission = textureSample<vec2>(uEmission, uSampler, v.Tex1Coord).xyz * ubModel.Tex1Color;
+        var emission = textureSample(uEmission, uSampler, v.Tex1Coord).xyz * ubModel.Tex1Color;
 
-        var oNormal = new vec4(mix<vec3, f32>(v.Normal, nrm, ubModel.NormalMapStrength) * 0.5f + new vec3(0.5f), 0.0f);
-
-        return new ColorTargets(oAlbedo, oNormal, new vec4(ambient + emission + v.HighlightColor.xyz, 1.0f));
+        var oNormal = new vec4(mix(v.Normal, nrm, ubModel.NormalMapStrength) * 0.5f + new vec3(0.5f), 0.0f);
+        
+        return new ColorTargets(oAlbedo, oNormal, new vec4(ambient + emission + v.HighlightColor.xyz * 0.5f, 1.0f));
     }
 }

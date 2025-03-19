@@ -145,6 +145,7 @@ public class AjivaWindow : IHostedLifecycleService
         catch (Exception e)
         {
             _logger.LogError(e, "Error in Window Main");
+            throw;
         }
     }
 

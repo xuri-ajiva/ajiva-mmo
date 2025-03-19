@@ -7,7 +7,7 @@ using static Client.Wgsl.BuiltIn;
 namespace Client.Wgsl;
 
 [GenerateShader]
-public partial class CompositorShader : IWgslShader
+public partial class CompositorShader
 {
     public partial struct Varyings(
         [Builtin("position")] vec4 position,
@@ -56,6 +56,6 @@ public partial class CompositorShader : IWgslShader
         var depth = textureLoad(uDepth, uv, 0);
         var checker = (fract(v.Position.x / 20.0f) < 0.5f) != (fract(v.Position.y / 20.0f) < 0.5f);
         var checkerValue = select(0.0f, 0.25f, checker);
-        return color;
+        return color * (1.0f - checkerValue) + checkerValue;
     }
 }

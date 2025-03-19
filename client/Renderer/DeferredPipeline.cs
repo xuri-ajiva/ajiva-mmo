@@ -14,13 +14,13 @@ public class DeferredPipeline : IDisposable
     private readonly RenderPipelinePtr _pipeline;
     private readonly BindGroupLayoutPtr _textureBindGroupLayout;
     private readonly BufferPtr _uniformBuffer;
-    private readonly DeferredShader _shader;
+    private readonly IDeferredShader _shader;
     private SamplerPtr _sampler;
 
     private BindGroupPtr? _textureBindGroup;
 
     private DeferredPipeline(RendererApi api, RenderPipelinePtr pipeline, BindGroupLayoutPtr textureBindGroupLayout,
-        SamplerPtr sampler, BufferPtr uniformBuffer, DeferredShader shader)
+        SamplerPtr sampler, BufferPtr uniformBuffer, IDeferredShader shader)
     {
         _api = api;
         _pipeline = pipeline;
@@ -30,7 +30,7 @@ public class DeferredPipeline : IDisposable
         _shader = shader;
     }
 
-    public static DeferredPipeline Create(RendererApi api, DeferredShader shader, TextureFormat lightTextureFormat)
+    public static DeferredPipeline Create(RendererApi api, IDeferredShader shader, TextureFormat lightTextureFormat)
     {
         var device = api.Device;
         var uniformBuffer = device.CreateBuffer(BufferUsage.CopyDst | BufferUsage.Uniform,

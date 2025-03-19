@@ -19,11 +19,12 @@ using VertexState = Silk.NET.WebGPU.Safe.VertexState;
 
 namespace Client.Renderer.PbrRenderer;
 
-using static Wgsl.TempleShader;
+using static TempleShader;
 
 public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 {
     private readonly ILogger<Instanced3dDeferredRenderer> _logger;
+    private readonly IShaderManager _shaderManager;
     private readonly RendererApi _api;
     private readonly Ecs _ecs;
 
@@ -38,7 +39,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private RenderTexture? _finalSceneTexture;
     private SceneLights _sceneLights = null!;
     private BufferRange _lightsBuffer;
-    private readonly TempleShader _templeShader;
     private readonly DragCamera _camera;
 
     public ref bool Enabled => ref _enabled;
@@ -46,18 +46,20 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private (TexturePtr tex, TextureViewPtr view)? _requestedCubeTexture = null;
 
     private bool _isSceneViewHovered;
+    private ITempleShader? _templeShader;
     private DeferredPipeline? _deferredPipeline;
     private CompositorPipeline? _compositorPipeline;
     private SceneUniform _sceneUniform;
     private bool _enabled = true;
 
-    public Instanced3dDeferredRenderer(ILogger<Instanced3dDeferredRenderer> logger, RendererApi api, Ecs ecs)
+    public Instanced3dDeferredRenderer(ILogger<Instanced3dDeferredRenderer> logger, IShaderManager shaderManager,
+        RendererApi api, Ecs ecs)
     {
         _logger = logger;
+        _shaderManager = shaderManager;
         _api = api;
         _ecs = ecs;
         _camera = new DragCamera();
-        _templeShader = new TempleShader();
     }
 
     private InstancedMeshBuffer<ModelUniform, Instance>[] CreateModelBuffers(string path, string? label = null)
@@ -196,6 +198,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
     public async Task Attach()
     {
+        // get current instance of shader
+        _templeShader = _shaderManager.GetCurrentShader<ITempleShader>();
+
         _logger.LogDebug("Creating View Buffers");
 
         // TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm, TextureFormat.Rgba32float, TextureFormat.Depth24Plus,
@@ -331,16 +336,18 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private void CreateOtherPipelines()
     {
         _deferredPipeline?.Dispose();
-        _deferredPipeline = DeferredPipeline.Create(_api, new(), _sceneGBuffer!.LightChannelFormat);
+        _deferredPipeline = DeferredPipeline.Create(_api, _shaderManager.GetCurrentShader<IDeferredShader>(),
+            _sceneGBuffer!.LightChannelFormat);
         _compositorPipeline?.Dispose();
         _compositorPipeline =
-            CompositorPipeline.Create(_api, new CompositorShader(), _sceneGBuffer.AlbedoChannelFormat);
+            CompositorPipeline.Create(_api, _shaderManager.GetCurrentShader<ICompositorShader>(),
+                _sceneGBuffer.AlbedoChannelFormat);
     }
 
     private void RecreateBindGroup(InstancedMeshBuffer<ModelUniform, Instance> instancedMeshBuffer)
     {
         instancedMeshBuffer.ModelBindGroup?.Release();
-        instancedMeshBuffer.ModelBindGroup = _templeShader.CreateBindGroup1(_api.Device,
+        instancedMeshBuffer.ModelBindGroup = _templeShader!.CreateBindGroup1(_api.Device,
             _modelBindGroupLayout,
             instancedMeshBuffer.ModelUniformBuffer.Buffer,
             _linearSampler,
@@ -620,6 +627,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _deferredPipeline = null;
         _sceneUniformBuffer = default;
         _lightsBuffer = default;
+        _templeShader = null;
 
         return Task.CompletedTask;
     }
