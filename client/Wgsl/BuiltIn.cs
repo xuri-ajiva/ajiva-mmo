@@ -1,31 +1,61 @@
 ﻿// ReSharper disable ClassNeverInstantiated.Global
 // ReSharper disable PreferConcreteValueOverDefault
 // ReSharper disable InconsistentNaming
+
+using GlmSharp;
+
 namespace Client.Wgsl;
 
 public partial class BuiltIn
 {
-    /*public static vec4 textureLoad<V>(texture_2d<f32> tex, V pos)
-        where V : IReadOnlyCollection<i32>, IReadOnlyCollection<u32> => default!;
+    public partial class texture_1d<T>;
+    public partial class texture_2d<T>;
+    public partial class texture_2d_array<T>;
+    public partial class texture_3d<T>;
+    public partial class texture_cube<T>;
+    public partial class texture_cube_array<T>;
+    public partial class texture_multisampled_2d<T>;
+    public partial class texture_storage_1d<T>;
+    public partial class texture_storage_2d<T>;
+    public partial class texture_storage_2d_array<T>;
+    public partial class texture_storage_3d<T>;
 
-    public static f32 textureLoad<V>(texture_depth_2d tex, V pos) => default!;
-    public static vec4 textureSample<V>(texture_2d<f32> tex, sampler sampler, V pos) => default!;
+    public partial class texture_depth_2d;
+    public partial class texture_depth_2d_array;
+    public partial class texture_depth_cube;
+    public partial class texture_depth_cube_array;
 
-    public static f32 floor(f32 v) => default!;
-    public static f32 ceil(f32 v) => default!;
-    public static f32 max(f32 a, f32 b) => default!;
-    public static f32 min(f32 a, f32 b) => default!;
-    public static f32 sqrt(f32 a) => default!;
-    public static f32 pow(f32 a, f32 b) => default!;
-    public static T normalize<T>(T v) => default!;
-    public static T cross<T>(T a, T b) => default!;
-    public static T refract<T>(T i, T n, f32 eta) => default!;
-    public static T mix<T>(T a, T b, f32 t) => default!;
-    public static T distance<T>(T a, T b) => default!;
-    public static T dot<T>(T a, T b) => default!;
-    public static T normalize<T>(T v, f32 l) => default!;
-    public static T fma<T>(T a, f32 b, f32 c) => default!;*/
+    public partial class texture_depth_multisampled_2d;
+    public partial class texture_external;
+
+    public partial class sampler;
+    public partial class sampler_comparison;
+
+    public partial class ptr<T1>;
+    public partial class ptr<T1,T2>;
+    public partial class ptr<T1,T2,T3>;
+    public partial class atomic<T1>;
+    public partial class read_write;
+    public partial class storage;
+    public partial class workgroup;   
+    
     public static T[] array<T>(params T[] value) => default!;
+
+    public static T bitcast<T>(u32 value) => default!;
+    public static T bitcast<T>(i32 value) => default!;
+    public static T bitcast<T>(f32 value) => default!;
+    public static T bitcast<T, V>(V value) => default!;
+
+    public partial record struct frexp_res<T, E>(T fract, E exp);
+
+    public static frexp_res<f32, i32> frexp(f32 x) => default!;
+    public static frexp_res<vec2, ivec2> frexp(vec2 x) => default!;
+    public static frexp_res<vec3, ivec3> frexp(vec3 x) => default!;
+    public static frexp_res<vec4, ivec4> frexp(vec4 x) => default!;
+
+    public partial record struct modf_res<T>(T fract, T whole);
+
+    public static modf_res<T> modf<T>(T x) => default!;
 }
 
 public static class StrExt

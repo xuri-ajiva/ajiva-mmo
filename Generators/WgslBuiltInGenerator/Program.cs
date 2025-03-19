@@ -6,7 +6,7 @@ if (File.Exists(bsDocumentPath))
     var bsContent = File.ReadAllText(bsDocumentPath);
     var csharpCode = BikeshedParser.ParseBikeshedDocumentToCSharp(bsContent);
     File.WriteAllText("BuiltIn.g.cs", csharpCode);
-    Console.WriteLine(csharpCode);
+    //Console.WriteLine(csharpCode);
     Console.WriteLine("C# code generated to BuiltIn.g.cs");
 }
 else
