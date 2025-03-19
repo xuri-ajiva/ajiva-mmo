@@ -174,6 +174,8 @@ public class WgslShaderGenerator : IIncrementalGenerator
                     SyntaxKind.StringLiteralExpression,
                     Literal(shaderSource, shaderSource)));
 
+            var interfaceMembers = new List<MemberDeclarationSyntax>();
+
             // Generate bind layout properties and methods
             var members = new List<MemberDeclarationSyntax>();
 
@@ -185,37 +187,36 @@ public class WgslShaderGenerator : IIncrementalGenerator
             {
                 // Generate bind group layout method
                 members.Add(GenerateBindGroupLayoutMethod(group.Key, group.Value, className));
+                interfaceMembers.Add(GenerateBindGroupLayoutMethod(group.Key, group.Value, className, true));
 
                 // Generate bind group method
                 members.Add(GenerateCreateBindGroupMethod(group.Key, group.Value, className));
+                interfaceMembers.Add(GenerateCreateBindGroupMethod(group.Key, group.Value, className, true));
             }
-
-            /*// Generate bind group layouts method
-            members.Add(GenerateBindGroupLayoutsMethod(bindGroups));
-
-            // Generate bind groups methods
-            members.Add(GenerateCreateBindGroupsMethod(bindGroups));*/
-
 
             // Generate buffer layout methods
             if (vertexAttributes.Any())
             {
                 members.Add(GenerateVertexBufferLayoutMethod(vertexAttributes));
+                interfaceMembers.Add(GenerateVertexBufferLayoutMethod(vertexAttributes, true));
             }
 
             if (instanceAttributes.Any())
             {
                 members.Add(GenerateInstanceBufferLayoutMethod(instanceAttributes));
+                interfaceMembers.Add(GenerateInstanceBufferLayoutMethod(instanceAttributes, true));
             }
 
             // Generate pipeline layout method
             members.Add(GenerateGetPipelineLayoutMethod(bindGroups.Keys.OrderBy(k => k), className));
+            interfaceMembers.Add(GenerateGetPipelineLayoutMethod(bindGroups.Keys.OrderBy(k => k), className, true));
 
             // Generate create shader module method
             members.Add(GenerateCreateShaderModuleMethod(className, entryPoints));
+            interfaceMembers.Add(GenerateCreateShaderModuleMethod(className, entryPoints, true));
 
             // Using compilation unit to build the partial class
-            var partialClass = CompilationUnit()
+            var baseClass = CompilationUnit()
                 .AddUsings(
                     UsingDirective(ParseName("System")),
                     UsingDirective(ParseName("System.Collections.Generic")),
@@ -226,29 +227,40 @@ public class WgslShaderGenerator : IIncrementalGenerator
                     UsingDirective(ParseName("Silk.NET.WebGPU")),
                     UsingDirective(ParseName("Silk.NET.WebGPU.Safe"))
                 )
-                .AddMembers(FileScopedNamespaceDeclaration(ParseName(namespaceName)),
-                    ClassDeclaration(className)
-                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.PartialKeyword))
-                        .AddMembers(PropertyDeclaration(ParseTypeName("string"), "ShaderSource")
-                            .WithInitializer(assignment)
-                            .WithAccessorList(AccessorList([
-                                AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                            ]))
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                            .AddModifiers(Token(SyntaxKind.PublicKeyword)))
-                        .AddMembers(members.ToArray())
-                        .AddMembers(generatedStructs.ToArray())
-                );
+                .AddMembers(FileScopedNamespaceDeclaration(ParseName(namespaceName)));
 
-            var sourceText = partialClass.NormalizeWhitespace().ToFullString();
-            context.AddSource($"{className}.g.cs", SourceText.From(sourceText, Encoding.UTF8));
+            var partialClass = baseClass.AddMembers(ClassDeclaration(className)
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.PartialKeyword))
+                .WithBaseList(BaseList([SimpleBaseType(ParseName($"I{className}"))]))
+                .AddMembers(PropertyDeclaration(ParseTypeName("string"), "ShaderSource")
+                    .WithInitializer(assignment)
+                    .WithAccessorList(AccessorList([
+                        AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                    ]))
+                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                    .AddModifiers(Token(SyntaxKind.PublicKeyword)))
+                .AddMembers(members.ToArray())
+                .AddMembers(generatedStructs.ToArray()));
+
+            var interfaceClass = baseClass.AddMembers(
+                InterfaceDeclaration($"I{className}")
+                    .WithBaseList(BaseList([SimpleBaseType(ParseName("IWgslShader"))]))
+                    .AddModifiers(Token(SyntaxKind.PublicKeyword))
+                    .AddMembers(interfaceMembers.ToArray())
+            );
+
+            context.AddSource($"I{className}.g.cs",
+                SourceText.From(interfaceClass.NormalizeWhitespace().ToFullString(), Encoding.UTF8));
+            
+            context.AddSource($"{className}.g.cs",
+                SourceText.From(partialClass.NormalizeWhitespace().ToFullString(), Encoding.UTF8));
         }
     }
 
 
     private MemberDeclarationSyntax GenerateBindGroupLayoutMethod(uint groupId, BindGroupInfo bindGroup,
-        string className)
+        string className, bool isInterface = false)
     {
         // Method signature: public BindGroupLayout CreateBindGroupLayout{groupId}(Device device, ...)
         var methodName = $"CreateBindGroupLayout{groupId}";
@@ -324,6 +336,9 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
         methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
 
+        if (isInterface)
+            return methodDeclaration.WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+
         // Create entries array
         var entries = new List<string>();
         foreach (var entry in bindGroup.Entries)
@@ -351,7 +366,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
     }
 
     private MemberDeclarationSyntax GenerateCreateBindGroupMethod(uint groupId, BindGroupInfo bindGroup,
-        string className)
+        string className, bool isInterface = false)
     {
         // Method signature: public BindGroup CreateBindGroup{groupId}(Device device, ...)
         var methodName = $"CreateBindGroup{groupId}";
@@ -412,6 +427,9 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
         methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
 
+        if (isInterface)
+            return methodDeclaration.WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+
         // Create bindGroup entries
         var entries = new List<string>();
         foreach (var entry in bindGroup.Entries)
@@ -440,13 +458,16 @@ public class WgslShaderGenerator : IIncrementalGenerator
     }
 
     private MemberDeclarationSyntax GenerateVertexBufferLayoutMethod(
-        IReadOnlyList<VertexAttributeInfo> vertexAttributes)
+        IReadOnlyList<VertexAttributeInfo> vertexAttributes, bool isInterface = false)
     {
         // Method signature: public VertexBufferLayout GetVertexBufferLayout()
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(VertexBufferLayout),
             "GetVertexBufferLayout"
         ).AddModifiers(_modifiers);
+
+        if (isInterface)
+            return methodDeclaration.WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
         var vertexAttributesCode = new List<string>();
         foreach (var attr in vertexAttributes)
@@ -462,13 +483,16 @@ public class WgslShaderGenerator : IIncrementalGenerator
     }
 
     private MemberDeclarationSyntax GenerateInstanceBufferLayoutMethod(
-        IReadOnlyList<VertexAttributeInfo> instanceAttributes)
+        IReadOnlyList<VertexAttributeInfo> instanceAttributes, bool isInterface = false)
     {
         // Method signature: public VertexBufferLayout GetInstanceBufferLayout()
         var methodDeclaration = MethodDeclaration(
             ParseTypeName(VertexBufferLayout),
             "GetInstanceBufferLayout"
         ).AddModifiers(_modifiers);
+
+        if (isInterface)
+            return methodDeclaration.WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
         var instanceAttributesCode = new List<string>();
         foreach (var attr in instanceAttributes)
@@ -483,7 +507,8 @@ public class WgslShaderGenerator : IIncrementalGenerator
             $"[{string.Join(",\r\n", instanceAttributesCode)}]);")));
     }
 
-    private MemberDeclarationSyntax GenerateGetPipelineLayoutMethod(IEnumerable<uint> groupIds, string className)
+    private MemberDeclarationSyntax GenerateGetPipelineLayoutMethod(IEnumerable<uint> groupIds, string className,
+        bool isInterface = false)
     {
         // Method signature: public PipelineLayout CreatePipelineLayout(Device device, string label = null)
         // Add parameters
@@ -512,6 +537,10 @@ public class WgslShaderGenerator : IIncrementalGenerator
                 "CreatePipelineLayout"
             ).AddModifiers(_modifiers)
             .WithParameterList(ParameterList(SeparatedList(parameters)));
+
+
+        if (isInterface)
+            return methodDeclaration.WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
         // Create array of layouts
         var layoutsArray = string.Join(",\r\n", parameterNames);
@@ -543,7 +572,8 @@ public class WgslShaderGenerator : IIncrementalGenerator
             .AddModifiers(Token(SyntaxKind.PublicKeyword));
     }
 
-    private MemberDeclarationSyntax GenerateCreateShaderModuleMethod(string className, ShaderEntryInfo entryPoints)
+    private MemberDeclarationSyntax GenerateCreateShaderModuleMethod(string className, ShaderEntryInfo entryPoints,
+        bool isInterface = false)
     {
         // Method signature: public ShaderModulePtr CreateShaderModule(Device device)
 
@@ -565,6 +595,9 @@ public class WgslShaderGenerator : IIncrementalGenerator
         };
 
         methodDeclaration = methodDeclaration.WithParameterList(ParameterList(SeparatedList(parameters)));
+
+        if (isInterface)
+            return methodDeclaration.WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
         return methodDeclaration.WithBody(
             Block(ReturnStatement(ParseExpression(
