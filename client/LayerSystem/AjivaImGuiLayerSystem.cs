@@ -13,7 +13,7 @@ using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment
 
 namespace Client.LayerSystem;
 
-public class AjivaImGuiLayerSystem : IAjivaLayerSystem
+public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 {
     private bool _initialized;
 
@@ -42,7 +42,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem
                 .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IAjivaLayer).IsAssignableFrom(t))
                 .ToArray();
 #else
-_layerTypes = [];
+        _layerTypes = [];
 #endif
     }
 
@@ -183,6 +183,10 @@ _layerTypes = [];
         queue.Submit(cmd.Finish());
     }
 
+    [SuppressMessage("ReSharper.DPA", "DPA0002: Excessive memory allocations in SOH",
+        MessageId = "type: System.Object")]
+    [SuppressMessage("ReSharper.DPA", "DPA0002: Excessive memory allocations in SOH",
+        MessageId = "type: System.Object; size: 54687MB")]
     private void RenderLayerControls()
     {
         if (ImGui.Begin("Layer Controls"))
@@ -234,10 +238,53 @@ _layerTypes = [];
             {
                 GC.Collect();
             }
+
+            if (GCStressTest is null)
+            {
+                if (ImGui.Button("GC Stress Test"))
+                {
+                    allocations = 0;
+                    GCStressTest = new Thread(() =>
+                    {
+                        while (GCStressTest is not null)
+                        {
+                            Parallel.For(0, 10000,
+                                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, i =>
+                                {
+                                    var array = new object[1000];
+                                    for (var index = 0; index < array.Length; index++)
+                                    {
+                                        array[index] = (object[]) [i, index];
+                                    }
+
+                                    Interlocked.Add(ref allocations, (u64)array.LongLength * 4);
+                                });
+                        }
+                    });
+                    GCStressTest.Start();
+                }
+            }
+            else
+            {
+                if (ImGui.Button("Stop GC Stress Test"))
+                {
+                    GCStressTest = null;
+                }
+            }
+
+            ImGui.Text($"Allocations: {allocations:000 000 000 000}");
+            // Allocation per sec:
+            var allocDiff = allocations - allocationsLast;
+            ImGui.Text($"Delta {allocDiff:000 000 000 000}");
+            allocationsLast = allocations;
         }
 
         ImGui.End();
     }
+
+    private u64 allocationsLast;
+    private u64 allocations;
+    private Thread? GCStressTest;
 
     private void CreateLayer(TypeInfo layerType)
     {
@@ -246,7 +293,7 @@ _layerTypes = [];
     }
 
     private i32 _location = -1;
-    private bool _showOverlay = true, _demoWindow = false;
+    private bool _showOverlay = true, _demoWindow;
     private f32[] _frameTimes = new f32[100];
     private readonly TypeInfo[] _layerTypes;
     private readonly IServiceScope _scope;
@@ -308,5 +355,11 @@ _layerTypes = [];
         }
 
         ImGui.End();
+    }
+
+    public void Dispose()
+    {
+        _scope.Dispose();
+        GCStressTest = null;
     }
 }
