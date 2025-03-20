@@ -56,6 +56,9 @@ public partial class BuiltIn
     public partial record struct modf_res<T>(T fract, T whole);
 
     public static modf_res<T> modf<T>(T x) => default!;
+    public static f32 f32<T>(T x) => default!;
+    public static u32 u32<T>(T x) => default!;
+    public static i32 i32<T>(T x) => default!;
 }
 
 public static class StrExt

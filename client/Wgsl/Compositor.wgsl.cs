@@ -49,13 +49,19 @@ public partial class CompositorShader
     [FragmentShader]
     public vec4 fs_main(Varyings v)
     {
-        //var uv = new ivec2((i32)floor(v.Position.x), (i32)floor(v.Position.y));
-        var uv = "vec2<i32>(floor(v.Position.xy))"._raw<ivec2>();
-
+        var uv = vec2i(floor(v.Position.xy));
         var color = textureLoad(uColor, uv, 0);
         var depth = textureLoad(uDepth, uv, 0);
         var checker = (fract(v.Position.x / 20.0f) < 0.5f) != (fract(v.Position.y / 20.0f) < 0.5f);
         var checkerValue = select(0.0f, 0.25f, checker);
-        return color * (1.0f - checkerValue) + checkerValue;
+
+        if (depth == 1.0f)
+        {
+            return vec4(0.1f, 0.1f, 0.3f, 1.0f) * (1.0f - checkerValue) + checkerValue;
+        }
+        else
+        {
+            return color;
+        }
     }
 }

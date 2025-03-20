@@ -77,7 +77,7 @@ public partial class DeferredShader
     [FragmentShader]
     public vec4 fs_main(Varyings v)
     {
-        var uv = "vec2<i32>(floor(v.Position.xy))"._raw<ivec2>();
+        var uv = vec2i(floor(v.Position.xy));
         var albedo = textureLoad(uAlbedo, uv, 0).rgb;
         var normal = textureLoad(uNormal, uv, 0).xyz;
         var depth = textureLoad(uDepth, uv, 0);
@@ -91,7 +91,7 @@ public partial class DeferredShader
         {
             var light = lightsBuffer.Lights[i];
             var L = light.Position.xyz - position;
-            var distance = length<vec3, f32>(L);
+            var distance = length(L);
             if (distance > light.Radius)
             {
                 continue;
