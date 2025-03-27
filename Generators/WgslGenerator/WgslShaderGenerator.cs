@@ -183,6 +183,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
             // Generate shader entry points method
             members.AddRange(GenerateGetShaderEntryPointPorps(entryPoints));
+            interfaceMembers.AddRange(GenerateGetShaderEntryPointPorps(entryPoints, true));
 
             // Add layout properties for each bind group
             foreach (var group in bindGroups)
@@ -339,7 +340,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         var entries = new List<string>();
         foreach (var entry in bindGroup.Entries)
         {
-            var shaderStage = "ShaderStage.Vertex | ShaderStage.Fragment";
+            var shaderStage = "ShaderStage.Vertex | ShaderStage.Fragment | ShaderStage.Compute";
             var entryCode = entry.BindingType switch
             {
                 BindingType.Storage or BindingType.ReadOnlyStorage or BindingType.Uniform =>
@@ -544,7 +545,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
             Block(ReturnStatement(ParseExpression($"device.CreatePipelineLayout([{layoutsArray}], label: label)"))));
     }
 
-    private IEnumerable<MemberDeclarationSyntax> GenerateGetShaderEntryPointPorps(ShaderEntryInfo entryPoints)
+    private IEnumerable<MemberDeclarationSyntax> GenerateGetShaderEntryPointPorps(ShaderEntryInfo entryPoints,  bool isInterface = false)
     {
         // public string VertexEntryPoint { get; }
         // public string FragmentEntryPoint { get; }
@@ -565,11 +566,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
     private static PropertyDeclarationSyntax CreatePropWithValue(string name, ExpressionSyntax value)
     {
         return PropertyDeclaration(ParseTypeName("string"), name)
-            .WithInitializer(EqualsValueClause(value))
-            .WithAccessorList(AccessorList([
-                AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-            ]))
+            .WithExpressionBody(ArrowExpressionClause(value))
             .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
             .AddModifiers(Token(SyntaxKind.PublicKeyword));
     }
@@ -607,10 +604,11 @@ public class WgslShaderGenerator : IIncrementalGenerator
                  device.CreateShaderModuleWGSL({ShaderSource}, [{(entryPoints.FragmentEntryPoint != null
                      ? $"new {ShaderModuleHint}(\"{entryPoints.FragmentEntryPoint}\", pipelineLayout), "
                      : "")}{(entryPoints.VertexEntryPoint != null
-                     ? $"new {ShaderModuleHint}(\"{entryPoints.VertexEntryPoint}\", pipelineLayout)"
+                     ? $"new {ShaderModuleHint}(\"{entryPoints.VertexEntryPoint}\", pipelineLayout), "
+                     : "")}{(entryPoints.ComputeEntryPoint != null
+                     ? $"new {ShaderModuleHint}(\"{entryPoints.ComputeEntryPoint}\", pipelineLayout)"
                      : "")}], label: label)
-                 """
-            ))));
+                 """))));
     }
 
     private string GetVertexFormatName(VertexFormat format)

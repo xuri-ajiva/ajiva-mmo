@@ -578,7 +578,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         var location = "";
 
         // patching to add location to known types, user types are not our responsibility
-        if ((name == _entryPoints.VertexEntryPoint || name == _entryPoints.FragmentEntryPoint)
+        if ((name == _entryPoints.VertexEntryPoint || name == _entryPoints.FragmentEntryPoint || name == _entryPoints.ComputeEntryPoint)
             && _typemapper.KnownTypes.Contains(returnType))
             location = "@location(0) ";
 
