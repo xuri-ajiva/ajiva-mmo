@@ -7,12 +7,12 @@ internal static unsafe class ModelHelper
 {
     public class Model
     {
-        public u32[] Indices;
-        public Vector3[] Positions;
-        public Vector3[] Normals;
-        public Vector3[] Tangents;
-        public Vector2[] TexCoords0;
-        public Vector2[] TexCoords1;
+        public required u32[] Indices;
+        public required Vector3[] Positions;
+        public required Vector3[] Normals;
+        public required Vector3[] Tangents;
+        public required Vector2[] TexCoords0;
+        public required Vector2[] TexCoords1;
     }
 
     public static IReadOnlyList<Model> LoadModels(string file)

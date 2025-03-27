@@ -8,16 +8,13 @@ public class ClientConnectionLayer(Riptide.Client client, Ecs ecs) : IUiRenderLa
 {
     public Task Attach() => Task.CompletedTask;
 
-    private u32 counter = 0;
 
     public void Update(UpdateInfo info)
     {
-        if (/*counter++ <= 10 ||*/ !client.IsConnected) return;
+        if (!client.IsConnected) return;
 
         new UpdateEntityPacket(client.Id, ecs.LocalPos.X, ecs.LocalPos.Y, ecs.LocalPos.Z).Send(
             client.Connection!, MessageSendMode.Unreliable);
-
-        counter = 0;
     }
 
     public Task Detach() => Task.CompletedTask;
