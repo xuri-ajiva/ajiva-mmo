@@ -1,6 +1,9 @@
 ﻿using System.Runtime.CompilerServices;
+using Serilog;
 using Silk.NET.WebGPU;
+using Silk.NET.WebGPU.Extensions.WGPU;
 using Silk.NET.WebGPU.Safe;
+using Silk.NET.WebGPU.Safe.Extensions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using ImageCopyTexture = Silk.NET.WebGPU.Safe.ImageCopyTexture;
@@ -17,15 +20,7 @@ public class RendererApi(ILogger<RendererApi> logger)
     public AdapterPtr Adapter;
     public WebGPU Wgpu = null!;
     public InstancePtr Instance;
-
-    public Task StoppedAsync(CancellationToken cancellationToken)
-    {
-        Device.Destroy();
-        Adapter.Release();
-        Instance.Release();
-        Wgpu.Dispose();
-        return Task.CompletedTask;
-    }
+    private static Wgpu wgpuExtension;
 
     private async Task Initialize()
     {
@@ -53,6 +48,12 @@ public class RendererApi(ILogger<RendererApi> logger)
                 logger.LogCritical("Device lost with reason: {Reason} and message: {Message}", r, message);
             },
             defaultQueueLabel: "DefaultQueue", label: "MainDevice");
+
+        if (!Device.TryGetExtension(out wgpuExtension))
+        {
+            logger.LogCritical("Wgpu (wgpu-rs) extension is not supported");
+            throw new Exception("Wgpu (wgpu-rs) extension is not supported");
+        }
 
         Device.SetUncapturedErrorCallback((type, m) =>
         {
@@ -189,12 +190,24 @@ public class RendererApi(ILogger<RendererApi> logger)
         }
     }
 
+    public void Poll()
+    {
+        Device.GetExtension(wgpuExtension)
+            .Poll(true, null);
+    }
 
     public async Task StartingAsync(CancellationToken cancellationToken) => await Initialize();
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken)
+    {
+        Device.Destroy();
+        Adapter.Release();
+        Instance.Release();
+        Wgpu.Dispose();
+        return Task.CompletedTask;
+    }
 }
