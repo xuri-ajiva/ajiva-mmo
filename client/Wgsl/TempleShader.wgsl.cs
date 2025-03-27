@@ -62,7 +62,8 @@ public partial class TempleShader
     public partial struct ColorTargets(
         [Location(0)] vec4 albedo,
         [Location(1)] vec4 normal,
-        [Location(2)] vec4 emission
+        [Location(2)] vec4 emission,
+        [Location(3)] uvec2 objectAndInstanceId
     );
 
     [Group(0), Binding(0), BindingMode(BindingType.Uniform)]
@@ -133,6 +134,6 @@ public partial class TempleShader
 
         var oNormal = new vec4(mix(v.Normal, nrm, ubModel.NormalMapStrength) * 0.5f + new vec3(0.5f), 0.0f);
         
-        return new ColorTargets(oAlbedo, oNormal, new vec4(ambient + emission + v.HighlightColor.xyz * 0.5f, 1.0f));
+        return new ColorTargets(oAlbedo, oNormal, new vec4(ambient + emission + v.HighlightColor.xyz * 0.5f, 1.0f), new uvec2(v.MeshId, v.InstanceId));
     }
 }

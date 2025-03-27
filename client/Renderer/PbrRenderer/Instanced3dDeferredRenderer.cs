@@ -28,11 +28,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private readonly RendererApi _api;
     private readonly Ecs _ecs;
 
-    private SamplerPtr _linearSampler;
-    private BufferRange _sceneUniformBuffer;
-    private BindGroupPtr _sceneBindGroup;
-    private BindGroupLayoutPtr _modelBindGroupLayout;
-    private RenderPipelinePtr _modelPipeline;
 
     private InstancedMeshBuffer<ModelUniform, Instance>[] _meshBuffers = [];
     private GBuffer? _sceneGBuffer;
@@ -49,6 +44,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private ITempleShader? _templeShader;
     private DeferredPipeline? _deferredPipeline;
     private CompositorPipeline? _compositorPipeline;
+    private TemplePipeline? _templePipeline;
     private SceneUniform _sceneUniform;
     private bool _enabled = true;
 
@@ -205,17 +201,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         // TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm, TextureFormat.Rgba32float, TextureFormat.Depth24Plus,
         _sceneGBuffer = GBuffer.Create(_api.Device, TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm,
-            TextureFormat.Rgba32float, TextureFormat.Depth24Plus,
-            label: "SceneGBuffer");
+            TextureFormat.Rgba32float, TextureFormat.Depth24Plus, TextureFormat.RG32Uint, label: "SceneGBuffer");
 
         _finalSceneTexture = RenderTexture.Create(_api.Device, TextureFormat.Rgba8Unorm, label: "FinalSceneTexture");
-
-        _logger.LogDebug("Creating BindGroupLayouts");
-        var sceneBindGroupLayout = _templeShader.CreateBindGroupLayout0(_api.Device);
-        _modelBindGroupLayout = _templeShader.CreateBindGroupLayout1(_api.Device);
-
-        var pipelineLayout =
-            _templeShader.CreatePipelineLayout(_api.Device, sceneBindGroupLayout, _modelBindGroupLayout);
 
         _logger.LogDebug("Creating Model Buffers");
         _meshBuffers = CreateModelBuffers("resources/Temple/TempleModel.glb", "Temple");
@@ -233,22 +221,12 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             }
         }
 
-        _linearSampler = _api.Device.CreateSampler(AddressMode.Repeat, AddressMode.Repeat, AddressMode.ClampToEdge,
-            minFilter: FilterMode.Linear, magFilter: FilterMode.Linear, mipmapFilter: MipmapFilterMode.Linear,
-            lodMinClamp: 0, lodMaxClamp: 1, compare: CompareFunction.Undefined, label: "LinearSampler");
-
-        _sceneUniformBuffer = new BufferRange(
-            _api.Device.CreateBuffer(BufferUsage.Uniform | BufferUsage.CopyDst,
-                (u64)Unsafe.SizeOf<SceneUniform>(), label: "SceneUniformBuffer"),
-            0, (u64)Unsafe.SizeOf<SceneUniform>());
-
         _sceneLights = new SceneLights();
         _lightsBuffer = _api.CreateBufferWithData(BufferUsage.Storage | BufferUsage.CopyDst, _sceneLights.LightData,
             "LightBuffer");
 
-        _sceneBindGroup = _templeShader.CreateBindGroup0(_api.Device, sceneBindGroupLayout, _sceneUniformBuffer.Buffer,
-            _sceneUniformBuffer.Offset, _sceneUniformBuffer.Size);
-        sceneBindGroupLayout.Release();
+
+        CreatePipelines();
 
         foreach (var instancedMeshBuffer in _meshBuffers)
         {
@@ -257,83 +235,14 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                     (u64)Unsafe.SizeOf<ModelUniform>(), label: "ModelUniformBuffer"),
                 0, (u64)Unsafe.SizeOf<ModelUniform>());
 
-            RecreateBindGroup(instancedMeshBuffer);
+            _templePipeline.RecreateBindGroup(instancedMeshBuffer);
         }
-
-        _logger.LogDebug("Compiling Shader");
-
-        var shaderModule = _templeShader.CreateShaderModule(_api.Device, pipelineLayout);
-
-        // ReSharper disable once MethodHasAsyncOverload
-        _modelPipeline = _api.Device.CreateRenderPipeline(
-            label: "DefaultPipeline",
-            layout: pipelineLayout,
-            vertex: new VertexState
-            {
-                Module = shaderModule,
-                EntryPoint = "vs_main",
-                Constants = [],
-                Buffers =
-                [
-                    _templeShader.GetVertexBufferLayout(),
-                    _templeShader.GetInstanceBufferLayout(),
-                ]
-            },
-            primitive: new PrimitiveState
-            {
-                Topology = PrimitiveTopology.TriangleList,
-                FrontFace = FrontFace.Ccw,
-                CullMode = CullMode.Back
-            },
-            depthStencil: new DepthStencilState
-            {
-                Format = _sceneGBuffer.DepthStencilFormat,
-                DepthCompare = CompareFunction.LessEqual,
-                DepthWriteEnabled = true,
-                StencilFront = new StencilFaceState { Compare = CompareFunction.Always },
-                StencilBack = new StencilFaceState { Compare = CompareFunction.Always },
-            },
-            multisample: new MultisampleState
-            {
-                Count = 1,
-                AlphaToCoverageEnabled = false,
-                Mask = u32.MaxValue
-            },
-            fragment: new FragmentState
-            {
-                Module = shaderModule,
-                EntryPoint = "fs_main",
-                Constants = [],
-                Targets =
-                [
-                    new ColorTargetState(
-                        _sceneGBuffer.AlbedoChannelFormat,
-                        blendState: null,
-                        ColorWriteMask.All
-                    ),
-                    new ColorTargetState(
-                        _sceneGBuffer.NormalChannelFormat,
-                        blendState: null,
-                        ColorWriteMask.All
-                    ),
-                    new ColorTargetState(
-                        _sceneGBuffer.LightChannelFormat,
-                        blendState: null,
-                        ColorWriteMask.All
-                    )
-                ]
-            }
-        );
-
-        _logger.LogDebug("Creating DeferredShader and Compositor");
-
-        CreateOtherPipelines();
 
         _logger.LogDebug("Done");
     }
 
-    [MemberNotNull(nameof(_deferredPipeline), nameof(_compositorPipeline))]
-    private void CreateOtherPipelines()
+    [MemberNotNull(nameof(_deferredPipeline), nameof(_compositorPipeline), nameof(_templePipeline))]
+    private void CreatePipelines()
     {
         _deferredPipeline?.Dispose();
         _deferredPipeline = DeferredPipeline.Create(_api, _shaderManager.GetCurrentShader<IDeferredShader>(),
@@ -342,21 +251,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _compositorPipeline =
             CompositorPipeline.Create(_api, _shaderManager.GetCurrentShader<ICompositorShader>(),
                 _sceneGBuffer.AlbedoChannelFormat);
-    }
-
-    private void RecreateBindGroup(InstancedMeshBuffer<ModelUniform, Instance> instancedMeshBuffer)
-    {
-        instancedMeshBuffer.ModelBindGroup?.Release();
-        instancedMeshBuffer.ModelBindGroup = _templeShader!.CreateBindGroup1(_api.Device,
-            _modelBindGroupLayout,
-            instancedMeshBuffer.ModelUniformBuffer.Buffer,
-            _linearSampler,
-            instancedMeshBuffer.AlbedoTexture.View,
-            instancedMeshBuffer.NormalTexture.View,
-            instancedMeshBuffer.EmissionTexture.View,
-            ubModelOffset: instancedMeshBuffer.ModelUniformBuffer.Offset,
-            ubModelSize: instancedMeshBuffer.ModelUniformBuffer.Size
-        );
+        _templePipeline?.Dispose();
+        _templePipeline = TemplePipeline.Create(_api, _templeShader!, _sceneGBuffer);
     }
 
     public void Update(UpdateInfo info)
@@ -407,8 +303,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             Time = info.TotalTime
         };
 
-        queue.WriteBuffer(_sceneUniformBuffer.Buffer, _sceneUniformBuffer.Offset,
-            new ReadOnlySpan<SceneUniform>(ref _sceneUniform));
+        _templePipeline!.WriteUniformBuffer(queue, ref _sceneUniform);
 
         var players = _ecs.GetPlayers().ToArray();
         if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
@@ -429,26 +324,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         queue.WriteBuffer(_lightsBuffer.Buffer, _lightsBuffer.Offset, _sceneLights.LightData);
 
-        if (!_sceneGBuffer!.TryGetTargets(out var albedo, out var normal, out var emission, out var depthStencil))
-            return;
 
-        var cmd = _api.Device.CreateCommandEncoder();
-
-        var pass = cmd.BeginRenderPass([
-                new RenderPassColorAttachment(albedo.View, resolveTarget: null,
-                    LoadOp.Clear, StoreOp.Store, new Color(.06, .1, .1, 1)),
-                new RenderPassColorAttachment(normal.View, resolveTarget: null,
-                    LoadOp.Clear, StoreOp.Store, new Color(0, 0, 0, 1)),
-                new RenderPassColorAttachment(emission.View, resolveTarget: null,
-                    LoadOp.Clear, StoreOp.Store, new Color(0, 0, 0.1, 1))
-            ],
-            null,
-            new RenderPassDepthStencilAttachment(depthStencil.View, LoadOp.Clear, StoreOp.Store, 1f, false,
-                /*stencil*/ LoadOp.Clear, StoreOp.Discard, 0, true),
-            null);
-
-        pass.SetPipeline(_modelPipeline);
-
+        if (_templePipeline.BeginRenderPass() is not { } pass) return;
 
         foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _meshBuffers)
         {
@@ -458,14 +335,12 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
             pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset, indexBuffer.Size);
 
-            pass.SetBindGroup(0, _sceneBindGroup, ReadOnlySpan<u32>.Empty);
             pass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
 
             pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
         }
 
-        pass.End();
-        queue.Submit(new[] { cmd.Finish() });
+        queue.Submit(_templePipeline.EndRenderPass(pass));
     }
 
     private void WriteBuffer(QueuePtr queue, InstancedMeshBuffer<ModelUniform, Instance> buffer)
@@ -501,9 +376,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         var hasPrev = _finalSceneTexture.TryGetTargets(out var prevView);
         _sceneGBuffer.EnsureSize(width, height);
         _finalSceneTexture.EnsureSize(width, height);
-        CreateOtherPipelines();
+        CreatePipelines();
 
-        if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission, out var depth) &&
+        if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission, out var objectAndInstanceId, out var depth) &&
             _finalSceneTexture.TryGetTargets(out var colorOutput))
         {
             var queue = target.QueuePtr;
@@ -517,6 +392,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
             _compositorPipeline.Apply(queue, emission.View, depth.DepthOnlyView, colorOutput.View);
 
+            // todo sample objectAndInstanceId
 
             if (prevWidth != width && prevHeight != height && hasPrev)
                 target.ImguiController.RemoveTextureBindGroup(prevView.View);
@@ -596,10 +472,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     {
         _sceneGBuffer?.Release();
         _finalSceneTexture?.Release();
-        _linearSampler.Release();
-        _sceneBindGroup.Release();
-        _modelBindGroupLayout.Release();
-        _modelPipeline.Release();
+
         foreach (var buffer in _meshBuffers)
         {
             buffer.VertexBuffer.Buffer.Release();
@@ -611,21 +484,17 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         _compositorPipeline?.Dispose();
         _deferredPipeline?.Dispose();
+        _templePipeline?.Dispose();
 
-        _sceneUniformBuffer.Buffer.Destroy();
         _lightsBuffer.Buffer.Destroy();
 
         // set all null
         _sceneGBuffer = null;
         _finalSceneTexture = null;
-        _linearSampler = default;
-        _sceneBindGroup = default;
-        _modelBindGroupLayout = default;
-        _modelPipeline = default;
+
         _meshBuffers = [];
         _compositorPipeline = null;
         _deferredPipeline = null;
-        _sceneUniformBuffer = default;
         _lightsBuffer = default;
         _templeShader = null;
 
