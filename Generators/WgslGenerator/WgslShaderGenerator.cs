@@ -21,6 +21,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
 {
     private const string Namespace = "Generators";
     private const string AttributeName = "GenerateShaderAttribute";
+    private const string ShaderSource = "ShaderSource";
 
     private const string AttributeSourceCode =
         $$"""
@@ -44,6 +45,12 @@ public class WgslShaderGenerator : IIncrementalGenerator
           [AttributeUsage(AttributeTargets.Method)]
           public partial class FragmentShader : Attribute;
 
+          [AttributeUsage(AttributeTargets.Method)]
+          public partial class ComputeShader : Attribute;
+
+          [AttributeUsage(AttributeTargets.Method)]
+          public partial class WorkgroupSize(u32 x, u32 y = 1, u32 z = 1) : Attribute;
+
           [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
           public partial class Group(uint id) : Attribute;
 
@@ -57,7 +64,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
           {
               [global::System.ObsoleteAttribute]
               Undefined,
-          
+
               // BufferBindingType
               Uniform,
               Storage,
@@ -150,7 +157,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
             var shaderSource = $""""
                                 """
                                 {wgslVisitor.GetResult()}
-                                """    
+                                """
                                 """";
 
             // Get binding information
@@ -168,11 +175,6 @@ public class WgslShaderGenerator : IIncrementalGenerator
             var semanticModel = compilation.GetSemanticModel(classDeclarationSyntax.SyntaxTree);
             var symbol = ModelExtensions.GetDeclaredSymbol(semanticModel, classDeclarationSyntax);
             var namespaceName = symbol.ContainingNamespace.ToDisplayString();
-
-            var assignment = EqualsValueClause(
-                LiteralExpression(
-                    SyntaxKind.StringLiteralExpression,
-                    Literal(shaderSource, shaderSource)));
 
             var interfaceMembers = new List<MemberDeclarationSyntax>();
 
@@ -232,14 +234,8 @@ public class WgslShaderGenerator : IIncrementalGenerator
             var partialClass = baseClass.AddMembers(ClassDeclaration(className)
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.PartialKeyword))
                 .WithBaseList(BaseList([SimpleBaseType(ParseName($"I{className}"))]))
-                .AddMembers(PropertyDeclaration(ParseTypeName("string"), "ShaderSource")
-                    .WithInitializer(assignment)
-                    .WithAccessorList(AccessorList([
-                        AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                    ]))
-                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                    .AddModifiers(Token(SyntaxKind.PublicKeyword)))
+                .AddMembers(CreatePropWithValue(ShaderSource,
+                    LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(shaderSource, shaderSource))))
                 .AddMembers(members.ToArray())
                 .AddMembers(generatedStructs.ToArray()));
 
@@ -252,7 +248,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
             context.AddSource($"I{className}.g.cs",
                 SourceText.From(interfaceClass.NormalizeWhitespace().ToFullString(), Encoding.UTF8));
-            
+
             context.AddSource($"{className}.g.cs",
                 SourceText.From(partialClass.NormalizeWhitespace().ToFullString(), Encoding.UTF8));
         }
@@ -553,17 +549,23 @@ public class WgslShaderGenerator : IIncrementalGenerator
         // public string VertexEntryPoint { get; }
         // public string FragmentEntryPoint { get; }
 
-        yield return PropertyDeclaration(ParseTypeName("string"), "VertexEntryPoint")
-            .WithInitializer(EqualsValueClause(ParseExpression($"\"{entryPoints.VertexEntryPoint ?? "null"}\"")))
-            .WithAccessorList(AccessorList([
-                AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-            ]))
-            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-            .AddModifiers(Token(SyntaxKind.PublicKeyword));
+        if (entryPoints.VertexEntryPoint is not null)
+            yield return CreatePropWithValue(nameof(ShaderEntryInfo.VertexEntryPoint),
+                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.VertexEntryPoint)));
 
-        yield return PropertyDeclaration(ParseTypeName("string"), "FragmentEntryPoint")
-            .WithInitializer(EqualsValueClause(ParseExpression($"\"{entryPoints.FragmentEntryPoint ?? "null"}\"")))
+        if (entryPoints.FragmentEntryPoint is not null)
+            yield return CreatePropWithValue(nameof(ShaderEntryInfo.FragmentEntryPoint),
+                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.FragmentEntryPoint)));
+
+        if (entryPoints.ComputeEntryPoint is not null)
+            yield return CreatePropWithValue(nameof(ShaderEntryInfo.ComputeEntryPoint),
+                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.ComputeEntryPoint)));
+    }
+
+    private static PropertyDeclarationSyntax CreatePropWithValue(string name, ExpressionSyntax value)
+    {
+        return PropertyDeclaration(ParseTypeName("string"), name)
+            .WithInitializer(EqualsValueClause(value))
             .WithAccessorList(AccessorList([
                 AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
@@ -602,7 +604,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
         return methodDeclaration.WithBody(
             Block(ReturnStatement(ParseExpression(
                 $"""
-                 device.CreateShaderModuleWGSL(ShaderSource, [{(entryPoints.FragmentEntryPoint != null
+                 device.CreateShaderModuleWGSL({ShaderSource}, [{(entryPoints.FragmentEntryPoint != null
                      ? $"new {ShaderModuleHint}(\"{entryPoints.FragmentEntryPoint}\", pipelineLayout), "
                      : "")}{(entryPoints.VertexEntryPoint != null
                      ? $"new {ShaderModuleHint}(\"{entryPoints.VertexEntryPoint}\", pipelineLayout)"

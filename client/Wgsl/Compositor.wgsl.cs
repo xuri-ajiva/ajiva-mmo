@@ -1,10 +1,13 @@
 ﻿using Generators;
 using GlmSharp;
-using static Client.Wgsl.BuiltIn;
-
-// ReSharper disable UnusedMember.Global
 
 namespace Client.Wgsl;
+
+using static BuiltIn;
+
+// ReSharper disable UnusedMember.Global
+// ReSharper disable InconsistentNaming
+#pragma warning disable CS0649 // Field is never assigned to, and will always have its default value
 
 [GenerateShader]
 public partial class CompositorShader
@@ -24,8 +27,8 @@ public partial class CompositorShader
     [Group(0), Binding(0), BindingMode(BindingType.Uniform)]
     public Uniforms ub;
 
-    [Group(0), Binding(1)] public texture_2d<f32> uColor;
-    [Group(0), Binding(4)] public texture_depth_2d uDepth;
+    [Group(0), Binding(1)] public readonly texture_2d<f32> uColor = null!;
+    [Group(0), Binding(4)] public readonly texture_depth_2d uDepth = null!;
 
     [VertexShader]
     public Varyings vs_main([Builtin("vertex_index")] u32 vertexIndex)
@@ -55,6 +58,7 @@ public partial class CompositorShader
         var checker = (fract(v.Position.x / 20.0f) < 0.5f) != (fract(v.Position.y / 20.0f) < 0.5f);
         var checkerValue = select(0.0f, 0.25f, checker);
 
+        // ReSharper disable once CompareOfFloatsByEqualityOperator
         if (depth == 1.0f)
         {
             return vec4(0.1f, 0.1f, 0.3f, 1.0f) * (1.0f - checkerValue) + checkerValue;

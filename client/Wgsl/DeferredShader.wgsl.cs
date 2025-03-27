@@ -1,14 +1,14 @@
 ﻿using Generators;
 using GlmSharp;
-using static Client.Wgsl.BuiltIn;
-using static GlmSharp.glm;
-
-// ReSharper disable UnusedMember.Global
-
-// ReSharper disable InconsistentNaming
-#pragma warning disable CS0649 // Field is never assigned to, and will always have its default value
 
 namespace Client.Wgsl;
+
+using static BuiltIn;
+using static glm;
+
+// ReSharper disable UnusedMember.Global
+// ReSharper disable InconsistentNaming
+#pragma warning disable CS0649 // Field is never assigned to, and will always have its default value
 
 [GenerateShader]
 public partial class DeferredShader

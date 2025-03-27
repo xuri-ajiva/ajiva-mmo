@@ -99,6 +99,7 @@ public class ShaderEntryInfo
 {
     public string? VertexEntryPoint { get; set; }
     public string? FragmentEntryPoint { get; set; }
+    public string? ComputeEntryPoint { get; set; }
 }
 
 /// <summary>
@@ -516,15 +517,28 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 }
 
                 break;
+            
+            case "ComputeShader":
+                _writer.Write("@compute ");
+
+                // Store the method name as compute entry point
+                if (node.Parent?.Parent is MethodDeclarationSyntax compMethodDecl)
+                {
+                    _entryPoints.ComputeEntryPoint = compMethodDecl.Identifier.Text;
+                }
+
+                break;
+            
+            case "WorkgroupSize":
+                _writer.Write($"@workgroup_size{node.ArgumentList} ");
+                break;
 
             case "Group":
-                var group = node.ArgumentList?.Arguments.First().Expression.ToString();
-                _writer.Write($"@group({group}) ");
+                _writer.Write($"@group{node.ArgumentList} ");
                 break;
 
             case "Binding":
-                var binding = node.ArgumentList?.Arguments.First().Expression.ToString();
-                _writer.Write($"@binding({binding}) ");
+                _writer.Write($"@binding{node.ArgumentList} ");
                 break;
 
             case "BindingMode":

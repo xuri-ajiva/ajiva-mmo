@@ -1,9 +1,14 @@
 ﻿using System.Numerics;
 using Generators;
 using GlmSharp;
-using static Client.Wgsl.BuiltIn;
 
 namespace Client.Wgsl;
+
+using static BuiltIn;
+
+// ReSharper disable UnusedMember.Global
+// ReSharper disable InconsistentNaming
+#pragma warning disable CS0649 // Field is never assigned to, and will always have its default value
 
 [GenerateShader]
 public partial class TempleShader
@@ -73,11 +78,11 @@ public partial class TempleShader
     private ModelUniform ubModel;
 
     [Group(1)] [Binding(1), BindingMode(BindingType.Filtering)]
-    private sampler uSampler;
+    private readonly sampler uSampler = null!;
 
-    [Group(1)] [Binding(2)] private texture_2d<f32> uAlbedo;
-    [Group(1)] [Binding(3)] private texture_2d<f32> uNormal;
-    [Group(1)] [Binding(4)] private texture_2d<f32> uEmission;
+    [Group(1)] [Binding(2)] private readonly texture_2d<f32> uAlbedo= null!;
+    [Group(1)] [Binding(3)] private readonly texture_2d<f32> uNormal= null!;
+    [Group(1)] [Binding(4)] private readonly texture_2d<f32> uEmission= null!;
 
     [VertexShader]
     public Varyings vs_main(Attributes a, Instance i, [Builtin("instance_index")] u32 iId)
@@ -133,7 +138,8 @@ public partial class TempleShader
         var emission = textureSample(uEmission, uSampler, v.Tex1Coord).xyz * ubModel.Tex1Color;
 
         var oNormal = new vec4(mix(v.Normal, nrm, ubModel.NormalMapStrength) * 0.5f + new vec3(0.5f), 0.0f);
-        
-        return new ColorTargets(oAlbedo, oNormal, new vec4(ambient + emission + v.HighlightColor.xyz * 0.5f, 1.0f), new uvec2(v.MeshId, v.InstanceId));
+
+        return new ColorTargets(oAlbedo, oNormal, new vec4(ambient + emission + v.HighlightColor.xyz * 0.5f, 1.0f),
+            new uvec2(v.MeshId, v.InstanceId));
     }
 }
