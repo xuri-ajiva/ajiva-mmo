@@ -45,8 +45,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private DeferredPipeline? _deferredPipeline;
     private CompositorPipeline? _compositorPipeline;
     private TemplePipeline? _templePipeline;
+    private PixelSamplingPipeline? _samplingPipeline;
     private SceneUniform _sceneUniform;
     private bool _enabled = true;
+    private ObjectSamplingShader.Result? _underCursor;
 
     public Instanced3dDeferredRenderer(ILogger<Instanced3dDeferredRenderer> logger, IShaderManager shaderManager,
         RendererApi api, Ecs ecs)
@@ -241,7 +243,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _logger.LogDebug("Done");
     }
 
-    [MemberNotNull(nameof(_deferredPipeline), nameof(_compositorPipeline), nameof(_templePipeline))]
+    [MemberNotNull(nameof(_deferredPipeline), nameof(_compositorPipeline), nameof(_templePipeline),
+        nameof(_samplingPipeline))]
     private void CreatePipelines()
     {
         _deferredPipeline?.Dispose();
@@ -253,6 +256,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 _sceneGBuffer.AlbedoChannelFormat);
         _templePipeline?.Dispose();
         _templePipeline = TemplePipeline.Create(_api, _templeShader!, _sceneGBuffer);
+        _samplingPipeline?.Dispose();
+        _samplingPipeline =
+            PixelSamplingPipeline.Create(_api, _shaderManager.GetCurrentShader<IObjectSamplingShader>());
     }
 
     public void Update(UpdateInfo info)
@@ -261,6 +267,13 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         if (_isSceneViewHovered)
         {
             _camera.Update();
+        }
+
+        if (_samplingPipeline is not null)
+        {
+            var mappingTask = _samplingPipeline.RequestResultBufferMapping();
+            _api.Poll();
+            _underCursor = _samplingPipeline.ReadResult(mappingTask);
         }
     }
 
@@ -324,7 +337,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         queue.WriteBuffer(_lightsBuffer.Buffer, _lightsBuffer.Offset, _sceneLights.LightData);
 
-
         if (_templePipeline.BeginRenderPass() is not { } pass) return;
 
         foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _meshBuffers)
@@ -378,11 +390,17 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _finalSceneTexture.EnsureSize(width, height);
         CreatePipelines();
 
-        if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission, out var objectAndInstanceId, out var depth) &&
+        if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission, out var objectAndInstanceId,
+                out var depth) &&
             _finalSceneTexture.TryGetTargets(out var colorOutput))
         {
             var queue = target.QueuePtr;
             Render(info, target, new Extent3D(width, height, 1));
+
+            var mousePosition = ImGui.GetMousePos() -
+                                (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
+            _samplingPipeline.DispatchPixelRead(queue, new uvec2((u32)mousePosition.X, (u32)mousePosition.Y),
+                depth.DepthOnlyView, objectAndInstanceId.View);
 
             if (!Matrix4x4.Invert(_sceneUniform.ViewProjectionRef, out var invViewProjection))
                 throw new InvalidOperationException("ViewProjection Matrix could not be inverted");
@@ -391,8 +409,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 invViewProjection, _lightsBuffer.Buffer, _sceneLights.LightCount);
 
             _compositorPipeline.Apply(queue, emission.View, depth.DepthOnlyView, colorOutput.View);
-
-            // todo sample objectAndInstanceId
 
             if (prevWidth != width && prevHeight != height && hasPrev)
                 target.ImguiController.RemoveTextureBindGroup(prevView.View);
@@ -412,6 +428,19 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     {
         if (ImGui.Begin("Controls"))
         {
+            ImGui.Text("Under Mouse Sample:");
+            if (_underCursor.HasValue)
+            {
+                var result = _underCursor.Value;
+                ImGui.Text($"Object ID: {result.ObjectId}");
+                ImGui.Text($"Instance ID: {result.InstanceId}");
+                ImGui.Text($"Depth: {result.Depth}");
+            }
+            else
+            {
+                ImGui.Text("No object under mouse");
+            }
+
             ImGui.Columns(2, null, false);
             var y = ImGui.GetCursorPosY();
             ImGui.SetCursorPosY(y + ImGui.GetStyle().FramePadding.Y);
