@@ -250,29 +250,27 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 );
                 // for vectors generate reinterpretcast using:
                 // public unsafe ref Vector4 NormalVector => ref Unsafe.AsRef<Vector4>(Unsafe.AsPointer(ref Normal));
-                if (parameter.Type!.ToString().Contains("vec"))
+                if (parameter.Type is IdentifierNameSyntax { Identifier.Text: { Length: 4 } s } && s.StartsWith("vec") && s[3] is var vDim)
                 {
-                    var dimension = uint.Parse(parameter.Type!.ToString().Substring(3, 1));
-                    fieldsImple = fieldsImple.AddMembers(PropertyDeclaration(ParseTypeName($"Vector{dimension}"),
+                    fieldsImple = fieldsImple.AddMembers(PropertyDeclaration(ParseTypeName($"Vector{vDim}"),
                             Identifier(fieldName + "Ref"))
                         .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.UnsafeKeyword),
                             Token(SyntaxKind.RefKeyword)))
                         .WithExpressionBody(ArrowExpressionClause(
-                            ParseExpression($"ref Unsafe.AsRef<Vector{dimension}>(Unsafe.AsPointer(ref {fieldName}))")))
+                            ParseExpression($"ref Unsafe.AsRef<Vector{vDim}>(Unsafe.AsPointer(ref {fieldName}))")))
                         .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
                     );
                 }
-                else if (parameter.Type!.ToString().Contains("mat"))
+                else if (parameter.Type is IdentifierNameSyntax { Identifier.Text: { Length: 4 } m } && m.StartsWith("mat") && m[3] is var mDim)
                 {
-                    var dimension = uint.Parse(parameter.Type!.ToString().Substring(3, 1));
                     fieldsImple = fieldsImple.AddMembers(PropertyDeclaration(
-                            ParseTypeName($"Matrix{dimension}x{dimension}"),
+                            ParseTypeName($"Matrix{mDim}x{mDim}"),
                             Identifier(fieldName + "Ref"))
                         .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.UnsafeKeyword),
                             Token(SyntaxKind.RefKeyword)))
                         .WithExpressionBody(ArrowExpressionClause(
                             ParseExpression(
-                                $"ref Unsafe.AsRef<Matrix{dimension}x{dimension}>(Unsafe.AsPointer(ref {fieldName}))")))
+                                $"ref Unsafe.AsRef<Matrix{mDim}x{mDim}>(Unsafe.AsPointer(ref {fieldName}))")))
                         .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
                     );
                 }
