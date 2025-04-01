@@ -4,7 +4,7 @@ using GlmSharp;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
-namespace Client.Renderer;
+namespace Client.Renderer.Pipelines;
 
 using static ObjectSamplingShader;
 

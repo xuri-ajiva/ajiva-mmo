@@ -49,6 +49,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private SceneUniform _sceneUniform;
     private bool _enabled = true;
     private ObjectSamplingShader.Result? _underCursor;
+    private u32 _selectedObjectId;
+    private u32 _selectedInstanceId;
 
     public Instanced3dDeferredRenderer(ILogger<Instanced3dDeferredRenderer> logger, IShaderManager shaderManager,
         RendererApi api, Ecs ecs)
@@ -94,7 +96,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 new InstancedMeshBuffer<ModelUniform, Instance>(vertexBuffer, indexBuffer,
                     new ModelUniform
                     {
-                        Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)iModel,
+                        Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)iModel + 1,
                         Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
                     }, instances
                 );
@@ -105,6 +107,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             Span<u32> indices = stackalloc u32[6 * 6];
             Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0);
 
+            const f32 tex1Scale = 0.3f;
             var vIndex = 0;
             var iIndex = 0;
             foreach (var rot in new[]
@@ -123,7 +126,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 {
                     PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, 1, 1), rot).ToSystem(),
                     Tex0CoordRef = new Vector2(0, 0),
-                    Tex1CoordRef = new Vector2(0, 0),
+                    Tex1CoordRef = new Vector2(tex1Scale, tex1Scale),
                     NormalRef = normal,
                     TangentRef = tangent
                 };
@@ -131,7 +134,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 {
                     PositionRef = Vector3D.Transform(new Vector3D<f32>(1, 1, 1), rot).ToSystem(),
                     Tex0CoordRef = new Vector2(1, 0),
-                    Tex1CoordRef = new Vector2(1, 0),
+                    Tex1CoordRef = new Vector2(1 - tex1Scale, tex1Scale),
                     NormalRef = normal,
                     TangentRef = tangent
                 };
@@ -139,7 +142,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 {
                     PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, -1, 1), rot).ToSystem(),
                     Tex0CoordRef = new Vector2(0, 1),
-                    Tex1CoordRef = new Vector2(0, 1),
+                    Tex1CoordRef = new Vector2(tex1Scale, 1 - tex1Scale),
                     NormalRef = normal,
                     TangentRef = tangent
                 };
@@ -147,7 +150,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 {
                     PositionRef = Vector3D.Transform(new Vector3D<f32>(1, -1, 1), rot).ToSystem(),
                     Tex0CoordRef = new Vector2(1, 1),
-                    Tex1CoordRef = new Vector2(1, 1),
+                    Tex1CoordRef = new Vector2(1 - tex1Scale, 1 - tex1Scale),
                     NormalRef = normal,
                     TangentRef = tangent
                 };
@@ -274,6 +277,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             var mappingTask = _samplingPipeline.RequestResultBufferMapping();
             _api.Poll();
             _underCursor = _samplingPipeline.ReadResult(mappingTask);
+            if (_underCursor is { } pos && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+            {
+                _selectedObjectId = pos.ObjectId;
+                _selectedInstanceId = pos.InstanceId;
+            }
         }
     }
 
@@ -429,41 +437,60 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         if (ImGui.Begin("Controls"))
         {
             ImGui.Text("Under Mouse Sample:");
-            if (_underCursor.HasValue)
+            if (_underCursor is { } selected)
             {
-                var result = _underCursor.Value;
-                ImGui.Text($"Object ID: {result.ObjectId}");
-                ImGui.Text($"Instance ID: {result.InstanceId}");
-                ImGui.Text($"Depth: {result.Depth}");
+                ImGui.Text($"Object ID: {selected.ObjectId}");
+                ImGui.Text($"Instance ID: {selected.InstanceId}");
+                ImGui.Text($"Depth: {selected.Depth}");
             }
             else
             {
                 ImGui.Text("No object under mouse");
             }
 
-            ImGui.Columns(2, null, false);
-            var y = ImGui.GetCursorPosY();
-            ImGui.SetCursorPosY(y + ImGui.GetStyle().FramePadding.Y);
-            ImGui.Text("Texture");
-            ImGui.NextColumn();
-            ImGui.SetCursorPosY(y);
-            var imageButtonSize = ImGui.GetContentRegionAvail().X;
-            /*
-            if (ImGui.ImageButton("ChooseTexture", _cubeTexture.view.GetIntPtr(), new(imageButtonSize)))
+            if (_selectedObjectId != 0 && _selectedObjectId <= _meshBuffers.Length)
             {
-                var result = Nfd.FileOpen(new NfdFilter[]
-                {
-                    new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
-                });
+                ref var selectedBuffer = ref _meshBuffers[_selectedObjectId - 1];
 
-                if (result.Status == NfdStatus.Ok)
-                {
-                    using var stream = new FileStream(result.Path, FileMode.Open);
+                ImGui.Columns(2, null, false);
+                var y = ImGui.GetCursorPosY();
+                ImGui.SetCursorPosY(y + ImGui.GetStyle().FramePadding.Y);
+                ImGui.Text("Texture");
+                ImGui.NextColumn();
+                ImGui.SetCursorPosY(y);
+                var imageButtonSize = ImGui.GetContentRegionAvail().X;
 
-                    _requestedCubeTexture = _api.CreateTextureFromRGBAImage(TextureUsage.TextureBinding, stream);
+                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.Texture.GetIntPtr(),
+                        new Vector2(imageButtonSize)))
+                {
+                    Task.Run(() =>
+                    {
+                        var pickResult = Nfd.FileOpen([
+                            new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
+                        ]);
+
+                        if (pickResult.Status != NfdStatus.Ok) return;
+
+                        _logger.LogInformation("Not Implemented currently");
+                        // using var stream = File.OpenRead(pickResult.Path);
+                        /*_requestedCubeTexture =
+                            _api.CreateTextureFromRgbaImage(TextureUsage.TextureBinding, stream, "CustomTexture");*/
+                    });
+                }
+
+                if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
+                {
+                    ref var selectedInstance = ref selectedBuffer.InstanceInfos[_selectedInstanceId];
+                    ImGui.Text($"Instance");
+                    ImGui.DragFloat4($"##Position", ref selectedInstance.Transform0Ref, 0.1f);
+                    ImGui.DragFloat4($"##Rotation", ref selectedInstance.Transform1Ref, 0.1f);
+                    ImGui.DragFloat4($"##Scale", ref selectedInstance.Transform2Ref, 0.1f);
+                    ImGui.DragFloat4($"##ScaleA", ref selectedInstance.Transform3Ref, 0.1f);
+                    ImGui.Text("Highlight Color");
+                    ImGui.ColorEdit4($"##HighlightColor", ref selectedInstance.HighlightColorRef);
                 }
             }
-            */
+
 
             ImGui.NextColumn();
             ImGui.Spacing();
