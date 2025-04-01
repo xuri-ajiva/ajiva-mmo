@@ -534,6 +534,13 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         }
 
         ImGui.End();
+
+        if (ImGui.Begin("DefTexture"))
+        {
+            ImGui.Image(_loader.DefaultTexture.View.GetIntPtr(), new Vector2(256, 256));
+        }
+
+        ImGui.End();
     }
 
     public Task Detach()
