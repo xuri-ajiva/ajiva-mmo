@@ -42,8 +42,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
     public ref bool Enabled => ref _enabled;
 
-    private TextureAndView? _requestedCubeTexture = null;
-
     private bool _isSceneViewHovered;
     private ITempleShader? _templeShader;
     private DeferredPipeline? _deferredPipeline;
@@ -290,42 +288,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
     public void Render(UpdateInfo info, RenderTarget target, Extent3D sceneViewport)
     {
-        /*bool rebuildBindGroup = false;
-        if (_requestedCubeTexture != null)
-        {
-            _cubeTexture.tex.Destroy();
-            _cubeTexture.view.Release();
-
-            _cubeTexture = _requestedCubeTexture.Value;
-            _requestedCubeTexture = null;
-
-            rebuildBindGroup = true;
-        }
-
-        if (rebuildBindGroup)
-        {
-            _modelBindGroup.Release();
-            _modelBindGroup = _api.Device.CreateBindGroup(
-                bindGroupLayout: _modelBindGroupLayout,
-                new[]
-                {
-                    Buffer(0, modelUniformBuffer.Buffer, modelUniformBuffer.Offset, modelUniformBuffer.Size),
-                    Sampler(1, _linearSampler),
-                    Texture(2, _cubeTexture.view)
-                },
-                label: "ModelBindGroup"
-            );
-        }*/
-
-        /*if (_requestedCubeTexture.HasValue)
-        {
-            ref var instancedMeshBuffer = ref _meshBuffers[_selectedObjectId - 1];
-            // todo tell resource manager to release old texture or dec ref count
-            instancedMeshBuffer.AlbedoTexture = _requestedCubeTexture.Value.View;
-            _templePipeline!.RecreateBindGroup(instancedMeshBuffer);
-            _requestedCubeTexture = null;
-        }*/
-
         var queue = target.QueuePtr;
         var aspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
 
@@ -462,7 +424,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
             if (_selectedObjectId != 0 && _selectedObjectId <= _meshBuffers.Length)
             {
-                ref var selectedBuffer = ref _meshBuffers[_selectedObjectId - 1];
+                var selectedBuffer = _meshBuffers[_selectedObjectId - 1];
 
                 ImGui.Columns(2, null, false);
                 var y = ImGui.GetCursorPosY();
@@ -470,10 +432,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 ImGui.Text("Texture");
                 ImGui.NextColumn();
                 ImGui.SetCursorPosY(y);
-                var imageButtonSize = ImGui.GetContentRegionAvail().X;
 
-                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.Texture.GetIntPtr(),
-                        new Vector2(imageButtonSize)))
+                var imageButtonSize = ImGui.GetContentRegionAvail().X;
+                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.View.GetIntPtr(), new Vector2(imageButtonSize)))
                 {
                     Task.Run(() =>
                     {
@@ -484,9 +445,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                         if (pickResult.Status != NfdStatus.Ok) return;
 
                         _logger.LogInformation("Not Implemented currently");
-                        // using var stream = File.OpenRead(pickResult.Path);
-                        /*_requestedCubeTexture =
-                            _api.CreateTextureFromRgbaImage(TextureUsage.TextureBinding, stream, "CustomTexture");*/
+                        var clone = selectedBuffer.AlbedoTexture.Clone();
+                        _loader.AsyncTextureLoad(pickResult.Path, clone);
+                        selectedBuffer.AlbedoTexture = clone;
                     });
                 }
 
