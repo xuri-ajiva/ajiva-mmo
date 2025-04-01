@@ -4,6 +4,7 @@ using Client.Networking;
 using Client.Platform;
 using Client.Renderer;
 using Client.Renderer.PbrRenderer;
+using Client.Renderer.Resources;
 using Client.Wgsl;
 using Serilog;
 using ServiceDefaults;
@@ -47,6 +48,7 @@ builder.AddServiceDefaults();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<AjivaWindow>());
 
     services.AddSingleton<RendererApi>();
+    services.AddSingleton<ResourceLoader>();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RendererApi>());
     // services.AddSingleton<RendererApi>(provider => provider.GetRequiredService<RendererApi>());
     

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Client.Renderer.Resources;
 using ImGuiNET;
 using Silk.NET.Maths;
@@ -10,30 +10,31 @@ namespace Client.Renderer.PbrRenderer;
 public record struct BufferRange(BufferPtr Buffer, u64 Offset, u64 Size);
 
 public class InstancedMeshBuffer<TModelUniform, TInstance>(
-    BufferRange vertexBuffer,
-    BufferRange indexBuffer,
+    AjivaBuffer<Attributes> vertexBuffer,
+    AjivaBuffer<u32> indexBuffer,
     TModelUniform modelUniform,
     TInstance[] instanceInfos
 )
 {
     // buffers
-    public BufferRange VertexBuffer { get; set; } = vertexBuffer;
-    public BufferRange IndexBuffer { get; set; } = indexBuffer;
-    public BufferRange? InstanceBuffer;
-    public BufferRange ModelUniformBuffer { get; set; }
+    public AjivaBuffer<Attributes> VertexBuffer { get; set; } = vertexBuffer;
+    public AjivaBuffer<u32> IndexBuffer { get; set; } = indexBuffer;
+    public AjivaBuffer<Instance>? InstanceBuffer;
+    public AjivaBuffer<ModelUniform> ModelUniformBuffer { get; set; }
 
     // bind groups
     public BindGroupPtr? ModelBindGroup { get; set; }
+    public i32 ModelBindGroupHash { get; set; }
 
     // values
     public TModelUniform ModelUniform = modelUniform;
     public TInstance[] InstanceInfos = instanceInfos;
-    public TextureAndView AlbedoTexture;
-    public TextureAndView NormalTexture;
-    public TextureAndView EmissionTexture;
+    public AjivaTexture AlbedoTexture;
+    public AjivaTexture NormalTexture;
+    public AjivaTexture EmissionTexture;
 
-    public void Deconstruct(out BufferRange vertexBuffer, out BufferRange indexBuffer, out BufferRange? instanceBuffer,
-        out BindGroupPtr? modelBindGroup, out TInstance[] instanceInfos)
+    public void Deconstruct(out AjivaBuffer<Attributes> vertexBuffer, out AjivaBuffer<u32> indexBuffer,
+        out AjivaBuffer<Instance>? instanceBuffer, out BindGroupPtr? modelBindGroup, out TInstance[] instanceInfos)
     {
         vertexBuffer = VertexBuffer;
         indexBuffer = IndexBuffer;

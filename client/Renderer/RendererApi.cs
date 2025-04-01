@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using Client.Renderer.PbrRenderer;
 using Serilog;
 using Silk.NET.WebGPU;
@@ -83,86 +83,6 @@ public class RendererApi(ILogger<RendererApi> logger)
                     break;
             }
         });
-    }
-
-    public BufferRange CreateBufferWithData<T>(BufferUsage usage, ReadOnlySpan<T> data, string? label = null)
-        where T : unmanaged
-    {
-        var bufferSize = (u64)Unsafe.SizeOf<T>() * (u64)data.Length;
-
-        var buffer = Device.CreateBuffer(usage,
-            bufferSize,
-            mappedAtCreation: true, label);
-
-        var mappedBuffer = buffer.GetMappedRange<T>(UIntPtr.Zero, (nuint)bufferSize);
-        data.CopyTo(mappedBuffer);
-
-        buffer.Unmap();
-        return new BufferRange(buffer, 0, bufferSize);
-    }
-
-    public TextureAndView CreateTextureFromRgbaImage(
-        TextureUsage usage, Stream data, string? label = null)
-    {
-        using var image = Image.Load<Rgba32>(data);
-
-        var pixelBuffer = new Rgba32[image.Width * image.Height];
-        image.CopyPixelDataTo(pixelBuffer);
-
-        var texture = Device.CreateTexture(
-            usage | TextureUsage.CopyDst,
-            TextureDimension.Dimension2D,
-            new Extent3D
-            {
-                Width = (u32)image.Width,
-                Height = (u32)image.Height,
-                DepthOrArrayLayers = 1,
-            },
-            TextureFormat.Rgba8Unorm,
-            mipLevelCount: 1,
-            sampleCount: 1,
-            viewFormats: new[]
-            {
-                TextureFormat.Rgba8Unorm
-            },
-            label: label);
-
-        Device.GetQueue().WriteTexture<Rgba32>(
-            new ImageCopyTexture
-            {
-                Aspect = TextureAspect.All,
-                MipLevel = 0,
-                Origin = new Origin3D(0, 0, 0),
-                Texture = texture
-            }, pixelBuffer,
-            new TextureDataLayout
-            {
-                Offset = 0,
-                BytesPerRow = 4 * (u32)image.Width,
-                RowsPerImage = (u32)image.Height
-            },
-            new Extent3D((u32)image.Width, (u32)image.Height, 1));
-
-        var textureView = texture.CreateView(TextureFormat.Rgba8Unorm, TextureViewDimension.Dimension2D,
-            TextureAspect.All,
-            baseMipLevel: 0, mipLevelCount: 1, baseArrayLayer: 0, arrayLayerCount: 1,
-            label: $"{label} - View");
-
-        return new TextureAndView(texture, textureView);
-    }
-
-    public async Task<TextureAndView> LoadTextureAsync(string path)
-    {
-        try
-        {
-            await using var fileStream = File.Open(path, FileMode.Open);
-            return CreateTextureFromRgbaImage(TextureUsage.TextureBinding, fileStream, path);
-        }
-        catch (Exception e)
-        {
-            logger.LogCritical(e, "Failed to load texture {Path}", path);
-            throw;
-        }
     }
 
     public ShaderModulePtr CreateShaderModuleFromFile(string fileName,
