@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
+using Client.Renderer.PbrRenderer;
 using Serilog;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.WGPU;
@@ -20,7 +21,7 @@ public class RendererApi(ILogger<RendererApi> logger)
     public AdapterPtr Adapter;
     public WebGPU Wgpu = null!;
     public InstancePtr Instance;
-    private static Wgpu wgpuExtension;
+    private static Wgpu _wgpuExtension = null!;
 
     private async Task Initialize()
     {
@@ -49,7 +50,7 @@ public class RendererApi(ILogger<RendererApi> logger)
             },
             defaultQueueLabel: "DefaultQueue", label: "MainDevice");
 
-        if (!Device.TryGetExtension(out wgpuExtension))
+        if (!Device.TryGetExtension(out _wgpuExtension))
         {
             logger.LogCritical("Wgpu (wgpu-rs) extension is not supported");
             throw new Exception("Wgpu (wgpu-rs) extension is not supported");
@@ -192,7 +193,7 @@ public class RendererApi(ILogger<RendererApi> logger)
 
     public void Poll()
     {
-        Device.GetExtension(wgpuExtension)
+        Device.GetExtension(_wgpuExtension)
             .Poll(true, null);
     }
 

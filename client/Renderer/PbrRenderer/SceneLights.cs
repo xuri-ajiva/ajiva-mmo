@@ -1,7 +1,7 @@
 ﻿using GlmSharp;
 using static Client.Wgsl.DeferredShader;
 
-namespace Client.Renderer;
+namespace Client.Renderer.PbrRenderer;
 
 internal class SceneLights
 {

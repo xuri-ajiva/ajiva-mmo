@@ -1,9 +1,11 @@
-﻿using System.Numerics;
+using System.Numerics;
+using Client.Renderer.Resources;
 using ImGuiNET;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU.Safe;
+using static Client.Wgsl.TempleShader;
 
-namespace Client.Renderer;
+namespace Client.Renderer.PbrRenderer;
 
 public record struct BufferRange(BufferPtr Buffer, u64 Offset, u64 Size);
 

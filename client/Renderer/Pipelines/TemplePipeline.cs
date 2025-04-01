@@ -1,5 +1,6 @@
 ﻿using System.Runtime.CompilerServices;
-using Client.VirtualFramebuffers;
+using Client.Renderer.PbrRenderer;
+using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
@@ -11,7 +12,7 @@ using static Client.Wgsl.TempleShader;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 using RenderPassDepthStencilAttachment = Silk.NET.WebGPU.Safe.RenderPassDepthStencilAttachment;
 
-namespace Client.Renderer;
+namespace Client.Renderer.Pipelines;
 
 public class TemplePipeline : IDisposable
 {
@@ -137,6 +138,18 @@ public class TemplePipeline : IDisposable
 
     public void RecreateBindGroup(InstancedMeshBuffer<ModelUniform, TempleShader.Instance> instancedMeshBuffer)
     {
+        var targetHash = new HashCode();
+        targetHash.Add(_modelBindGroupLayout);
+        targetHash.Add(instancedMeshBuffer.ModelUniformBuffer.Version);
+        targetHash.Add(instancedMeshBuffer.AlbedoTexture.Version);
+        targetHash.Add(instancedMeshBuffer.NormalTexture.Version);
+        targetHash.Add(instancedMeshBuffer.EmissionTexture.Version);
+        
+        if(instancedMeshBuffer.ModelBindGroupHash == targetHash.ToHashCode())
+            return;
+        
+        instancedMeshBuffer.ModelBindGroupHash = targetHash.ToHashCode();
+        
         instancedMeshBuffer.ModelBindGroup?.Release();
         instancedMeshBuffer.ModelBindGroup = _shader.CreateBindGroup1(_api.Device,
             _modelBindGroupLayout,

@@ -1,7 +1,7 @@
 ﻿using System.Numerics;
 using Silk.NET.Assimp;
 
-namespace Client.Renderer;
+namespace Client.Renderer.Resources;
 
 internal static unsafe class ModelHelper
 {
@@ -22,7 +22,7 @@ internal static unsafe class ModelHelper
         if(!System.IO.File.Exists(file))
             throw new FileNotFoundException(file);
 
-        Scene* scene = assimp.ImportFile(file, 0);
+        var scene = assimp.ImportFile(file, 0);
 
         if(scene == null)
             throw new Exception($"model could not be loaded");

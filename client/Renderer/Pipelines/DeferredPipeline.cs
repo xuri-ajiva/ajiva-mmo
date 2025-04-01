@@ -6,7 +6,7 @@ using Silk.NET.WebGPU.Safe;
 using Safe = Silk.NET.WebGPU.Safe;
 using static Client.Wgsl.DeferredShader;
 
-namespace Client.Renderer;
+namespace Client.Renderer.Pipelines;
 
 public class DeferredPipeline : IDisposable
 {

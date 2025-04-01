@@ -1,11 +1,14 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Client.LayerSystem;
-using Client.VirtualFramebuffers;
+using Client.Renderer.Pipelines;
+using Client.Renderer.Resources;
+using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
 using GlmSharp;
 using ImGuiNET;
+using NativeFileDialogExtendedSharp;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;

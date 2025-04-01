@@ -1,8 +1,8 @@
 ﻿using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
-using static Client.VirtualFramebuffers.VirtualFramebuffer;
+using static Client.Renderer.VirtualFramebuffers.VirtualFramebuffer;
 
-namespace Client.VirtualFramebuffers
+namespace Client.Renderer.VirtualFramebuffers
 {
     public class GBuffer
     {

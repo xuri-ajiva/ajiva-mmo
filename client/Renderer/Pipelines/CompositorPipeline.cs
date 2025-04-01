@@ -1,11 +1,11 @@
 ﻿using System.Runtime.InteropServices;
+using Client.Wgsl;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
-using Client.Wgsl;
 using Safe = Silk.NET.WebGPU.Safe;
 using static Client.Wgsl.CompositorShader;
 
-namespace Client.Renderer
+namespace Client.Renderer.Pipelines
 {
     public class CompositorPipeline : IDisposable
     {
