@@ -28,6 +28,7 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Sink(logWidget)
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
+    .WriteTo.Sink(logWidget)
     .MinimumLevel.Verbose()
     .CreateLogger();
 
@@ -48,8 +49,9 @@ builder.AddServiceDefaults();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<AjivaWindow>());
 
     services.AddSingleton<RendererApi>();
-    services.AddSingleton<ResourceLoader>();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RendererApi>());
+    services.AddSingleton<ResourceLoader>();
+    services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<ResourceLoader>());
     // services.AddSingleton<RendererApi>(provider => provider.GetRequiredService<RendererApi>());
     
     services.AddSingleton<ShaderReloadManager>();
