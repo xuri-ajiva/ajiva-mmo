@@ -100,8 +100,8 @@ public class AjivaTexture(
         other.Version++;
     }
 
-    public AjivaTexture Clone()
+    public AjivaTexture Clone(bool cleanUp = false)
     {
-        return new AjivaTexture(_loader, Texture, View, Size, Aspect, MipLevels, false);
+        return new AjivaTexture(_loader, Texture, View, Size, Aspect, MipLevels, cleanUp);
     }
 }

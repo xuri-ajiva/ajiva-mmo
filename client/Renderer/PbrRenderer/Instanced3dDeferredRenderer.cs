@@ -220,9 +220,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         _logger.LogDebug("Creating uniform resources");
         {
-            var albedo = _loader.LoadTextureAsync("resources/Temple/TempleStone_alb.png");
-            var normal = _loader.LoadTextureAsync("resources/Temple/TempleStone_nrm.png");
-            var emission = _loader.LoadTextureAsync("resources/Temple/TempleStone_emm.png");
+            var albedo = _loader.AsyncTextureLoad("resources/Temple/TempleStone_alb.png");
+            var normal = _loader.AsyncTextureLoad("resources/Temple/TempleStone_nrm.png");
+            var emission = _loader.AsyncTextureLoad("resources/Temple/TempleStone_emm.png");
             foreach (var instancedMeshBuffer in _meshBuffers)
             {
                 instancedMeshBuffer.AlbedoTexture = albedo;

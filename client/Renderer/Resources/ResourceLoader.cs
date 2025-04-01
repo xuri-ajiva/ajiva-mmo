@@ -41,22 +41,34 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 
     public QueuePtr Queue => api.Device.GetQueue();
 
-    public AjivaTexture CreateTextureFromRgbaImage(
-        TextureUsage usage, string path, string? label = null, u32 mipLevels = 1)
+    public void AsyncTextureLoad(string path, AjivaTexture target, TextureUsage usage = TextureUsage.TextureBinding, string? label = null,
+        u32 mipLevels = 1, TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
     {
-        const TextureFormat format = TextureFormat.Rgba8Unorm;
-        const TextureAspect aspect = TextureAspect.All;
+        Task.Run(async () =>
+        {
+            try
+            {
+                await LoadTextureAndMips(path, target, usage, label ?? Path.GetFileNameWithoutExtension(path),
+                    mipLevels, format, aspect);
+            }
+            catch (Exception e)
+            {
+                Logger.LogCritical(e, "Failed to load texture {Path}", path);
+                throw;
+            }
+        });
+    }
 
-        var tex = DefaultTexture.Clone();
-
-        Task.Run(async () => await LoadTextureAndMips(path, tex, usage, label, mipLevels, format, aspect));
-
-        return tex;
+    public AjivaTexture AsyncTextureLoad(string path, TextureUsage usage = TextureUsage.TextureBinding, string? label = null,
+        u32 mipLevels = 1, TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
+    {
+        var result = DefaultTexture.Clone();
+        AsyncTextureLoad(path, result, usage, label, mipLevels, format, aspect);
+        return result;
     }
 
     private async Task LoadTextureAndMips(string path, AjivaTexture tex, TextureUsage usage, string? label,
-        u32 requestedMipLevels,
-        TextureFormat format, TextureAspect aspect)
+        u32 requestedMipLevels, TextureFormat format, TextureAspect aspect)
     {
         await using var data = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -162,18 +174,6 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         return tex;
     }
 
-    public AjivaTexture LoadTextureAsync(string path)
-    {
-        try
-        {
-            return CreateTextureFromRgbaImage(TextureUsage.TextureBinding, path, path, 16);
-        }
-        catch (Exception e)
-        {
-            Logger.LogCritical(e, "Failed to load texture {Path}", path);
-            throw;
-        }
-    }
 
     public AjivaBuffer<T> CreateBuffer<T>(BufferUsage usage, i32 count, string? label = null)
         where T : unmanaged
