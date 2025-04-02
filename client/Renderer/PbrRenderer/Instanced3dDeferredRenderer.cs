@@ -33,7 +33,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private readonly Ecs _ecs;
 
 
-    private InstancedMeshBuffer<ModelUniform, Instance>[] _meshBuffers = [];
+    private AjivaMesh _cuebMesh;
+    private InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[] _meshBuffers = [];
+    private InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[] _transparentMeshBuffers = [];
     private GBuffer? _sceneGBuffer;
     private RenderTexture? _finalSceneTexture;
     private SceneLights _sceneLights = null!;
@@ -65,17 +67,91 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _camera = new DragCamera();
     }
 
-    private InstancedMeshBuffer<ModelUniform, Instance>[] CreateModelBuffers(string path, string? label = null)
+    private AjivaMesh GenerateCubeMesh()
+    {
+        Span<TempleShader.Attributes> cubeVertices = stackalloc TempleShader.Attributes[6 * 4];
+        Span<u32> indices = stackalloc u32[6 * 6];
+        Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0);
+
+        const f32 tex1Scale = 0;
+        var vIndex = 0;
+        var iIndex = 0;
+        ReadOnlySpan<Quaternion<f32>> rotations =
+        [
+            Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 0.5f, 0, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 1.0f, 0, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 1.5f, 0, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(0, MathF.PI / 2, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(0, -MathF.PI / 2, 0),
+        ];
+        foreach (var rot in rotations)
+        {
+            var normal = Vector3D.Transform(new Vector3D<f32>(0, 0, 1), rot).ToSystem();
+            var tangent = Vector3D.Transform(new Vector3D<f32>(1, 0, 0), rot).ToSystem();
+
+            cubeVertices[vIndex++] = new TempleShader.Attributes
+            {
+                PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, 1, 1), rot).ToSystem(),
+                Tex0CoordRef = new Vector2(0, 0),
+                Tex1CoordRef = new Vector2(tex1Scale, tex1Scale),
+                NormalRef = normal,
+                TangentRef = tangent
+            };
+            cubeVertices[vIndex++] = new TempleShader.Attributes
+            {
+                PositionRef = Vector3D.Transform(new Vector3D<f32>(1, 1, 1), rot).ToSystem(),
+                Tex0CoordRef = new Vector2(1, 0),
+                Tex1CoordRef = new Vector2(1 - tex1Scale, tex1Scale),
+                NormalRef = normal,
+                TangentRef = tangent
+            };
+            cubeVertices[vIndex++] = new TempleShader.Attributes
+            {
+                PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, -1, 1), rot).ToSystem(),
+                Tex0CoordRef = new Vector2(0, 1),
+                Tex1CoordRef = new Vector2(tex1Scale, 1 - tex1Scale),
+                NormalRef = normal,
+                TangentRef = tangent
+            };
+            cubeVertices[vIndex++] = new TempleShader.Attributes
+            {
+                PositionRef = Vector3D.Transform(new Vector3D<f32>(1, -1, 1), rot).ToSystem(),
+                Tex0CoordRef = new Vector2(1, 1),
+                Tex1CoordRef = new Vector2(1 - tex1Scale, 1 - tex1Scale),
+                NormalRef = normal,
+                TangentRef = tangent
+            };
+
+            indices[iIndex++] = (u32)(vIndex - 4);
+            indices[iIndex++] = (u32)(vIndex - 2);
+            indices[iIndex++] = (u32)(vIndex - 3);
+            indices[iIndex++] = (u32)(vIndex - 2);
+            indices[iIndex++] = (u32)(vIndex - 1);
+            indices[iIndex++] = (u32)(vIndex - 3);
+        }
+
+        TempleShader.Instance[] instances = [new()];
+        instances[0].SetTransform(Matrix4x4.Identity);
+
+        return new AjivaMesh(
+            _loader.CreateBuffer<TempleShader.Attributes>(BufferUsage.Vertex | BufferUsage.CopyDst, cubeVertices,
+                $"CubeMesh::VertexBuffer"),
+            _loader.CreateBuffer<u32>(BufferUsage.Index | BufferUsage.CopyDst, indices,
+                $"CubeMesh::IndexBuffer"));
+    }
+
+    private InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[] CreateModelBuffers(string path, string? label = null)
     {
         var models = ModelHelper.LoadModels(path);
 
-        var buffers = new InstancedMeshBuffer<ModelUniform, Instance>[models.Count + 1];
+        var buffers = new InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[models.Count + 1];
 
         for (var iModel = 0; iModel < models.Count; iModel++)
         {
             var mdl = models[iModel];
 
-            var modelVertices = new Attributes[mdl.Positions.Length];
+            var modelVertices = new TempleShader.Attributes[mdl.Positions.Length];
 
             for (var iVertex = 0; iVertex < mdl.Positions.Length; iVertex++)
             {
@@ -86,18 +162,18 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 modelVertices[iVertex].TangentRef = mdl.Tangents[iVertex];
             }
 
-            var vertexBuffer = _loader.CreateBuffer<Attributes>(BufferUsage.Vertex | BufferUsage.CopyDst,
+            var vertexBuffer = _loader.CreateBuffer<TempleShader.Attributes>(BufferUsage.Vertex | BufferUsage.CopyDst,
                 modelVertices,
                 label == null ? null : $"{label}::VertexBuffer");
 
             var indexBuffer = _loader.CreateBuffer<u32>(BufferUsage.Index | BufferUsage.CopyDst, mdl.Indices,
                 label == null ? null : $"{label}::IndexBuffer");
 
-            Instance[] instances = [new()];
+            TempleShader.Instance[] instances = [new()];
             instances[0].SetTransform(Matrix4x4.Identity);
             buffers[iModel] =
-                new InstancedMeshBuffer<ModelUniform, Instance>(vertexBuffer, indexBuffer,
-                    new ModelUniform
+                new InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>(new AjivaMesh(vertexBuffer, indexBuffer),
+                    new TempleShader.ModelUniform
                     {
                         Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)iModel + 1,
                         Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
@@ -105,99 +181,60 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 );
         }
 
-        {
-            Span<Attributes> cubeVertices = stackalloc Attributes[6 * 4];
-            Span<u32> indices = stackalloc u32[6 * 6];
-            Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0);
+        TempleShader.Instance[] cubes = [new()];
+        cubes[0].SetTransform(Matrix4x4.Identity);
 
-            const f32 tex1Scale = 0.3f;
-            var vIndex = 0;
-            var iIndex = 0;
-            foreach (var rot in new[]
-                     {
-                         Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0),
-                         Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 0.5f, 0, 0),
-                         Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 1.0f, 0, 0),
-                         Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 1.5f, 0, 0),
-                         Quaternion<f32>.CreateFromYawPitchRoll(0, MathF.PI / 2, 0),
-                         Quaternion<f32>.CreateFromYawPitchRoll(0, -MathF.PI / 2, 0),
-                     })
+        buffers[^1] = new InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>(_cuebMesh.Clone(), new TempleShader.ModelUniform
             {
-                var normal = Vector3D.Transform(new Vector3D<f32>(0, 0, 1), rot).ToSystem();
-                var tangent = Vector3D.Transform(new Vector3D<f32>(1, 0, 0), rot).ToSystem();
-                var a = new Attributes
-                {
-                    PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, 1, 1), rot).ToSystem(),
-                    Tex0CoordRef = new Vector2(0, 0),
-                    Tex1CoordRef = new Vector2(tex1Scale, tex1Scale),
-                    NormalRef = normal,
-                    TangentRef = tangent
-                };
-                var b = new Attributes
-                {
-                    PositionRef = Vector3D.Transform(new Vector3D<f32>(1, 1, 1), rot).ToSystem(),
-                    Tex0CoordRef = new Vector2(1, 0),
-                    Tex1CoordRef = new Vector2(1 - tex1Scale, tex1Scale),
-                    NormalRef = normal,
-                    TangentRef = tangent
-                };
-                var c = new Attributes
-                {
-                    PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, -1, 1), rot).ToSystem(),
-                    Tex0CoordRef = new Vector2(0, 1),
-                    Tex1CoordRef = new Vector2(tex1Scale, 1 - tex1Scale),
-                    NormalRef = normal,
-                    TangentRef = tangent
-                };
-                var d = new Attributes
-                {
-                    PositionRef = Vector3D.Transform(new Vector3D<f32>(1, -1, 1), rot).ToSystem(),
-                    Tex0CoordRef = new Vector2(1, 1),
-                    Tex1CoordRef = new Vector2(1 - tex1Scale, 1 - tex1Scale),
-                    NormalRef = normal,
-                    TangentRef = tangent
-                };
-
-                /*cubeVertices[index++] = b;
-                cubeVertices[index++] = a;
-                cubeVertices[index++] = c;
-
-                cubeVertices[index++] = b;
-                cubeVertices[index++] = c;
-                cubeVertices[index++] = d;*/
-                cubeVertices[vIndex++] = a;
-                cubeVertices[vIndex++] = b;
-                cubeVertices[vIndex++] = c;
-                cubeVertices[vIndex++] = d;
-
-                indices[iIndex++] = (u32)(vIndex - 4);
-                indices[iIndex++] = (u32)(vIndex - 2);
-                indices[iIndex++] = (u32)(vIndex - 3);
-                indices[iIndex++] = (u32)(vIndex - 2);
-                indices[iIndex++] = (u32)(vIndex - 1);
-                indices[iIndex++] = (u32)(vIndex - 3);
-            }
-
-            Instance[] instances = [new()];
-            instances[0].SetTransform(Matrix4x4.Identity);
-
-            buffers[^1] = new InstancedMeshBuffer<ModelUniform, Instance>(
-                _loader.CreateBuffer<Attributes>(BufferUsage.Vertex | BufferUsage.CopyDst, cubeVertices,
-                    label == null ? null : $"{label}::VertexBuffer"),
-                _loader.CreateBuffer<u32>(BufferUsage.Index | BufferUsage.CopyDst, indices,
-                    label == null ? null : $"{label}::IndexBuffer"),
-                new ModelUniform
-                {
-                    Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)models.Count + 1,
-                    Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
-                }, instances
-            );
-        }
+                Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)models.Count + 1,
+                Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
+            }, cubes
+        );
 
         buffers[2].InstanceInfos[0].HighlightColor = new vec4(1, 1, 0.5f, 0.5f);
         buffers[1].InstanceInfos[0].HighlightColor = new vec4(0.5f, 1, 1, 0.5f);
 
         return buffers;
+    }
+
+    private InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[] CreateTransparentCubes()
+    {
+        // generate 10 cubes random size and position
+        var instances = new TempleShader.Instance[10];
+        for (var i = 0; i < instances.Length; i++)
+        {
+            var scale = new Vector3(3.0f + (f32)Random.Shared.NextDouble() * 2f);
+            var position = new Vector3(
+                (f32)Random.Shared.NextDouble() * 10 - 5,
+                (f32)Random.Shared.NextDouble() * 10 - 5,
+                (f32)Random.Shared.NextDouble() * 10 - 5
+            );
+
+            var rotation = new Vector4(
+                (f32)Random.Shared.NextDouble() * MathF.PI * 2,
+                (f32)Random.Shared.NextDouble() * MathF.PI * 2,
+                (f32)Random.Shared.NextDouble() * MathF.PI * 2,
+                0
+            );
+
+            instances[i].SetTransform(Matrix4x4.CreateScale(scale) *
+                                      Matrix4x4.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z) *
+                                      Matrix4x4.CreateTranslation(position));
+        }
+
+        var transparentTexture = _loader.AsyncTextureLoad("resources/Glass/Red.png");
+
+        return
+        [
+            new InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>(_cuebMesh.Clone(), new TempleShader.ModelUniform
+            {
+                Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = 0,
+                Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
+            }, instances)
+            {
+                AlbedoTexture = transparentTexture,
+            }
+        ];
     }
 
     public async Task Attach()
@@ -211,10 +248,13 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _sceneGBuffer = GBuffer.Create(_api.Device, TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm,
             TextureFormat.Rgba32float, TextureFormat.Depth24Plus, TextureFormat.RG32Uint, label: "SceneGBuffer");
 
-        _finalSceneTexture = RenderTexture.Create(_api.Device, TextureFormat.Rgba8Unorm, label: "FinalSceneTexture");
+        _finalSceneTexture =
+            RenderTexture.Create(_api.Device, TextureFormat.Rgba8Unorm, label: "FinalSceneTexture");
 
         _logger.LogDebug("Creating Model Buffers");
+        _cuebMesh = GenerateCubeMesh();
         _meshBuffers = CreateModelBuffers("resources/Temple/TempleModel.glb", "Temple");
+        _transparentMeshBuffers = CreateTransparentCubes();
 
         _logger.LogDebug("Creating uniform resources");
         {
@@ -224,6 +264,13 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             foreach (var instancedMeshBuffer in _meshBuffers)
             {
                 instancedMeshBuffer.AlbedoTexture = albedo;
+                instancedMeshBuffer.NormalTexture = normal;
+                instancedMeshBuffer.EmissionTexture = emission;
+            }
+
+            // for testing
+            foreach (var instancedMeshBuffer in _transparentMeshBuffers)
+            {
                 instancedMeshBuffer.NormalTexture = normal;
                 instancedMeshBuffer.EmissionTexture = emission;
             }
@@ -238,7 +285,15 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         foreach (var instancedMeshBuffer in _meshBuffers)
         {
-            instancedMeshBuffer.ModelUniformBuffer = _loader.CreateBuffer<ModelUniform>(
+            instancedMeshBuffer.ModelUniformBuffer = _loader.CreateBuffer<TempleShader.ModelUniform>(
+                BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer");
+
+            _templePipeline.RecreateBindGroup(instancedMeshBuffer);
+        }
+
+        foreach (var instancedMeshBuffer in _transparentMeshBuffers)
+        {
+            instancedMeshBuffer.ModelUniformBuffer = _loader.CreateBuffer<TempleShader.ModelUniform>(
                 BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer");
 
             _templePipeline.RecreateBindGroup(instancedMeshBuffer);
@@ -291,7 +346,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         var queue = target.QueuePtr;
         var aspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
 
-        _sceneUniform = new SceneUniform
+        _sceneUniform = new TempleShader.SceneUniform
         {
             ViewProjectionRef = _camera.GetViewMatrix(aspectRatio),
             CameraPositionRef = _camera.Position,
@@ -302,7 +357,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         var players = _ecs.GetPlayers().ToArray();
         if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
-            _meshBuffers[^1].InstanceInfos = new Instance[players.Length + 1];
+            _meshBuffers[^1].InstanceInfos = new TempleShader.Instance[players.Length + 1];
 
         ref var instanceInfo = ref _meshBuffers[^1].InstanceInfos;
         instanceInfo[0].SetTransform(Matrix4x4.CreateTranslation(_camera.Position));
@@ -313,6 +368,12 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         }
 
         foreach (var buffer in _meshBuffers)
+        {
+            WriteBuffer(queue, buffer);
+            _templePipeline.RecreateBindGroup(buffer);
+        }
+
+        foreach (var buffer in _transparentMeshBuffers)
         {
             WriteBuffer(queue, buffer);
             _templePipeline.RecreateBindGroup(buffer);
@@ -335,16 +396,29 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
         }
 
+        foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _transparentMeshBuffers)
+        {
+            pass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.Offset, vertexBuffer.Size);
+            pass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.Offset,
+                instanceBuffer.Size);
+
+            pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset, indexBuffer.Size);
+
+            pass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
+
+            pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
+        }
+
         queue.Submit(_templePipeline.EndRenderPass(pass));
     }
 
-    private void WriteBuffer(QueuePtr queue, InstancedMeshBuffer<ModelUniform, Instance> buffer)
+    private void WriteBuffer(QueuePtr queue, InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance> buffer)
     {
-        buffer.ModelUniformBuffer.QueuedWrite(new ReadOnlySpan<ModelUniform>(ref buffer.ModelUniform), queue);
+        buffer.ModelUniformBuffer.QueuedWrite(new ReadOnlySpan<TempleShader.ModelUniform>(ref buffer.ModelUniform), queue);
 
-        var data = new ReadOnlySpan<Instance>(buffer.InstanceInfos);
+        var data = new ReadOnlySpan<TempleShader.Instance>(buffer.InstanceInfos);
         if (buffer.InstanceBuffer is null || buffer.InstanceBuffer.Size <
-            (u64)data.Length * (u64)Unsafe.SizeOf<Instance>())
+            (u64)data.Length * (u64)Unsafe.SizeOf<TempleShader.Instance>())
         {
             buffer.InstanceBuffer?.Dispose();
             buffer.InstanceBuffer = _loader.CreateBuffer(BufferUsage.Vertex | BufferUsage.CopyDst,
@@ -372,9 +446,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _finalSceneTexture.EnsureSize(width, height);
         CreatePipelines();
 
-        if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission, out var objectAndInstanceId,
-                out var depth) &&
-            _finalSceneTexture.TryGetTargets(out var colorOutput))
+        if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission,
+                out var objectAndInstanceId,
+                out var depth) && _finalSceneTexture.TryGetTargets(out var colorOutput))
         {
             var queue = target.QueuePtr;
             Render(info, target, new Extent3D(width, height, 1));
@@ -434,7 +508,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 ImGui.SetCursorPosY(y);
 
                 var imageButtonSize = ImGui.GetContentRegionAvail().X;
-                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.View.GetIntPtr(), new Vector2(imageButtonSize)))
+                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.View.GetIntPtr(),
+                        new Vector2(imageButtonSize)))
                 {
                     Task.Run(() =>
                     {
@@ -511,11 +586,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         foreach (var buffer in _meshBuffers)
         {
-            buffer.VertexBuffer.Dispose();
-            buffer.IndexBuffer.Dispose();
-            buffer.ModelUniformBuffer.Dispose();
-            buffer.ModelBindGroup?.Release();
-            buffer.InstanceBuffer?.Dispose();
+            buffer.Dispose();
         }
 
         _compositorPipeline?.Dispose();

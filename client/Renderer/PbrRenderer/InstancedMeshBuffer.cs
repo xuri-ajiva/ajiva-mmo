@@ -9,16 +9,36 @@ namespace Client.Renderer.PbrRenderer;
 
 public record struct BufferRange(BufferPtr Buffer, u64 Offset, u64 Size);
 
-public class InstancedMeshBuffer<TModelUniform, TInstance>(
+public class AjivaMesh(
     AjivaBuffer<Attributes> vertexBuffer,
     AjivaBuffer<u32> indexBuffer,
-    TModelUniform modelUniform,
-    TInstance[] instanceInfos
-)
+    bool cleanUp = false) : IDisposable
 {
-    // buffers
     public AjivaBuffer<Attributes> VertexBuffer { get; set; } = vertexBuffer;
     public AjivaBuffer<u32> IndexBuffer { get; set; } = indexBuffer;
+    private bool CleanUp { get; set; } = cleanUp;
+
+    public void Dispose()
+    {
+        if (!CleanUp) return;
+        VertexBuffer.Dispose();
+        IndexBuffer.Dispose();
+    }
+
+    public AjivaMesh Clone(bool cleanUp = false)
+    {
+        return new AjivaMesh(VertexBuffer, IndexBuffer, cleanUp);
+    }
+}
+
+public class InstancedMeshBuffer<TModelUniform, TInstance>(
+    AjivaMesh mesh,
+    TModelUniform modelUniform,
+    TInstance[] instanceInfos) : IDisposable
+{
+    public AjivaMesh Mesh { get; set; } = mesh;
+
+    // buffers
     public AjivaBuffer<Instance>? InstanceBuffer;
     public AjivaBuffer<ModelUniform> ModelUniformBuffer { get; set; }
 
@@ -36,11 +56,23 @@ public class InstancedMeshBuffer<TModelUniform, TInstance>(
     public void Deconstruct(out AjivaBuffer<Attributes> vertexBuffer, out AjivaBuffer<u32> indexBuffer,
         out AjivaBuffer<Instance>? instanceBuffer, out BindGroupPtr? modelBindGroup, out TInstance[] instanceInfos)
     {
-        vertexBuffer = VertexBuffer;
-        indexBuffer = IndexBuffer;
+        vertexBuffer = Mesh.VertexBuffer;
+        indexBuffer = Mesh.IndexBuffer;
         instanceBuffer = InstanceBuffer;
         modelBindGroup = ModelBindGroup;
         instanceInfos = InstanceInfos;
+    }
+
+    public void Dispose()
+    {
+        Mesh.Dispose();
+        InstanceBuffer?.Dispose();
+        ModelBindGroup?.Release();
+        ModelUniformBuffer.Dispose();
+
+        AlbedoTexture.Dispose();
+        NormalTexture.Dispose();
+        EmissionTexture.Dispose();
     }
 }
 
