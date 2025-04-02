@@ -1,6 +1,8 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Client.LayerSystem;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
@@ -12,17 +14,8 @@ using NativeFileDialogExtendedSharp;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
-using Color = Silk.NET.WebGPU.Color;
-using ColorTargetState = Silk.NET.WebGPU.Safe.ColorTargetState;
-using FragmentState = Silk.NET.WebGPU.Safe.FragmentState;
-using PrimitiveState = Silk.NET.WebGPU.Safe.PrimitiveState;
-using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
-using RenderPassDepthStencilAttachment = Silk.NET.WebGPU.Safe.RenderPassDepthStencilAttachment;
-using VertexState = Silk.NET.WebGPU.Safe.VertexState;
 
 namespace Client.Renderer.PbrRenderer;
-
-using static TempleShader;
 
 public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 {
@@ -33,9 +26,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     private readonly Ecs _ecs;
 
 
-    private AjivaMesh _cuebMesh;
-    private InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[] _meshBuffers = [];
-    private InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[] _transparentMeshBuffers = [];
+    private PBRInstancedMeshBuffer[] _meshBuffers = [];
+    private OITInstancedMeshBuffer[] _transparentMeshBuffers = [];
+
     private GBuffer? _sceneGBuffer;
     private RenderTexture? _finalSceneTexture;
     private SceneLights _sceneLights = null!;
@@ -45,12 +38,12 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     public ref bool Enabled => ref _enabled;
 
     private bool _isSceneViewHovered;
-    private ITempleShader? _templeShader;
     private DeferredPipeline? _deferredPipeline;
     private CompositorPipeline? _compositorPipeline;
     private TemplePipeline? _templePipeline;
     private PixelSamplingPipeline? _samplingPipeline;
-    private SceneUniform _sceneUniform;
+    private WboitPipeline? _transparentPipeline;
+    private TempleShader.SceneUniform _sceneUniform;
     private bool _enabled = true;
     private ObjectSamplingShader.Result? _underCursor;
     private u32 _selectedObjectId;
@@ -67,13 +60,13 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _camera = new DragCamera();
     }
 
-    private AjivaMesh GenerateCubeMesh()
+    private AjivaMesh<T> GenerateCubeMesh<T>(Func<i32, Quaternion<f32>, Vector3, Vector3, T> creator)
+        where T : unmanaged
     {
-        Span<TempleShader.Attributes> cubeVertices = stackalloc TempleShader.Attributes[6 * 4];
+        Span<T> cubeVertices = stackalloc T[6 * 4];
         Span<u32> indices = stackalloc u32[6 * 6];
         Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0);
 
-        const f32 tex1Scale = 0;
         var vIndex = 0;
         var iIndex = 0;
         ReadOnlySpan<Quaternion<f32>> rotations =
@@ -90,38 +83,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             var normal = Vector3D.Transform(new Vector3D<f32>(0, 0, 1), rot).ToSystem();
             var tangent = Vector3D.Transform(new Vector3D<f32>(1, 0, 0), rot).ToSystem();
 
-            cubeVertices[vIndex++] = new TempleShader.Attributes
-            {
-                PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, 1, 1), rot).ToSystem(),
-                Tex0CoordRef = new Vector2(0, 0),
-                Tex1CoordRef = new Vector2(tex1Scale, tex1Scale),
-                NormalRef = normal,
-                TangentRef = tangent
-            };
-            cubeVertices[vIndex++] = new TempleShader.Attributes
-            {
-                PositionRef = Vector3D.Transform(new Vector3D<f32>(1, 1, 1), rot).ToSystem(),
-                Tex0CoordRef = new Vector2(1, 0),
-                Tex1CoordRef = new Vector2(1 - tex1Scale, tex1Scale),
-                NormalRef = normal,
-                TangentRef = tangent
-            };
-            cubeVertices[vIndex++] = new TempleShader.Attributes
-            {
-                PositionRef = Vector3D.Transform(new Vector3D<f32>(-1, -1, 1), rot).ToSystem(),
-                Tex0CoordRef = new Vector2(0, 1),
-                Tex1CoordRef = new Vector2(tex1Scale, 1 - tex1Scale),
-                NormalRef = normal,
-                TangentRef = tangent
-            };
-            cubeVertices[vIndex++] = new TempleShader.Attributes
-            {
-                PositionRef = Vector3D.Transform(new Vector3D<f32>(1, -1, 1), rot).ToSystem(),
-                Tex0CoordRef = new Vector2(1, 1),
-                Tex1CoordRef = new Vector2(1 - tex1Scale, 1 - tex1Scale),
-                NormalRef = normal,
-                TangentRef = tangent
-            };
+            cubeVertices[vIndex++] = creator(0, rot, normal, tangent);
+            cubeVertices[vIndex++] = creator(1, rot, normal, tangent);
+            cubeVertices[vIndex++] = creator(2, rot, normal, tangent);
+            cubeVertices[vIndex++] = creator(3, rot, normal, tangent);
 
             indices[iIndex++] = (u32)(vIndex - 4);
             indices[iIndex++] = (u32)(vIndex - 2);
@@ -131,21 +96,19 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             indices[iIndex++] = (u32)(vIndex - 3);
         }
 
-        TempleShader.Instance[] instances = [new()];
-        instances[0].SetTransform(Matrix4x4.Identity);
-
-        return new AjivaMesh(
-            _loader.CreateBuffer<TempleShader.Attributes>(BufferUsage.Vertex | BufferUsage.CopyDst, cubeVertices,
+        return new AjivaMesh<T>(
+            _loader.CreateBuffer<T>(BufferUsage.Vertex | BufferUsage.CopyDst, cubeVertices,
                 $"CubeMesh::VertexBuffer"),
             _loader.CreateBuffer<u32>(BufferUsage.Index | BufferUsage.CopyDst, indices,
                 $"CubeMesh::IndexBuffer"));
     }
 
-    private InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[] CreateModelBuffers(string path, string? label = null)
+    private PBRInstancedMeshBuffer[] CreateModelBuffers(string path,
+        string? label = null)
     {
         var models = ModelHelper.LoadModels(path);
 
-        var buffers = new InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[models.Count + 1];
+        var buffers = new PBRInstancedMeshBuffer[models.Count + 1];
 
         for (var iModel = 0; iModel < models.Count; iModel++)
         {
@@ -172,7 +135,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             TempleShader.Instance[] instances = [new()];
             instances[0].SetTransform(Matrix4x4.Identity);
             buffers[iModel] =
-                new InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>(new AjivaMesh(vertexBuffer, indexBuffer),
+                new PBRInstancedMeshBuffer(
+                    new AjivaMesh<TempleShader.Attributes>(vertexBuffer, indexBuffer),
                     new TempleShader.ModelUniform
                     {
                         Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)iModel + 1,
@@ -183,8 +147,26 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         TempleShader.Instance[] cubes = [new()];
         cubes[0].SetTransform(Matrix4x4.Identity);
+        const f32 tex1Scale = 0;
 
-        buffers[^1] = new InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>(_cuebMesh.Clone(), new TempleShader.ModelUniform
+        buffers[^1] = new PBRInstancedMeshBuffer(GenerateCubeMesh((u, rot, normal, tangent) =>
+            {
+                ReadOnlySpan<Vector3D<f32>> positions = [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];
+                ReadOnlySpan<Vector2> tex0Coords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
+                ReadOnlySpan<Vector2> tex1Coords =
+                [
+                    new(tex1Scale, tex1Scale), new(1 - tex1Scale, tex1Scale), new(tex1Scale, 1 - tex1Scale),
+                    new(1 - tex1Scale, 1 - tex1Scale)
+                ];
+                return new TempleShader.Attributes
+                {
+                    PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
+                    Tex0CoordRef = tex0Coords[u],
+                    Tex1CoordRef = tex1Coords[u],
+                    NormalRef = normal,
+                    TangentRef = tangent
+                };
+            }), new TempleShader.ModelUniform
             {
                 Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)models.Count + 1,
                 Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
@@ -197,10 +179,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         return buffers;
     }
 
-    private InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>[] CreateTransparentCubes()
+    private OITInstancedMeshBuffer[] CreateTransparentCubes()
     {
         // generate 10 cubes random size and position
-        var instances = new TempleShader.Instance[10];
+        var instances = new WboitAccumShader.Instance[2];
         for (var i = 0; i < instances.Length; i++)
         {
             var scale = new Vector3(3.0f + (f32)Random.Shared.NextDouble() * 2f);
@@ -226,11 +208,22 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         return
         [
-            new InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance>(_cuebMesh.Clone(), new TempleShader.ModelUniform
-            {
-                Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = 0,
-                Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
-            }, instances)
+            new OITInstancedMeshBuffer(GenerateCubeMesh((u, rot, _, _) =>
+                {
+                    ReadOnlySpan<Vector3D<f32>> positions =
+                        [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];
+                    ReadOnlySpan<Vector2> tex0Coords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
+                    return new WboitAccumShader.Attributes()
+                    {
+                        PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
+                        Tex0CoordRef = tex0Coords[u],
+                    };
+                }),
+                new WboitAccumShader.ModelUniform
+                {
+                    Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = 0,
+                    Tex1Color = new vec3(1, 1, 1)
+                }, instances)
             {
                 AlbedoTexture = transparentTexture,
             }
@@ -239,20 +232,18 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
     public async Task Attach()
     {
-        // get current instance of shader
-        _templeShader = _shaderManager.GetCurrentShader<ITempleShader>();
-
         _logger.LogDebug("Creating View Buffers");
 
         // TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm, TextureFormat.Rgba32float, TextureFormat.Depth24Plus,
         _sceneGBuffer = GBuffer.Create(_api.Device, TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm,
-            TextureFormat.Rgba32float, TextureFormat.Depth24Plus, TextureFormat.RG32Uint, label: "SceneGBuffer");
+            TextureFormat.Rgba32float, TextureFormat.RG32Uint,
+            TextureFormat.Rgba32float, TextureFormat.R32float,
+            TextureFormat.Depth24Plus, label: "SceneGBuffer");
 
         _finalSceneTexture =
             RenderTexture.Create(_api.Device, TextureFormat.Rgba8Unorm, label: "FinalSceneTexture");
 
         _logger.LogDebug("Creating Model Buffers");
-        _cuebMesh = GenerateCubeMesh();
         _meshBuffers = CreateModelBuffers("resources/Temple/TempleModel.glb", "Temple");
         _transparentMeshBuffers = CreateTransparentCubes();
 
@@ -271,7 +262,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             // for testing
             foreach (var instancedMeshBuffer in _transparentMeshBuffers)
             {
-                instancedMeshBuffer.NormalTexture = normal;
                 instancedMeshBuffer.EmissionTexture = emission;
             }
         }
@@ -293,17 +283,17 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         foreach (var instancedMeshBuffer in _transparentMeshBuffers)
         {
-            instancedMeshBuffer.ModelUniformBuffer = _loader.CreateBuffer<TempleShader.ModelUniform>(
+            instancedMeshBuffer.ModelUniformBuffer = _loader.CreateBuffer<WboitAccumShader.ModelUniform>(
                 BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer");
 
-            _templePipeline.RecreateBindGroup(instancedMeshBuffer);
+            _transparentPipeline.RecreateBindGroup(instancedMeshBuffer);
         }
 
         _logger.LogDebug("Done");
     }
 
     [MemberNotNull(nameof(_deferredPipeline), nameof(_compositorPipeline), nameof(_templePipeline),
-        nameof(_samplingPipeline))]
+        nameof(_samplingPipeline), nameof(_transparentPipeline))]
     private void CreatePipelines()
     {
         _deferredPipeline?.Dispose();
@@ -314,10 +304,13 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             CompositorPipeline.Create(_api, _shaderManager.GetCurrentShader<ICompositorShader>(),
                 _sceneGBuffer.AlbedoChannelFormat);
         _templePipeline?.Dispose();
-        _templePipeline = TemplePipeline.Create(_api, _templeShader!, _sceneGBuffer);
+        _templePipeline = TemplePipeline.Create(_api, _shaderManager.GetCurrentShader<ITempleShader>(), _sceneGBuffer);
         _samplingPipeline?.Dispose();
         _samplingPipeline =
             PixelSamplingPipeline.Create(_api, _shaderManager.GetCurrentShader<IObjectSamplingShader>());
+        _transparentPipeline?.Dispose();
+        _transparentPipeline = WboitPipeline.Create(_api, _loader, _shaderManager.GetCurrentShader<IWboitAccumShader>(),
+            _sceneGBuffer!);
     }
 
     public void Update(UpdateInfo info)
@@ -352,8 +345,19 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             CameraPositionRef = _camera.Position,
             Time = info.TotalTime
         };
+        //Debug.Assert(Unsafe.SizeOf<WboitAccumShader.SceneUniform>() == Unsafe.SizeOf<TempleShader.SceneUniform>(), "Size of SceneUniform is not equal");
+        Debug.Assert(
+            Marshal.OffsetOf<WboitAccumShader.SceneUniform>(nameof(WboitAccumShader.SceneUniform.ViewProjection)) ==
+            Marshal.OffsetOf<TempleShader.SceneUniform>(nameof(TempleShader.SceneUniform.ViewProjection)),
+            "Offset of ViewProjection is not equal");
+        Debug.Assert(
+            Marshal.OffsetOf<WboitAccumShader.SceneUniform>(nameof(WboitAccumShader.SceneUniform.CameraPosition)) ==
+            Marshal.OffsetOf<TempleShader.SceneUniform>(nameof(TempleShader.SceneUniform.CameraPosition)),
+            "Offset of CameraPosition is not equal");
 
         _templePipeline!.WriteUniformBuffer(queue, ref _sceneUniform);
+        _transparentPipeline!.WriteUniformBuffer(queue,
+            ref Unsafe.As<TempleShader.SceneUniform, WboitAccumShader.SceneUniform>(ref _sceneUniform));
 
         var players = _ecs.GetPlayers().ToArray();
         if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
@@ -376,53 +380,63 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         foreach (var buffer in _transparentMeshBuffers)
         {
             WriteBuffer(queue, buffer);
-            _templePipeline.RecreateBindGroup(buffer);
+            _transparentPipeline.RecreateBindGroup(buffer);
         }
 
         _lightsBuffer.QueuedWrite(_sceneLights.LightData, queue);
 
-        if (_templePipeline.BeginRenderPass() is not { } pass) return;
-
-        foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _meshBuffers)
+        if (_templePipeline.BeginRenderPass() is { } pass)
         {
-            pass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.Offset, vertexBuffer.Size);
-            pass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.Offset,
-                instanceBuffer.Size);
+            foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _meshBuffers)
+            {
+                pass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.Offset, vertexBuffer.Size);
+                pass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.Offset,
+                    instanceBuffer.Size);
 
-            pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset, indexBuffer.Size);
+                pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset, indexBuffer.Size);
 
-            pass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
+                pass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
 
-            pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
+                pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
+            }
+
+            queue.Submit(_templePipeline.EndRenderPass(pass));
         }
 
-        foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _transparentMeshBuffers)
+        if (_transparentPipeline.BeginRenderPass() is { } transparentPass)
         {
-            pass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.Offset, vertexBuffer.Size);
-            pass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.Offset,
-                instanceBuffer.Size);
+            foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in
+                     _transparentMeshBuffers)
+            {
+                transparentPass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.Offset, vertexBuffer.Size);
+                transparentPass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.Offset,
+                    instanceBuffer.Size);
 
-            pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset, indexBuffer.Size);
+                transparentPass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset,
+                    indexBuffer.Size);
 
-            pass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
+                transparentPass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
 
-            pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
+                transparentPass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
+            }
+
+            queue.Submit(_transparentPipeline.EndRenderPass(transparentPass));
         }
-
-        queue.Submit(_templePipeline.EndRenderPass(pass));
     }
 
-    private void WriteBuffer(QueuePtr queue, InstancedMeshBuffer<TempleShader.ModelUniform, TempleShader.Instance> buffer)
+    private void WriteBuffer<T1, T2, T3>(QueuePtr queue,
+        IInstancedMeshBuffer<T1, T2, T3> buffer) where T1 : unmanaged where T2 : unmanaged where T3 : unmanaged
     {
-        buffer.ModelUniformBuffer.QueuedWrite(new ReadOnlySpan<TempleShader.ModelUniform>(ref buffer.ModelUniform), queue);
+        buffer.ModelUniformBuffer.QueuedWrite(new ReadOnlySpan<T3>(ref buffer.ModelUniform),
+            queue);
 
-        var data = new ReadOnlySpan<TempleShader.Instance>(buffer.InstanceInfos);
+        var data = new ReadOnlySpan<T2>(buffer.InstanceInfos);
         if (buffer.InstanceBuffer is null || buffer.InstanceBuffer.Size <
-            (u64)data.Length * (u64)Unsafe.SizeOf<TempleShader.Instance>())
+            (u64)data.Length * (u64)Unsafe.SizeOf<T2>())
         {
             buffer.InstanceBuffer?.Dispose();
             buffer.InstanceBuffer = _loader.CreateBuffer(BufferUsage.Vertex | BufferUsage.CopyDst,
-                data, "Temple::IndexBuffer");
+                data, "DynamicRecreated::IndexBuffer");
         }
 
         buffer.InstanceBuffer.QueuedWrite(data, queue);
@@ -432,22 +446,28 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
 
-        if (!ImGui.Begin("Scene") || _sceneGBuffer is null || _finalSceneTexture is null) return;
+        if (!ImGui.Begin("Scene")) return;
+        if (_sceneGBuffer is null || _finalSceneTexture is null)
+        {
+            _logger.LogError("Scene Buffers not created");
+            return;
+        }
+
         var size = ImGui.GetContentRegionAvail();
 
         //var imDrawListPtr = ImGui.GetBackgroundDrawList();
         //var size = imDrawListPtr.GetClipRectMax();
         u32 width = (u32)size.X, height = (u32)Math.Max(0, size.Y);
 
-        var prevWidth = _sceneGBuffer.Width;
-        var prevHeight = _sceneGBuffer.Height;
+        var prevWidth = _finalSceneTexture.Width;
+        var prevHeight = _finalSceneTexture.Height;
         var hasPrev = _finalSceneTexture.TryGetTargets(out var prevView);
         _sceneGBuffer.EnsureSize(width, height);
         _finalSceneTexture.EnsureSize(width, height);
         CreatePipelines();
 
         if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission,
-                out var objectAndInstanceId,
+                out var objectAndInstanceId, out var accum, out var reveal,
                 out var depth) && _finalSceneTexture.TryGetTargets(out var colorOutput))
         {
             var queue = target.QueuePtr;
@@ -589,6 +609,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             buffer.Dispose();
         }
 
+        foreach (var buffer in _transparentMeshBuffers)
+        {
+            buffer.Dispose();
+        }
+
         _compositorPipeline?.Dispose();
         _deferredPipeline?.Dispose();
         _templePipeline?.Dispose();
@@ -600,10 +625,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _finalSceneTexture = null;
 
         _meshBuffers = [];
+        _transparentMeshBuffers = [];
         _compositorPipeline = null;
         _deferredPipeline = null;
         _lightsBuffer = null!;
-        _templeShader = null;
 
         return Task.CompletedTask;
     }

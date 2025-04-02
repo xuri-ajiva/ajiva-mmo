@@ -56,7 +56,6 @@ public class TemplePipeline : IDisposable
                 (u64)Unsafe.SizeOf<SceneUniform>(), label: "SceneUniformBuffer"),
             0, (u64)Unsafe.SizeOf<SceneUniform>());
 
-
         var sceneBindGroup = shader.CreateBindGroup0(device, sceneBindGroupLayout, sceneUniformBuffer.Buffer,
             sceneUniformBuffer.Offset, sceneUniformBuffer.Size);
         sceneBindGroupLayout.Release();
@@ -136,30 +135,30 @@ public class TemplePipeline : IDisposable
             sceneBindGroup, sceneUniformBuffer, shader, gBuffer);
     }
 
-    public void RecreateBindGroup(InstancedMeshBuffer<ModelUniform, TempleShader.Instance> instancedMeshBuffer)
+    public void RecreateBindGroup(PBRInstancedMeshBuffer pbrInstancedMeshBuffer)
     {
         var targetHash = new HashCode();
         targetHash.Add(_modelBindGroupLayout);
-        targetHash.Add(instancedMeshBuffer.ModelUniformBuffer.Version);
-        targetHash.Add(instancedMeshBuffer.AlbedoTexture.Version);
-        targetHash.Add(instancedMeshBuffer.NormalTexture.Version);
-        targetHash.Add(instancedMeshBuffer.EmissionTexture.Version);
-        
-        if(instancedMeshBuffer.ModelBindGroupHash == targetHash.ToHashCode())
+        targetHash.Add(pbrInstancedMeshBuffer.ModelUniformBuffer.Version);
+        targetHash.Add(pbrInstancedMeshBuffer.AlbedoTexture.Version);
+        targetHash.Add(pbrInstancedMeshBuffer.NormalTexture.Version);
+        targetHash.Add(pbrInstancedMeshBuffer.EmissionTexture.Version);
+
+        if (pbrInstancedMeshBuffer.ModelBindGroupHash == targetHash.ToHashCode())
             return;
-        
-        instancedMeshBuffer.ModelBindGroupHash = targetHash.ToHashCode();
-        
-        instancedMeshBuffer.ModelBindGroup?.Release();
-        instancedMeshBuffer.ModelBindGroup = _shader.CreateBindGroup1(_api.Device,
+
+        pbrInstancedMeshBuffer.ModelBindGroupHash = targetHash.ToHashCode();
+
+        pbrInstancedMeshBuffer.ModelBindGroup?.Release();
+        pbrInstancedMeshBuffer.ModelBindGroup = _shader.CreateBindGroup1(_api.Device,
             _modelBindGroupLayout,
-            instancedMeshBuffer.ModelUniformBuffer.Buffer,
+            pbrInstancedMeshBuffer.ModelUniformBuffer.Buffer,
             _linearSampler,
-            instancedMeshBuffer.AlbedoTexture.View,
-            instancedMeshBuffer.NormalTexture.View,
-            instancedMeshBuffer.EmissionTexture.View,
-            ubModelOffset: instancedMeshBuffer.ModelUniformBuffer.Offset,
-            ubModelSize: instancedMeshBuffer.ModelUniformBuffer.Size
+            pbrInstancedMeshBuffer.AlbedoTexture.View,
+            pbrInstancedMeshBuffer.NormalTexture.View,
+            pbrInstancedMeshBuffer.EmissionTexture.View,
+            ubModelOffset: pbrInstancedMeshBuffer.ModelUniformBuffer.Offset,
+            ubModelSize: pbrInstancedMeshBuffer.ModelUniformBuffer.Size
         );
     }
 
@@ -174,7 +173,7 @@ public class TemplePipeline : IDisposable
     public RenderPassEncoderPtr? BeginRenderPass()
     {
         if (!_gBuffer.TryGetTargets(out var albedo, out var normal, out var emission, out var objectAndInstanceId,
-                out var depthStencil))
+                out _, out _, out var depthStencil))
             return null;
 
         _cmd = _api.Device.CreateCommandEncoder();
