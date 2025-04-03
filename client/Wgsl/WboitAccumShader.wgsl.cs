@@ -102,7 +102,7 @@ public partial class WboitAccumShader
         // Sample albedo and alpha
         var baseSample = textureSample(uAlbedoAlpha, uSampler, v.Tex0Coord);
         var texColor = baseSample.rgb * ubModel.Tex0Color + v.HighlightColor.rgb;
-        var texAlpha = baseSample.a;
+        var texAlpha = baseSample.a * v.HighlightColor.a;
 
         if (texAlpha < 0.01f)
         {
@@ -111,16 +111,16 @@ public partial class WboitAccumShader
 
         // Calculate fragment depth (NDC Z is simplest here, 0.0 at near plane, 1.0 at far)
         // v.position is SV_Position / gl_FragCoord
-        var fragDepthNDC = v.Position.z / v.Position.w;
+        var fragDepthNDC = v.Position.z;
 
         // Calculate Weight (McGuire/Bavoil style, needs tuning)
         // k determines how strongly closer/more opaque fragments are weighted
-        const f32 k = 8.0f;
+        const f32 k = 100.0f;
         // Weight decreases with distance (1-fragDepthNDC) and lower alpha
-        var weight = pow(max(1.0f - fragDepthNDC, 1e-6f) * texAlpha, k) + 1e-6f; // Add epsilon for stability
+        var weight = pow(max((1.0f - fragDepthNDC) * texAlpha, 1e-4f), k) + 1e-4f; // Add epsilon for stability
 
         // Alternate simpler weight:
-        // var weight = max(1e-4, texAlpha * (1.0 - fragDepthNDC) * 10.0);
+        weight = max(1e-4f, texAlpha * (1.0f - fragDepthNDC) * 1.0f);
 
         // Calculate outputs
         // Accum: Weighted, PREMULTIPLIED color and weighted alpha

@@ -81,7 +81,8 @@ namespace Client.Renderer.Pipelines
             return new CompositorPipeline(api, pipeline, textureBindGroupLayout, uniformBuffer, shader);
         }
 
-        public void Apply(QueuePtr queue, TextureViewPtr inColor, TextureViewPtr inDepth, TextureViewPtr output)
+        public void Apply(QueuePtr queue, TextureViewPtr inColor, TextureViewPtr inDepth, TextureViewPtr output,
+            TextureViewPtr inAccum, TextureViewPtr inReveal)
         {
             _textureBindGroup?.Release();
 
@@ -91,7 +92,9 @@ namespace Client.Renderer.Pipelines
             };
 
             queue.WriteBuffer(_uniformBuffer, 0, new ReadOnlySpan<Uniforms>(ref uniforms));
-            _textureBindGroup = _shader.CreateBindGroup0(_api.Device, _textureBindGroupLayout, _uniformBuffer, inColor, inDepth);
+            _textureBindGroup =
+                _shader.CreateBindGroup0(_api.Device, _textureBindGroupLayout, _uniformBuffer, inColor, inDepth,
+                    inAccum, inReveal);
 
             var cmd = _api.Device.CreateCommandEncoder();
             var pass = cmd.BeginRenderPass([
@@ -101,7 +104,7 @@ namespace Client.Renderer.Pipelines
 
             pass.SetPipeline(_pipeline);
             pass.SetBindGroup(0, _textureBindGroup.Value, dynamicOffsets: null);
-            pass.Draw(6, 1, 0, 0);
+            pass.Draw(3, 1, 0, 0);
             pass.End();
 
             queue.Submit(cmd.Finish());
