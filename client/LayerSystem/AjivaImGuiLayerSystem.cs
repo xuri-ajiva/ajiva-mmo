@@ -51,9 +51,10 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         if (_initialized) return;
         _initialized = true;
         _window = parent;
-
+        _input = parent.Window.CreateInput();
+            
         _imguiController = new ImGuiController(_api.Device,
-            TextureFormat.Bgra8Unorm, parent.Window, parent.Window.CreateInput(), SetupFonts);
+            TextureFormat.Bgra8Unorm, parent.Window, _input, SetupFonts);
 
         var io = ImGui.GetIO();
 
@@ -297,6 +298,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     private f32[] _frameTimes = new f32[100];
     private readonly TypeInfo[] _layerTypes;
     private readonly IServiceScope _scope;
+    public static IInputContext _input;
 
     private void RenderMetrics(UpdateInfo info)
     {
