@@ -108,7 +108,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     {
         var models = ModelHelper.LoadModels(path);
 
-        var buffers = new PBRInstancedMeshBuffer[models.Count + 1];
+        var buffers = new PBRInstancedMeshBuffer[models.Count + 2];
 
         for (var iModel = 0; iModel < models.Count; iModel++)
         {
@@ -146,27 +146,37 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         }
 
         TempleShader.Instance[] cubes = [new()];
+        TempleShader.Instance[] floor = [new()];
+        floor[0].SetTransform(Matrix4x4.CreateScale(new Vector3(100, 0.1f, 100)) *
+                              Matrix4x4.CreateFromYawPitchRoll(0, 0, 0) *
+                              Matrix4x4.CreateTranslation(new Vector3(0, -2, 0)));
         cubes[0].SetTransform(Matrix4x4.Identity);
         const f32 tex1Scale = 0;
-
-        buffers[^1] = new PBRInstancedMeshBuffer(GenerateCubeMesh((u, rot, normal, tangent) =>
+        var generateCubeMesh = GenerateCubeMesh((u, rot, normal, tangent) =>
+        {
+            ReadOnlySpan<Vector3D<f32>> positions = [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];
+            ReadOnlySpan<Vector2> tex0Coords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
+            ReadOnlySpan<Vector2> tex1Coords =
+            [
+                new(tex1Scale, tex1Scale), new(1 - tex1Scale, tex1Scale), new(tex1Scale, 1 - tex1Scale),
+                new(1 - tex1Scale, 1 - tex1Scale)
+            ];
+            return new TempleShader.Attributes
             {
-                ReadOnlySpan<Vector3D<f32>> positions = [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];
-                ReadOnlySpan<Vector2> tex0Coords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
-                ReadOnlySpan<Vector2> tex1Coords =
-                [
-                    new(tex1Scale, tex1Scale), new(1 - tex1Scale, tex1Scale), new(tex1Scale, 1 - tex1Scale),
-                    new(1 - tex1Scale, 1 - tex1Scale)
-                ];
-                return new TempleShader.Attributes
-                {
-                    PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
-                    Tex0CoordRef = tex0Coords[u],
-                    Tex1CoordRef = tex1Coords[u],
-                    NormalRef = normal,
-                    TangentRef = tangent
-                };
-            }), new TempleShader.ModelUniform
+                PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
+                Tex0CoordRef = tex0Coords[u],
+                Tex1CoordRef = tex1Coords[u],
+                NormalRef = normal,
+                TangentRef = tangent
+            };
+        });
+        buffers[^2] = new PBRInstancedMeshBuffer(generateCubeMesh, new TempleShader.ModelUniform
+            {
+                Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)models.Count + 1,
+                Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
+            }, floor
+        );
+        buffers[^1] = new PBRInstancedMeshBuffer(generateCubeMesh, new TempleShader.ModelUniform
             {
                 Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)models.Count + 1,
                 Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
@@ -181,28 +191,36 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
     private OITInstancedMeshBuffer[] CreateTransparentCubes()
     {
-        // generate 10 cubes random size and position
-        var instances = new WboitAccumShader.Instance[2];
-        for (var i = 0; i < instances.Length; i++)
+        var instances = new WboitAccumShader.Instance[10];
+        for (var i = 0; i < 9; i++)
         {
-            var scale = new Vector3(3.0f + (f32)Random.Shared.NextDouble() * 2f);
-            var position = new Vector3(
-                (f32)Random.Shared.NextDouble() * 10 - 5,
-                (f32)Random.Shared.NextDouble() * 10 - 5,
-                (f32)Random.Shared.NextDouble() * 10 - 5
-            );
-
-            var rotation = new Vector4(
-                (f32)Random.Shared.NextDouble() * MathF.PI * 2,
-                (f32)Random.Shared.NextDouble() * MathF.PI * 2,
-                (f32)Random.Shared.NextDouble() * MathF.PI * 2,
-                0
-            );
+            // make a grid
+            var x = i % 3;
+            var y = i / 3;
+            var position = new Vector3(x * 4, 8, y * 4 );
+            var rotation = new Vector3(0, 0, 0);
+            var scale = new Vector3(2.0f);
 
             instances[i].SetTransform(Matrix4x4.CreateScale(scale) *
                                       Matrix4x4.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z) *
                                       Matrix4x4.CreateTranslation(position));
         }
+
+        instances[0].HighlightColor = new vec4(1, 0, 0, 0.5f);
+        instances[1].HighlightColor = new vec4(0, 1, 0, 0.5f);
+        instances[2].HighlightColor = new vec4(0, 0, 1, 0.5f);
+        instances[3].HighlightColor = new vec4(1, 1, 0, 0.5f);
+        instances[4].HighlightColor = new vec4(1, 0, 1, 0.5f);
+        instances[5].HighlightColor = new vec4(0, 1, 1, 0.5f);
+        instances[6].HighlightColor = new vec4(1, 0.5f, 0, 0.5f);
+        instances[7].HighlightColor = new vec4(0.5f, 1, 0, 0.5f);
+        instances[8].HighlightColor = new vec4(0, 0.5f, 1, 0.5f);
+
+
+        // big cube that is like a floor
+        instances[^1].SetTransform(Matrix4x4.CreateScale(new Vector3(100, 100f, 100)) *
+                                   Matrix4x4.CreateFromYawPitchRoll(0, 0, 0) *
+                                   Matrix4x4.CreateTranslation(new Vector3(0, 0, 0)));
 
         var transparentTexture = _loader.AsyncTextureLoad("resources/Glass/Red.png");
 
@@ -221,7 +239,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 }),
                 new WboitAccumShader.ModelUniform
                 {
-                    Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = 0,
+                    Transform = mat4.Identity, Tex0Color = new vec3(0), ModelId = 0,
                     Tex1Color = new vec3(1, 1, 1)
                 }, instances)
             {
@@ -337,11 +355,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     public void Render(UpdateInfo info, RenderTarget target, Extent3D sceneViewport)
     {
         var queue = target.QueuePtr;
-        var aspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
-
+        _camera.AspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
         _sceneUniform = new TempleShader.SceneUniform
         {
-            ViewProjectionRef = _camera.GetViewMatrix(aspectRatio),
+            ViewProjectionRef = _camera.ViewProjectionMatrix,
             CameraPositionRef = _camera.Position,
             Time = info.TotalTime
         };
@@ -403,7 +420,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             queue.Submit(_templePipeline.EndRenderPass(pass));
         }
 
-        if (_transparentPipeline.BeginRenderPass() is { } transparentPass)
+        if (_transparentPipeline.BeginRenderPass(sceneViewport) is { } transparentPass)
         {
             foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in
                      _transparentMeshBuffers)
@@ -484,7 +501,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             _deferredPipeline.Apply(queue, albedo.View, normal.View, depth.DepthOnlyView, emission.View,
                 invViewProjection, _lightsBuffer.Buffer, _sceneLights.LightCount);
 
-            _compositorPipeline.Apply(queue, emission.View, depth.DepthOnlyView, colorOutput.View);
+            _compositorPipeline.Apply(queue, emission.View, depth.DepthOnlyView, colorOutput.View, accum.View,
+                reveal.View);
 
             if (prevWidth != width && prevHeight != height && hasPrev)
                 target.ImguiController.RemoveTextureBindGroup(prevView.View);
