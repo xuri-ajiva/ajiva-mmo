@@ -732,6 +732,12 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         };
 
         var methodName = identifierIdentifier.Text;
+        if(methodName == "discard")
+        {
+            _writer.WriteLine("discard;");
+            return;
+        }
+        
         if (!_typemapper.KnownMethods.Contains(methodName))
         {
             if (char.IsUpper(methodName[0]))

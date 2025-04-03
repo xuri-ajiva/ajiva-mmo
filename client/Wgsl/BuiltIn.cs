@@ -61,6 +61,7 @@ public partial class BuiltIn
     public static f32 f32<T>(T x) => default!;
     public static u32 u32<T>(T x) => default!;
     public static i32 i32<T>(T x) => default!;
+    public static void discard() {}
 }
 
 public static class StrExt

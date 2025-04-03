@@ -80,9 +80,9 @@ public partial class TempleShader
     [Group(1)] [Binding(1), BindingMode(BindingType.Filtering)]
     private readonly sampler uSampler = null!;
 
-    [Group(1)] [Binding(2)] private readonly texture_2d<f32> uAlbedo= null!;
-    [Group(1)] [Binding(3)] private readonly texture_2d<f32> uNormal= null!;
-    [Group(1)] [Binding(4)] private readonly texture_2d<f32> uEmission= null!;
+    [Group(1)] [Binding(2)] private readonly texture_2d<f32> uAlbedo = null!;
+    [Group(1)] [Binding(3)] private readonly texture_2d<f32> uNormal = null!;
+    [Group(1)] [Binding(4)] private readonly texture_2d<f32> uEmission = null!;
 
     [VertexShader]
     public Varyings vs_main(Attributes a, Instance i, [Builtin("instance_index")] u32 iId)
@@ -126,6 +126,11 @@ public partial class TempleShader
     public ColorTargets fs_main(Varyings v)
     {
         var oAlbedo = textureSample(uAlbedo, uSampler, v.Tex0Coord) * new vec4(ubModel.Tex0Color, 1.0f);
+        
+        if (oAlbedo.a < 0.01f)
+        {
+            discard();
+        }
 
         var normalMap = textureSample(uNormal, uSampler, v.Tex0Coord).xyz;
         var nrm =
