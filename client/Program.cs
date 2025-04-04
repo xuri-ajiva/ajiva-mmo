@@ -7,6 +7,8 @@ using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
 using Serilog;
+using Serilog.Expressions;
+using Serilog.Settings.Configuration;
 using ServiceDefaults;
 
 var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
@@ -25,8 +27,9 @@ builder.Configuration
 LogWidget logWidget = new();
 
 Log.Logger = new LoggerConfiguration()
-    .WriteTo.Sink(logWidget)
-    .ReadFrom.Configuration(builder.Configuration)
+    .ReadFrom.Configuration(builder.Configuration,
+        new ConfigurationReaderOptions(typeof(ConsoleLoggerConfigurationExtensions).Assembly,
+            typeof(SerilogExpression).Assembly))
     .Enrich.FromLogContext()
     .WriteTo.Sink(logWidget)
     .MinimumLevel.Verbose()
@@ -53,9 +56,9 @@ builder.AddServiceDefaults();
     services.AddSingleton<ResourceLoader>();
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<ResourceLoader>());
     // services.AddSingleton<RendererApi>(provider => provider.GetRequiredService<RendererApi>());
-    
+
     services.AddSingleton<ShaderReloadManager>();
-    services.AddSingleton<IShaderManager>(provider => provider.GetRequiredService<ShaderReloadManager>()); 
+    services.AddSingleton<IShaderManager>(provider => provider.GetRequiredService<ShaderReloadManager>());
     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<ShaderReloadManager>());
 
     services.AddSingleton<Riptide.Client>();
