@@ -1,12 +1,9 @@
 ﻿using Client.LayerSystem;
 using Client.Renderer;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using Silk.NET.Input;
 using Silk.NET.Maths;
-using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 using Silk.NET.Windowing;
-using SurfaceConfiguration = Silk.NET.WebGPU.Safe.SurfaceConfiguration;
 
 
 namespace Client.Platform;
@@ -21,9 +18,9 @@ public class AjivaWindow : IHostedLifecycleService
     public IWindow Window = null!;
     private Thread windowThread = null!;
 
-    public SurfacePtr surface;
-    private AjivaClock _updateClock;
-    private AjivaClock _renderClock;
+    public SurfacePtr Surface;
+    public IInputContext Input = null!;
+    private bool _isClosing;
 
     public AjivaWindow(ILogger<AjivaWindow> logger, RendererApi api,
         IAjivaLayerSystem layerSystem, IHostApplicationLifetime lifetime)
@@ -35,60 +32,22 @@ public class AjivaWindow : IHostedLifecycleService
     }
 
 
-    private void W_Load()
+    private void Load()
     {
         try
         {
-            _layerSystem.Attach(this);
-            surface = Window.CreateWebGPUSurface(_api.Wgpu, _api.Instance);
+            Input = Window.CreateInput();
+            Surface = Window.CreateWebGPUSurface(_api.Wgpu, _api.Instance);
             var properties = _api.Adapter.GetProperties();
             Window.Title = $"Ajiva MMO {properties.BackendType} {properties.Name}";
-            _updateClock.Start();
-            _renderClock.Start();
+
+            _layerSystem.Attach(this);
         }
         catch (Exception e)
         {
             _logger.LogError(e, "Error in Window Load");
+            throw;
         }
-    }
-
-    private void W_Update(f64 deltaTime)
-    {
-        _updateClock.Update();
-        _layerSystem.Update(new UpdateInfo(_updateClock));
-    }
-
-    private Vector2D<i32> _lastFramebufferSize = new(0, 0);
-
-
-    private void W_Render(f64 deltaTime)
-    {
-        _renderClock.Update();
-        var framebufferSize = Window.FramebufferSize;
-
-        if (framebufferSize.X * framebufferSize.Y == 0)
-            return;
-
-        if (_lastFramebufferSize != framebufferSize)
-        {
-            _lastFramebufferSize = framebufferSize;
-
-            surface.Configure(new SurfaceConfiguration
-            {
-                AlphaMode = CompositeAlphaMode.Opaque,
-                Device = _api.Device,
-                Usage = TextureUsage.RenderAttachment,
-                Format = TextureFormat.Bgra8Unorm,
-                ViewFormats = [TextureFormat.Bgra8Unorm],
-                Width = (u32)framebufferSize.X,
-                Height = (u32)framebufferSize.Y,
-                PresentMode = PresentMode.Fifo
-            });
-        }
-
-        _layerSystem.Render(new UpdateInfo(_renderClock));
-
-        surface.Present();
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -100,21 +59,7 @@ public class AjivaWindow : IHostedLifecycleService
         options.WindowBorder = WindowBorder.Resizable;
 
         Window = Silk.NET.Windowing.Window.Create(options);
-
-        Window.Load += W_Load;
-        Window.Render += W_Render;
-        Window.Move += _ =>
-        {
-            Window.DoUpdate();
-            Window.DoRender();
-        };
-        Window.Resize += _ =>
-        {
-            Window.DoUpdate();
-            Window.DoRender();
-        };
-        Window.Update += W_Update;
-
+        Window.Load += Load;
         windowThread = new Thread(MainWindow);
         windowThread.Start();
 
@@ -129,15 +74,9 @@ public class AjivaWindow : IHostedLifecycleService
             Window.Run((Action)(() =>
             {
                 Window.DoEvents();
-                if (!Window.IsClosing)
-                    Window.DoUpdate();
-                if (Window.IsClosing)
-                {
-                    _lifetime.StopApplication();
-                    return;
-                }
-
-                Window.DoRender();
+                if (!Window.IsClosing || _isClosing) return;
+                Window.IsClosing = false;
+                _lifetime.StopApplication();
             }));
             Window.DoEvents();
             Window.Reset();
@@ -151,8 +90,7 @@ public class AjivaWindow : IHostedLifecycleService
 
     public Task StoppingAsync(CancellationToken cancellationToken)
     {
-        Window.Close();
-        windowThread.Join();
+        _layerSystem.Detach();
         return Task.CompletedTask;
     }
 
@@ -168,5 +106,12 @@ public class AjivaWindow : IHostedLifecycleService
 
     public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StoppedAsync(CancellationToken cancellationToken)
+    {
+        //Surface.Release();
+        _isClosing = true;
+        Window.Close();
+        windowThread.Join();
+        return Task.CompletedTask;
+    }
 }

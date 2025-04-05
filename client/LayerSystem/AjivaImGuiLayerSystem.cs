@@ -5,11 +5,12 @@ using System.Reflection;
 using Client.Platform;
 using Client.Renderer;
 using ImGuiNET;
-using Silk.NET.Input;
+using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.ImGui;
 using Silk.NET.WebGPU.Safe;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
+using SurfaceConfiguration = Silk.NET.WebGPU.Safe.SurfaceConfiguration;
 
 namespace Client.LayerSystem;
 
@@ -20,21 +21,25 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     private readonly ILogger<AjivaImGuiLayerSystem> _logger;
 
     private readonly RendererApi _api;
+    private readonly PeriodicUpdater _periodicUpdater;
 
     private ImFontPtr _imguiDefaultFont;
     private ImFontPtr _quicksandFont;
     private ImGuiController? _imguiController;
     private AjivaWindow _window = null!;
 
+    private readonly AjivaClock _updateClock;
+    private readonly AjivaClock _renderClock;
     private List<IAjivaLayer> Layers { get; } = [];
 
     public AjivaImGuiLayerSystem(ILogger<AjivaImGuiLayerSystem> logger, RendererApi api,
-        IServiceScopeFactory serviceProvider)
+        IServiceScopeFactory serviceProvider, PeriodicUpdater periodicUpdater)
     {
         _scope = serviceProvider.CreateScope();
 
         _logger = logger;
         _api = api;
+        _periodicUpdater = periodicUpdater;
         // find alll types that implement IAjivaLayer
 #if DEBUG
         _layerTypes =
@@ -44,6 +49,8 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 #else
         _layerTypes = [];
 #endif
+        _updateClock = new AjivaClock();
+        _renderClock = new AjivaClock();
     }
 
     public void Attach(AjivaWindow parent)
@@ -51,15 +58,17 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         if (_initialized) return;
         _initialized = true;
         _window = parent;
-        _input = parent.Window.CreateInput();
-            
+        var input = parent.Input;
+
         _imguiController = new ImGuiController(_api.Device,
-            TextureFormat.Bgra8Unorm, parent.Window, _input, SetupFonts);
+            TextureFormat.Bgra8Unorm, parent.Window, input, SetupFonts);
 
         var io = ImGui.GetIO();
 
         io.ConfigFlags |= ImGuiConfigFlags.DockingEnable; // Enable Docking
         io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable; // Enable Multi-Viewport / Platform Windows
+        _periodicUpdater.RegisterUpdate(UpdateCycle.Render, Render);
+        _periodicUpdater.RegisterUpdate(UpdateCycle.Update, Update);
         return;
 
         unsafe void SetupFonts()
@@ -81,7 +90,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
     public void Update(UpdateInfo info)
     {
-        _imguiController!.Update(info.DeltaTime);
         foreach (var layer in Layers)
         {
             if (layer.Enabled)
@@ -116,17 +124,44 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
         Layers.Clear();
 
-        _imguiController!.Dispose();
+        _imguiController?.Dispose();
+        _imguiController = null;
     }
 
     private TextureViewPtr? _swapchainView;
+    private Vector2D<i32> _lastFramebufferSize = new(0, 0);
 
 
     public void Render(UpdateInfo info)
     {
+        var window = _window.Window;
+        var surface = _window.Surface;
+        var framebufferSize = window.FramebufferSize;
+
+        if (framebufferSize.X * framebufferSize.Y == 0)
+            return;
+
+        if (_lastFramebufferSize != framebufferSize)
+        {
+            _lastFramebufferSize = framebufferSize;
+
+            surface.Configure(new SurfaceConfiguration
+            {
+                AlphaMode = CompositeAlphaMode.Opaque,
+                Device = _api.Device,
+                Usage = TextureUsage.RenderAttachment,
+                Format = TextureFormat.Bgra8Unorm,
+                ViewFormats = [TextureFormat.Bgra8Unorm],
+                Width = (u32)framebufferSize.X,
+                Height = (u32)framebufferSize.Y,
+                PresentMode = PresentMode.Fifo
+            });
+        }
+
+        _imguiController!.Update(info.DeltaTime);
         _swapchainView?.Release();
 
-        var (swapChainTexture, _, status) = _window.surface.GetCurrentTexture();
+        var (swapChainTexture, _, status) = _window.Surface.GetCurrentTexture();
         Debug.Assert(status == SurfaceGetCurrentTextureStatus.Success);
 
         _swapchainView = swapChainTexture.CreateView(
@@ -182,6 +217,8 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
         pass.End();
         queue.Submit(cmd.Finish());
+
+        surface.Present();
     }
 
     [SuppressMessage("ReSharper.DPA", "DPA0002: Excessive memory allocations in SOH",
@@ -298,7 +335,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     private f32[] _frameTimes = new f32[100];
     private readonly TypeInfo[] _layerTypes;
     private readonly IServiceScope _scope;
-    public static IInputContext _input;
 
     private void RenderMetrics(UpdateInfo info)
     {

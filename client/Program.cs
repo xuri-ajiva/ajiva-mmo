@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Client;
 using Client.LayerSystem;
 using Client.Networking;
@@ -48,18 +49,13 @@ builder.AddServiceDefaults();
     services.AddSingleton<Instanced3dDeferredRenderer>();
     services.AddSingleton<ClientConnectionLayer>();
 
-    services.AddSingleton<AjivaWindow>();
-    services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<AjivaWindow>());
+    services.AddService<AjivaWindow>();
 
-    services.AddSingleton<RendererApi>();
-    services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RendererApi>());
-    services.AddSingleton<ResourceLoader>();
-    services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<ResourceLoader>());
-    // services.AddSingleton<RendererApi>(provider => provider.GetRequiredService<RendererApi>());
+    services.AddService<RendererApi>();
+    services.AddService<ResourceLoader>();
+    services.AddService<PeriodicUpdater>();
 
-    services.AddSingleton<ShaderReloadManager>();
-    services.AddSingleton<IShaderManager>(provider => provider.GetRequiredService<ShaderReloadManager>());
-    services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<ShaderReloadManager>());
+    services.AddService<ShaderReloadManager, IShaderManager>();
 
     services.AddSingleton<Riptide.Client>();
     services.AddHostedService<ClientWorker>();
@@ -77,4 +73,44 @@ var host = builder.Build();
     await host.RunAsync();
 
     platform.Shotdown();
+}
+
+public static class ServiceExt
+{
+    public static IServiceCollection AddService<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TService>(
+        this IServiceCollection services)
+        where TService : class
+    {
+        services.AddSingleton<TService>();
+        if (typeof(TService).IsAssignableTo(typeof(IHostedService)))
+        {
+            services.AddSingleton<IHostedService>(provider => (IHostedService)provider.GetRequiredService<TService>());
+        }
+
+        return services;
+    }
+
+    public static IServiceCollection AddService<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TService, TSecond>(
+        this IServiceCollection services)
+        where TService : class, TSecond
+        where TSecond : class
+    {
+        services.AddSingleton<TService>();
+        if (typeof(TService).IsAssignableTo(typeof(IHostedService)))
+        {
+            services.AddSingleton<IHostedService>(provider => (IHostedService)provider.GetRequiredService<TService>());
+        }
+
+
+        if (typeof(TService).IsAssignableTo(typeof(TSecond)))
+        {
+            services.AddSingleton<TSecond>(provider => provider.GetRequiredService<TService>());
+        }
+
+        return services;
+    }
 }
