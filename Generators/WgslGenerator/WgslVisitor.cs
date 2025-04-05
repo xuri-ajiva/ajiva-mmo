@@ -717,7 +717,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         {
             if (access.Name.Identifier.Text == "_raw")
             {
-                _writer.WriteLine(access.Expression.ToString().Trim('\"'));
+                _writer.Write(access.Expression.ToString().Trim('\"'));
             }
 
             return;
@@ -734,7 +734,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         var methodName = identifierIdentifier.Text;
         if(methodName == "discard")
         {
-            _writer.WriteLine("discard;");
+            _writer.Write("discard");
             return;
         }
         
@@ -839,6 +839,11 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         _writer.Write("(");
         Visit(node.Expression);
         _writer.Write(")");
+    }
+
+    public override void VisitEmptyStatement(EmptyStatementSyntax node)
+    {
+        // Empty statement, do nothing
     }
 
     #endregion

@@ -35,7 +35,8 @@ public class TypeMapper
             "int" => "i32",
             "uint" => "u32",
             "void" => "void",
-            _ => "_"
+            "bool" => "bool",
+            _ => "undefined_type"
         };
     }
 
