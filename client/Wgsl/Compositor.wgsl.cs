@@ -54,6 +54,8 @@ public partial class CompositorShader
         var depth = textureLoad(uDepth, uv, 0);
         var accum = textureLoad(uAccum, uv, 0);
         var reveal = textureLoad(uRevea, uv, 0);
+        
+        //if (isApproximatelyEqual(revealage, 1.0f))
 
         // Extract components
         var sumColorWeight = accum.rgb;
@@ -61,7 +63,7 @@ public partial class CompositorShader
         var revealage = reveal.r; // Product(1 - Alpha) stored in Red channel
 
         // Calculate average color: Sum(C*A*W) / Sum(A*W)
-        var avgTransparentColor = sumColorWeight / max(sumAlphaWeight, 0.00001f);
+        var avgTransparentColor = sumColorWeight / max(sumAlphaWeight, 1e-5f);
 
         // Calculate total opacity: 1 - Product(1 - Alpha)
         var totalOpacity = 1.0f - revealage;
@@ -71,10 +73,7 @@ public partial class CompositorShader
         var finalColor = avgTransparentColor * totalOpacity + color.rgb * (1.0f - totalOpacity);
 
         // Clamp color if needed (optional, helps prevent issues from slight inaccuracies)
-        finalColor = clamp(finalColor, vec3f(0.0f), vec3f(1.0f)); 
-
-        // var composite = vec4(accum.rgb / clamp(accum.a, 0.0001f, 50000.0f), revealage);
-        //var finalColor = color + vec4(accum.rgb / clamp(reveal.r, 0.0001f, 50000.0f), 1.0f) * revealAlpha;
+        //finalColor = clamp(finalColor, vec3f(0.0f), vec3f(1.0f));
 
         // ReSharper disable once CompareOfFloatsByEqualityOperator
         if (depth == 1.0f && accum.a == 0.0f)

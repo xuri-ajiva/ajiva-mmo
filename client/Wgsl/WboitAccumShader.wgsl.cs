@@ -101,10 +101,9 @@ public partial class WboitAccumShader
     {
         // Sample albedo and alpha
         var baseSample = textureSample(uAlbedoAlpha, uSampler, v.Tex0Coord);
-        var texColor = baseSample.rgb * ubModel.Tex0Color + v.HighlightColor.rgb;
-        var texAlpha = baseSample.a * v.HighlightColor.a;
+        var color = vec4(baseSample.rgb * ubModel.Tex0Color + v.HighlightColor.rgb, baseSample.a * v.HighlightColor.a);
 
-        if (texAlpha < 0.01f)
+        if (color.a < 0.01f)
         {
             discard();
         }
@@ -115,20 +114,20 @@ public partial class WboitAccumShader
 
         // Calculate Weight (McGuire/Bavoil style, needs tuning)
         // k determines how strongly closer/more opaque fragments are weighted
-        const f32 k = 100.0f;
+        const f32 k = 8.0f;
         // Weight decreases with distance (1-fragDepthNDC) and lower alpha
-        var weight = pow(max((1.0f - fragDepthNDC) * texAlpha, 1e-4f), k) + 1e-4f; // Add epsilon for stability
+        var weight = pow(max((1.0f - fragDepthNDC) * color.a, 1e-4f), k) + 1e-4f; // Add epsilon for stability
 
         // Alternate simpler weight:
-        weight = max(1e-4f, texAlpha * (1.0f - fragDepthNDC) * 1.0f);
+        //var weight = max(1e-4f, color.a * (1.0f - fragDepthNDC) * 1.0f);
 
         // Calculate outputs
         // Accum: Weighted, PREMULTIPLIED color and weighted alpha
-        var accumOut = vec4f(texColor * texAlpha * weight, texAlpha * weight);
+        var accumOut = vec4f(color.rgb, 1.0f) * color.a * weight;
 
         // Reveal: Pass alpha for the specific blend mode (Dst = Dst * (1 - Src))
-        // We need to output texAlpha in the channel used by the blend state (usually R)
-        var revealOut = vec4f(texAlpha, 0.0f, 0.0f, 1.0f); // Alpha in Red channel
+        // We need to output color.a in the channel used by the blend state (usually R)
+        var revealOut = vec4f(color.a, 0.0f, 0.0f, 1.0f); // Alpha in Red channel
 
         return new AccumTargets(accumOut, revealOut, vec2u(v.MeshId, v.InstanceId));
     }

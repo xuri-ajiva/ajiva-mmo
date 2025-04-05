@@ -103,7 +103,7 @@ public partial class TempleShader
         var outPos = ubScene.ViewProjection * worldPos;
 
         // For normal and tangent, extract the rotation part from the combined transform.
-        var nrmTransform = "mat3x3(modelTransform[0].xyz, modelTransform[1].xyz, modelTransform[2].xyz);"._raw<mat3>();
+        var nrmTransform = "mat3x3(modelTransform[0].xyz, modelTransform[1].xyz, modelTransform[2].xyz)"._raw<mat3>();
 
         var nrm = normalize(nrmTransform * a.Normal);
         var tan = normalize(nrmTransform * a.Tangent);
