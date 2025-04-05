@@ -197,7 +197,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             // make a grid
             var x = i % 3;
             var y = i / 3;
-            var position = new Vector3(x * 4, 8, y * 4 );
+            var position = new Vector3(x * 4, 8, y * 4);
             var rotation = new Vector3(0, 0, 0);
             var scale = new Vector3(2.0f);
 
@@ -267,14 +267,14 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         _logger.LogDebug("Creating uniform resources");
         {
-            var albedo = _loader.AsyncTextureLoad("resources/Temple/TempleStone_alb.png");
-            var normal = _loader.AsyncTextureLoad("resources/Temple/TempleStone_nrm.png");
-            var emission = _loader.AsyncTextureLoad("resources/Temple/TempleStone_emm.png");
+            using var albedo = _loader.AsyncTextureLoad("resources/Temple/TempleStone_alb.png");
+            using var normal = _loader.AsyncTextureLoad("resources/Temple/TempleStone_nrm.png");
+            using var emission = _loader.AsyncTextureLoad("resources/Temple/TempleStone_emm.png");
             foreach (var instancedMeshBuffer in _meshBuffers)
             {
-                instancedMeshBuffer.AlbedoTexture = albedo;
-                instancedMeshBuffer.NormalTexture = normal;
-                instancedMeshBuffer.EmissionTexture = emission;
+                instancedMeshBuffer.AlbedoTexture = albedo.Reference();
+                instancedMeshBuffer.NormalTexture = normal.Reference();
+                instancedMeshBuffer.EmissionTexture = emission.Reference();
             }
 
             // for testing
@@ -522,6 +522,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     {
         if (ImGui.Begin("Controls"))
         {
+            if(ImGui.Button("Collect Resources"))
+            {
+                _loader.DoCollection();
+            }
             ImGui.Text("Under Mouse Sample:");
             if (_underCursor is { } selected)
             {
@@ -544,10 +548,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 ImGui.Text("Texture");
                 ImGui.NextColumn();
                 ImGui.SetCursorPosY(y);
-
                 var imageButtonSize = ImGui.GetContentRegionAvail().X;
-                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.View.GetIntPtr(),
-                        new Vector2(imageButtonSize)))
+                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.View.GetIntPtr(), new Vector2(imageButtonSize)))
                 {
                     Task.Run(() =>
                     {
@@ -557,12 +559,13 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
                         if (pickResult.Status != NfdStatus.Ok) return;
 
-                        _logger.LogInformation("Not Implemented currently");
                         var clone = selectedBuffer.AlbedoTexture.Clone();
                         _loader.AsyncTextureLoad(pickResult.Path, clone);
+                        selectedBuffer.AlbedoTexture.Dispose();
                         selectedBuffer.AlbedoTexture = clone;
                     });
                 }
+                
 
                 if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
                 {

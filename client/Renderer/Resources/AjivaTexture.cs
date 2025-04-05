@@ -13,8 +13,7 @@ public class AjivaTexture(
     TextureViewPtr view,
     Extent3D size,
     TextureAspect aspect,
-    u32 mipLevels,
-    bool cleanUp) : IAjivaVersionedObject
+    u32 mipLevels) : IAjivaVersionedObject
 {
     private readonly ResourceLoader _loader = loader;
     public TexturePtr Texture { get; private set; } = texture;
@@ -22,7 +21,9 @@ public class AjivaTexture(
     public Extent3D Size { get; private set; } = size;
     public TextureAspect Aspect { get; private set; } = aspect;
     public u32 MipLevels { get; private set; } = mipLevels;
-    public bool CleanUp { get; set; } = cleanUp;
+    private bool _clone;
+    private i32 _refCount = 1;
+    public bool IsClone => _clone;
 
     public void WriteTexture<T>(ReadOnlySpan<T> data, Extent3D writeSize, Origin3D origin = default, u32 mipLevel = 0)
         where T : unmanaged
@@ -73,35 +74,49 @@ public class AjivaTexture(
     public void Dispose()
     {
         GC.SuppressFinalize(this);
-        if (!CleanUp) return;
-        View.Release();
-        Texture.Destroy();
-        Texture.Release();
+        if (--_refCount > 0) return;
+        if (_clone) return;
+        if (_refCount < 0)
+        {
+            _loader.Logger.LogInformation("Released texture {Texture}", Texture.GetIntPtr());
+            View.Release();
+            Texture.Destroy();
+        }
+        else
+        {
+            _loader.DisposeLater(this);
+        }
     }
 
     public u64 Version { get; private set; } = IAjivaVersionedObject.Sentinel;
-    
+
     public void Swap(AjivaTexture other)
     {
-        var temp = (Texture, View, Size, Aspect, MipLevels, CleanUp);
+        var temp = (Texture, View, Size, Aspect, MipLevels, clone: _clone);
         Texture = other.Texture;
         View = other.View;
         Size = other.Size;
         Aspect = other.Aspect;
         MipLevels = other.MipLevels;
-        CleanUp = other.CleanUp;
+        _clone = other._clone;
         Version++;
         other.Texture = temp.Texture;
         other.View = temp.View;
         other.Size = temp.Size;
         other.Aspect = temp.Aspect;
         other.MipLevels = temp.MipLevels;
-        other.CleanUp = temp.CleanUp;
+        other._clone = temp.clone;
         other.Version++;
     }
 
-    public AjivaTexture Clone(bool cleanUp = false)
+    public AjivaTexture Clone()
     {
-        return new AjivaTexture(_loader, Texture, View, Size, Aspect, MipLevels, cleanUp);
+        return new AjivaTexture(_loader, Texture, View, Size, Aspect, MipLevels) { _clone = true };
+    }
+
+    public AjivaTexture Reference()
+    {
+        _refCount++;
+        return this;
     }
 }

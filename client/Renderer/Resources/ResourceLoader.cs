@@ -41,7 +41,8 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 
     public QueuePtr Queue => api.Device.GetQueue();
 
-    public void AsyncTextureLoad(string path, AjivaTexture target, TextureUsage usage = TextureUsage.TextureBinding, string? label = null,
+    public void AsyncTextureLoad(string path, AjivaTexture target, TextureUsage usage = TextureUsage.TextureBinding,
+        string? label = null,
         u32 mipLevels = 1, TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
     {
         Task.Run(async () =>
@@ -59,7 +60,8 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         });
     }
 
-    public AjivaTexture AsyncTextureLoad(string path, TextureUsage usage = TextureUsage.TextureBinding, string? label = null,
+    public AjivaTexture AsyncTextureLoad(string path, TextureUsage usage = TextureUsage.TextureBinding,
+        string? label = null,
         u32 mipLevels = 1, TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
     {
         var result = DefaultTexture.Clone();
@@ -170,7 +172,8 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             aspect, baseMipLevel: 0, mipLevelCount: 1, baseArrayLayer: 0, arrayLayerCount: 1,
             label: $"{label} - View");
 
-        var tex = new AjivaTexture(this, texture, textureView, extent3D, aspect, mipLevels, true);
+        Logger.LogInformation("Created texture {Texure} ({Label})", texture.GetIntPtr(), label);
+        var tex = new AjivaTexture(this, texture, textureView, extent3D, aspect, mipLevels);
         return tex;
     }
 
@@ -205,15 +208,31 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     private readonly Channel<IDisposable> _disposables =
         Channel.CreateUnbounded<IDisposable>(new UnboundedChannelOptions { SingleReader = true });
 
-    private void DisposeLater(IDisposable disposable)
+    public void DisposeLater(IDisposable disposable)
     {
         // skip textures that are not supposed to be cleaned up (clone of default textures)
-        if (disposable is AjivaTexture { CleanUp: false }) return;
+        if (disposable is AjivaTexture { IsClone: true }) return;
 
         while (!_disposables.Writer.TryWrite(disposable))
         {
             Logger.LogWarning("Disposables Channel Full, waiting for space");
             Thread.Sleep(10);
+        }
+    }
+    
+    public void DoCollection()
+    {
+        while (_disposables.Reader.TryRead(out var disposable))
+        {
+            try
+            {
+                Logger.LogDebug("Disposing {Disposable}", disposable);
+                disposable.Dispose();
+            }
+            catch (Exception e)
+            {
+                Logger.LogError(e, "Failed to dispose {Disposable}", disposable);
+            }
         }
     }
 
