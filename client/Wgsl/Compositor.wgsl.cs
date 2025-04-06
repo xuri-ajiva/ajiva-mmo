@@ -24,13 +24,13 @@ public partial class CompositorShader
         u32 padding2
     );
 
-    [Group(0), Binding(0), BindingMode(BindingType.Uniform)]
+    [Group(0), BindingMode(BindingType.Uniform)]
     public Uniforms ub;
 
-    [Group(0), Binding(1)] private readonly texture_2d<f32> uColor = null!;
-    [Group(0), Binding(2)] private readonly texture_depth_2d uDepth = null!;
-    [Group(0), Binding(3)] private readonly texture_2d<f32> uAccum = null!;
-    [Group(0), Binding(4)] private readonly texture_2d<f32> uRevea = null!;
+    [Group(0)] private readonly texture_2d<f32> uColor = null!;
+    [Group(0)] private readonly texture_depth_2d uDepth = null!;
+    [Group(0)] private readonly texture_2d<f32> uAccum = null!;
+    [Group(0)] private readonly texture_2d<f32> uRevea = null!;
 
     [VertexShader]
     public CompositeVaryings vs_main([Builtin("vertex_index")] u32 vertexIndex)
@@ -54,7 +54,7 @@ public partial class CompositorShader
         var depth = textureLoad(uDepth, uv, 0);
         var accum = textureLoad(uAccum, uv, 0);
         var reveal = textureLoad(uRevea, uv, 0);
-        
+
         //if (isApproximatelyEqual(revealage, 1.0f))
 
         // Extract components

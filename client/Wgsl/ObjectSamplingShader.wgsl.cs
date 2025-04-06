@@ -23,14 +23,14 @@ public partial class ObjectSamplingShader
         u32 InstanceId
     );
 
-    [Group(0), Binding(0), BindingMode(BindingType.Uniform)]
+    [Group(0), BindingMode(BindingType.Uniform)]
     private Input _input;
 
-    [Group(0), Binding(1), BindingMode(BindingType.Storage)]
+    [Group(0), BindingMode(BindingType.Storage)]
     private Result _result;
 
-    [Group(0), Binding(2)] private readonly texture_depth_2d uDepth = null!;
-    [Group(0), Binding(3)] private readonly texture_2d<u32> objectAndInstanceId = null!;
+    [Group(0)] private readonly texture_depth_2d uDepth = null!;
+    [Group(0)] private readonly texture_2d<u32> objectAndInstanceId = null!;
 
     [ComputeShader]
     [WorkgroupSize(1)]

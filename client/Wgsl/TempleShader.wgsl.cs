@@ -28,19 +28,19 @@ public partial class TempleShader
     );
 
     public partial struct Attributes(
-        [Location(0)] vec3 position,
-        [Location(1)] vec2 tex0Coord,
-        [Location(2)] vec2 tex1Coord,
-        [Location(3)] vec3 normal,
-        [Location(4)] vec3 tangent
+        vec3 position,
+        vec2 tex0Coord,
+        vec2 tex1Coord,
+        vec3 normal,
+        vec3 tangent
     );
 
     public partial struct Instance(
-        [Location(5)] vec4 transform0,
-        [Location(6)] vec4 transform1,
-        [Location(7)] vec4 transform2,
-        [Location(8)] vec4 transform3,
-        [Location(9)] vec4 highlightColor
+        vec4 transform0,
+        vec4 transform1,
+        vec4 transform2,
+        vec4 transform3,
+        vec4 highlightColor
     )
     {
         public void SetTransform(Matrix4x4 transform)
@@ -54,35 +54,35 @@ public partial class TempleShader
 
     public partial struct Varyings(
         [Builtin("position")] vec4 position,
-        [Location(0)] vec2 tex0Coord,
-        [Location(1)] vec2 tex1Coord,
-        [Location(2)] vec3 normal,
-        [Location(3)] vec3 tangent,
-        [Location(4)] vec3 bitangent,
-        [Location(5)] u32 meshId,
-        [Location(6)] u32 instanceId,
-        [Location(7)] vec4 highlightColor
+        vec2 tex0Coord,
+        vec2 tex1Coord,
+        vec3 normal,
+        vec3 tangent,
+        vec3 bitangent,
+        u32 meshId,
+        u32 instanceId,
+        vec4 highlightColor
     );
 
     public partial struct ColorTargets(
-        [Location(0)] vec4 albedo,
-        [Location(1)] vec4 normal,
-        [Location(2)] vec4 emission,
-        [Location(3)] uvec2 objectAndInstanceId
+        vec4 albedo,
+        vec4 normal,
+        vec4 emission,
+        uvec2 objectAndInstanceId
     );
 
-    [Group(0), Binding(0), BindingMode(BindingType.Uniform)]
+    [Group(0), BindingMode(BindingType.Uniform)]
     private SceneUniform ubScene;
 
-    [Group(1), Binding(0), BindingMode(BindingType.Uniform)]
+    [Group(1), BindingMode(BindingType.Uniform)]
     private ModelUniform ubModel;
 
-    [Group(1)] [Binding(1), BindingMode(BindingType.Filtering)]
+    [Group(1), BindingMode(BindingType.Filtering)]
     private readonly sampler uSampler = null!;
 
-    [Group(1)] [Binding(2)] private readonly texture_2d<f32> uAlbedo = null!;
-    [Group(1)] [Binding(3)] private readonly texture_2d<f32> uNormal = null!;
-    [Group(1)] [Binding(4)] private readonly texture_2d<f32> uEmission = null!;
+    [Group(1)] private readonly texture_2d<f32> uAlbedo = null!;
+    [Group(1)] private readonly texture_2d<f32> uNormal = null!;
+    [Group(1)] private readonly texture_2d<f32> uEmission = null!;
 
     [VertexShader]
     public Varyings vs_main(Attributes a, Instance i, [Builtin("instance_index")] u32 iId)
@@ -126,7 +126,7 @@ public partial class TempleShader
     public ColorTargets fs_main(Varyings v)
     {
         var oAlbedo = textureSample(uAlbedo, uSampler, v.Tex0Coord) * new vec4(ubModel.Tex0Color, 1.0f);
-        
+
         if (oAlbedo.a < 0.01f)
         {
             discard();

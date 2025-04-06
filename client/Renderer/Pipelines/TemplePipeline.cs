@@ -70,11 +70,7 @@ public class TemplePipeline : IDisposable
                 Module = module,
                 EntryPoint = shader.VertexEntryPoint,
                 Constants = [],
-                Buffers =
-                [
-                    shader.GetVertexBufferLayout(),
-                    shader.GetInstanceBufferLayout(),
-                ]
+                Buffers = shader.GetVertexBufferLayout(VertexStepMode.Vertex, VertexStepMode.Instance),
             },
             primitive: new PrimitiveState
             {
@@ -101,29 +97,28 @@ public class TemplePipeline : IDisposable
                 Module = module,
                 EntryPoint = shader.FragmentEntryPoint,
                 Constants = [],
-                Targets =
-                [
-                    new ColorTargetState(
+                Targets = shader.ColorTarget(
+                    albedo: new ColorTargetState(
                         gBuffer.AlbedoChannelFormat,
                         blendState: null,
                         ColorWriteMask.All
                     ),
-                    new ColorTargetState(
+                    normal: new ColorTargetState(
                         gBuffer.NormalChannelFormat,
                         blendState: null,
                         ColorWriteMask.All
                     ),
-                    new ColorTargetState(
+                    emission: new ColorTargetState(
                         gBuffer.LightChannelFormat,
                         blendState: null,
                         ColorWriteMask.All
                     ),
-                    new ColorTargetState(
+                    objectAndInstanceId: new ColorTargetState(
                         gBuffer.ObjectAndInstanceIdChannelFormat,
                         blendState: null,
                         ColorWriteMask.All
                     )
-                ]
+                )
             }
         );
 

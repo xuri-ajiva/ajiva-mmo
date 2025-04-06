@@ -74,7 +74,7 @@ public class DeferredPipeline : IDisposable
                 Constants = [],
                 EntryPoint = shader.FragmentEntryPoint,
                 Module = module,
-                Targets =
+                Targets = 
                 [
                     new Safe.ColorTargetState(lightTextureFormat,
                         (

@@ -28,16 +28,16 @@ public partial class WboitAccumShader
     );
 
     public partial struct Attributes(
-        [Location(0)] vec3 position,
-        [Location(1)] vec2 tex0Coord
+        vec3 position,
+        vec2 tex0Coord
     );
 
     public partial struct Instance(
-        [Location(5)] vec4 transform0,
-        [Location(6)] vec4 transform1,
-        [Location(7)] vec4 transform2,
-        [Location(8)] vec4 transform3,
-        [Location(9)] vec4 highlightColor
+        vec4 transform0,
+        vec4 transform1,
+        vec4 transform2,
+        vec4 transform3,
+        vec4 highlightColor
     )
     {
         public void SetTransform(Matrix4x4 transform)
@@ -51,28 +51,28 @@ public partial class WboitAccumShader
 
     public partial struct AccumVaryings(
         [Builtin("position")] vec4 position,
-        [Location(0)] vec2 tex0Coord,
-        [Location(1)] u32 meshId,
-        [Location(2)] u32 instanceId,
-        [Location(3)] vec4 highlightColor
+        vec2 tex0Coord,
+        u32 meshId,
+        u32 instanceId,
+        vec4 highlightColor
     );
 
     public partial struct AccumTargets(
-        [Location(0)] vec4 accum, // Stores Sum(Color * Alpha * Weight), Sum(Alpha * Weight) 
-        [Location(1)] vec4 reveal, // Stores Product(1 - Alpha)
-        [Location(2)] uvec2 objectAndInstanceId
+        vec4 accum, // Stores Sum(Color * Alpha * Weight), Sum(Alpha * Weight) 
+        vec4 reveal, // Stores Product(1 - Alpha)
+        uvec2 objectAndInstanceId
     );
 
-    [Group(0), Binding(0), BindingMode(BindingType.Uniform)]
+    [Group(0), BindingMode(BindingType.Uniform)]
     private SceneUniform ubScene;
 
-    [Group(1), Binding(0), BindingMode(BindingType.Uniform)]
+    [Group(1), BindingMode(BindingType.Uniform)]
     private ModelUniform ubModel;
 
-    [Group(1)] [Binding(1), BindingMode(BindingType.Filtering)]
+    [Group(1), BindingMode(BindingType.Filtering)]
     private readonly sampler uSampler = null!;
 
-    [Group(1)] [Binding(2)] private readonly texture_2d<f32> uAlbedoAlpha = null!;
+    [Group(1)] private readonly texture_2d<f32> uAlbedoAlpha = null!;
 
     [VertexShader]
     public AccumVaryings vs_main(Attributes a, Instance i, [Builtin("instance_index")] u32 iId)

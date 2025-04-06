@@ -58,7 +58,7 @@ public class WboitPipeline(
                 Module = module,
                 EntryPoint = shader.VertexEntryPoint,
                 Constants = [],
-                Buffers = [shader.GetVertexBufferLayout(), shader.GetInstanceBufferLayout()]
+                Buffers = shader.GetVertexBufferLayout(VertexStepMode.Vertex, VertexStepMode.Instance)
             },
             primitive: new PrimitiveState
             {
@@ -84,41 +84,49 @@ public class WboitPipeline(
                 EntryPoint = shader.FragmentEntryPoint, // "fs_main"
                 Constants = [],
                 Targets =
-                [
-                    // Target 0: Accumulation Buffer (Additive Blending)
-                    new ColorTargetState(
-                        gbuffer.AccumChannelFormat,
-                        blendState: (
-                            color: new BlendComponent
-                            {
-                                SrcFactor = BlendFactor.One, DstFactor = BlendFactor.One, Operation = BlendOperation.Add
-                            },
-                            alpha: new BlendComponent
-                            {
-                                SrcFactor = BlendFactor.One, DstFactor = BlendFactor.One, Operation = BlendOperation.Add
-                            }
+                    shader.ColorTarget(
+                        // Target 0: Accumulation Buffer (Additive Blending)
+                        new ColorTargetState(
+                            gbuffer.AccumChannelFormat,
+                            blendState: (
+                                color: new BlendComponent
+                                {
+                                    SrcFactor = BlendFactor.One, DstFactor = BlendFactor.One,
+                                    Operation = BlendOperation.Add
+                                },
+                                alpha: new BlendComponent
+                                {
+                                    SrcFactor = BlendFactor.One, DstFactor = BlendFactor.One,
+                                    Operation = BlendOperation.Add
+                                }
+                            ),
+                            writeMask: ColorWriteMask.All
                         ),
-                        writeMask: ColorWriteMask.All
-                    ),
-                    // Target 1: Revealage Buffer (Multiplicative Blending Dst = Dst * (1 - Src))
-                    new ColorTargetState(
-                        gbuffer.RevealChannelFormat,
-                        blendState: (
-                            color: new BlendComponent
-                            {
-                                SrcFactor = BlendFactor.Zero, DstFactor = BlendFactor.OneMinusSrc,
-                                Operation = BlendOperation.Add
-                            },
-                            alpha: new BlendComponent
-                            {
-                                SrcFactor = BlendFactor.Zero, DstFactor = BlendFactor.One,
-                                Operation = BlendOperation.Add
-                            }
+                        // Target 1: Revealage Buffer (Multiplicative Blending Dst = Dst * (1 - Src))
+                        new ColorTargetState(
+                            gbuffer.RevealChannelFormat,
+                            blendState: (
+                                color: new BlendComponent
+                                {
+                                    SrcFactor = BlendFactor.Zero, DstFactor = BlendFactor.OneMinusSrc,
+                                    Operation = BlendOperation.Add
+                                },
+                                alpha: new BlendComponent
+                                {
+                                    SrcFactor = BlendFactor.Zero, DstFactor = BlendFactor.One,
+                                    Operation = BlendOperation.Add
+                                }
+                            ),
+                            writeMask: ColorWriteMask.Red // Only need to write to Red channel (as per shader)
+                            //writeMask: ColorWriteMask.All // Or All if format is single channel like R8Unorm
                         ),
-                        writeMask: ColorWriteMask.Red // Only need to write to Red channel (as per shader)
-                        //writeMask: ColorWriteMask.All // Or All if format is single channel like R8Unorm
+                        // Target 2: Object and Instance ID Buffer (read only)
+                        new ColorTargetState(
+                            gbuffer.ObjectAndInstanceIdChannelFormat,
+                            blendState: null,
+                            writeMask: ColorWriteMask.None
+                        )
                     )
-                ]
             }
         );
         module.Release();
@@ -157,7 +165,7 @@ public class WboitPipeline(
 
     public RenderPassEncoderPtr? BeginRenderPass(Extent3D sceneViewport)
     {
-        if (!gbuffer.TryGetTargets(out _, out _, out _, out _, out var accum, out var reveal,
+        if (!gbuffer.TryGetTargets(out _, out _, out _, out var objectAndInstanceId, out var accum, out var reveal,
                 out var depth))
             return null;
 
@@ -165,14 +173,15 @@ public class WboitPipeline(
 
         var pass = _cmd.BeginRenderPass([
                 new RenderPassColorAttachment(accum.View, null, LoadOp.Clear, StoreOp.Store, new Color(0, 0, 0, 0)),
-                new RenderPassColorAttachment(reveal.View, null, LoadOp.Clear, StoreOp.Store, new Color(1, 0, 0, 0))
+                new RenderPassColorAttachment(reveal.View, null, LoadOp.Clear, StoreOp.Store, new Color(1, 0, 0, 0)),
+                new RenderPassColorAttachment(objectAndInstanceId.View, null, LoadOp.Load, StoreOp.Discard, new Color(0, 0, 0, 0)),
             ],
             null,
             new RenderPassDepthStencilAttachment(depth.View, LoadOp.Load, StoreOp.Store, 1, true,
                 LoadOp.Undefined, StoreOp.Discard, 0, true), null, label: "WBOIT Accum Pass");
 
         pass.SetViewport(0, 0, sceneViewport.Width, sceneViewport.Height, 0, 1);
-        
+
         pass.SetPipeline(pipeline);
         pass.SetBindGroup(0, sceneBindGroup, ReadOnlySpan<u32>.Empty);
 

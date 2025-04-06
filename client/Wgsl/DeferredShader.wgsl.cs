@@ -37,15 +37,15 @@ public partial class DeferredShader
     );
 
 
-    [Group(0), Binding(0), BindingMode(BindingType.Uniform)]
+    [Group(0), BindingMode(BindingType.Uniform)]
     private Uniforms ub;
 
-    [Group(0), Binding(1), BindingMode(BindingType.ReadOnlyStorage)]
+    [Group(0), BindingMode(BindingType.ReadOnlyStorage)]
     private LightsBuffer lightsBuffer;
 
-    [Group(0), Binding(2)] private readonly texture_2d<f32> uAlbedo = null!;
-    [Group(0), Binding(3)] private readonly texture_2d<f32> uNormal = null!;
-    [Group(0), Binding(4)] private readonly texture_depth_2d uDepth = null!;
+    [Group(0)] private readonly texture_2d<f32> uAlbedo = null!;
+    [Group(0)] private readonly texture_2d<f32> uNormal = null!;
+    [Group(0)] private readonly texture_depth_2d uDepth = null!;
 
 
     [VertexShader]
