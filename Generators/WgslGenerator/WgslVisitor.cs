@@ -390,19 +390,20 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 uint finLocation;
                 if (location is null)
                 {
-                    finLocation = counter++;
+                    finLocation = counter;
                 }
                 else
                 {
                     finLocation = (uint)location;
                     if (counter < finLocation)
-                        counter = finLocation + 1;
+                        counter = finLocation;
                 }
 
                 // builtin location is not allowed
                 if (!buildIn)
                 {
                     _writer.WriteLine($"@location({finLocation})");
+                    counter++;
                 }
                 else
                 {
