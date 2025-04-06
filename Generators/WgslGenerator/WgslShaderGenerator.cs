@@ -87,6 +87,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
     private const string Device = "global::Silk.NET.WebGPU.Safe.DevicePtr";
     private const string PipelineLayout = "global::Silk.NET.WebGPU.Safe.PipelineLayoutPtr";
     private const string VertexBufferLayout = "global::Silk.NET.WebGPU.Safe.VertexBufferLayout";
+    private const string ColorTargetState = "global::Silk.NET.WebGPU.Safe.ColorTargetState";
     private const string VertexAttribute = "global::Silk.NET.WebGPU.VertexAttribute";
     private const string ShaderModuleHint = "global::Silk.NET.WebGPU.Safe.ShaderModuleCompilationHint";
 
@@ -94,6 +95,22 @@ public class WgslShaderGenerator : IIncrementalGenerator
     private const string BindGroupEntries = "global::Silk.NET.WebGPU.Safe.BindGroupEntries";
 
     private readonly SyntaxToken[] _modifiers = [Token(SyntaxKind.PublicKeyword) /*, Token(SyntaxKind.StaticKeyword)*/];
+
+    private SyntaxList<AttributeListSyntax> DefaultAttributeList =
+    [
+        AttributeList(
+        [
+            Attribute(ParseName("System.Runtime.CompilerServices.MethodImpl"))
+                .WithArgumentList(AttributeArgumentList(
+                    SeparatedList(new[]
+                    {
+                        AttributeArgument(
+                            ParseExpression("System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining"))
+                    }))),
+            // compiler generated attribute
+            Attribute(ParseName("System.Runtime.CompilerServices.CompilerGeneratedAttribute"))
+        ])
+    ];
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -162,11 +179,12 @@ public class WgslShaderGenerator : IIncrementalGenerator
 
             // Get binding information
             var bindGroups = wgslVisitor.GetBindingGroups();
-            var vertexAttributes = wgslVisitor.GetVertexAttributes();
-            var instanceAttributes = wgslVisitor.GetInstanceAttributes();
+            var inAttributes = wgslVisitor.GetInputAttributes();
+            var outAttribute = wgslVisitor.GetOutputAttribute();
             var entryPoints = wgslVisitor.GetEntryPoints();
             var structAttributes = wgslVisitor.GetStructAttributes();
             var generatedStructs = wgslVisitor.GetGeneratedStructs();
+            var warnings = wgslVisitor.GetWarnings();
 
             // Generate a partial class with a ShaderSource constant
             var className = classDeclarationSyntax.Identifier.Text;
@@ -174,7 +192,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
             // Get namespace from semantic model
             var semanticModel = compilation.GetSemanticModel(classDeclarationSyntax.SyntaxTree);
             var symbol = ModelExtensions.GetDeclaredSymbol(semanticModel, classDeclarationSyntax);
-            var namespaceName = symbol.ContainingNamespace.ToDisplayString();
+            var namespaceName = symbol!.ContainingNamespace.ToDisplayString();
 
             var interfaceMembers = new List<MemberDeclarationSyntax>();
 
@@ -198,16 +216,16 @@ public class WgslShaderGenerator : IIncrementalGenerator
             }
 
             // Generate buffer layout methods
-            if (vertexAttributes.Any())
+            if (inAttributes.Any())
             {
-                members.Add(GenerateVertexBufferLayoutMethod(vertexAttributes));
-                interfaceMembers.Add(GenerateVertexBufferLayoutMethod(vertexAttributes, true));
+                members.Add(GenerateVertexBufferLayoutMethods(inAttributes));
+                interfaceMembers.Add(GenerateVertexBufferLayoutMethods(inAttributes, true));
             }
 
-            if (instanceAttributes.Any())
+            if (outAttribute is not null)
             {
-                members.Add(GenerateInstanceBufferLayoutMethod(instanceAttributes));
-                interfaceMembers.Add(GenerateInstanceBufferLayoutMethod(instanceAttributes, true));
+                members.Add(GenerateOutLayoutMethod(outAttribute));
+                interfaceMembers.Add(GenerateOutLayoutMethod(outAttribute, true));
             }
 
             // Generate pipeline layout method
@@ -255,16 +273,16 @@ public class WgslShaderGenerator : IIncrementalGenerator
         }
     }
 
-
     private MemberDeclarationSyntax GenerateBindGroupLayoutMethod(uint groupId, BindGroupInfo bindGroup,
         string className, bool isInterface = false)
     {
         // Method signature: public BindGroupLayout CreateBindGroupLayout{groupId}(Device device, ...)
         var methodName = $"CreateBindGroupLayout{groupId}";
         var methodDeclaration = MethodDeclaration(
-            ParseTypeName(BindGroupLayout),
-            methodName
-        ).AddModifiers(_modifiers);
+                ParseTypeName(BindGroupLayout),
+                methodName
+            ).AddModifiers(_modifiers)
+            .WithAttributeLists(DefaultAttributeList);
 
         // Add parameters for customizable options
         var parameters = new List<ParameterSyntax>
@@ -368,9 +386,10 @@ public class WgslShaderGenerator : IIncrementalGenerator
         // Method signature: public BindGroup CreateBindGroup{groupId}(Device device, ...)
         var methodName = $"CreateBindGroup{groupId}";
         var methodDeclaration = MethodDeclaration(
-            ParseTypeName(BindGroup),
-            methodName
-        ).AddModifiers(_modifiers);
+                ParseTypeName(BindGroup),
+                methodName
+            ).AddModifiers(_modifiers)
+            .WithAttributeLists(DefaultAttributeList);
 
         // Add parameters
         var parameters = new List<ParameterSyntax>
@@ -454,55 +473,67 @@ public class WgslShaderGenerator : IIncrementalGenerator
             ReturnStatement(ParseExpression($"device.CreateBindGroup(layout, {entriesArray}, label: label)"))));
     }
 
-    private MemberDeclarationSyntax GenerateVertexBufferLayoutMethod(
-        IReadOnlyList<VertexAttributeInfo> vertexAttributes, bool isInterface = false)
+    private MemberDeclarationSyntax GenerateVertexBufferLayoutMethods(
+        IReadOnlyList<IReadOnlyList<VertexAttributeInfo>> vertexAttributes, bool isInterface = false)
     {
-        // Method signature: public VertexBufferLayout GetVertexBufferLayout()
+        // Method signature: public VertexBufferLayout[] GetVertexBufferLayout()
         var methodDeclaration = MethodDeclaration(
-            ParseTypeName(VertexBufferLayout),
-            "GetVertexBufferLayout"
-        ).AddModifiers(_modifiers);
+                ArrayType(ParseTypeName(VertexBufferLayout), [ArrayRankSpecifier()]),
+                "GetVertexBufferLayout"
+            ).AddModifiers(_modifiers)
+            .WithAttributeLists(DefaultAttributeList);
 
         if (isInterface)
             return methodDeclaration.WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
-        var vertexAttributesCode = new List<string>();
-        foreach (var attr in vertexAttributes)
+        List<string> body = [];
+        foreach (var vertexAttributeInfos in vertexAttributes)
         {
-            var formatName = GetVertexFormatName(attr.VertexFormat);
-            vertexAttributesCode.Add(
-                $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})), shaderLocation: {attr.Location})");
+            var vertexAttributesCode = new List<string>();
+            foreach (var attr in vertexAttributeInfos)
+            {
+                var formatName = GetVertexFormatName(attr.VertexFormat);
+                vertexAttributesCode.Add(
+                    $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})), shaderLocation: {attr.Location})");
+            }
+
+            body.Add(
+                $"new {VertexBufferLayout}((uint)Marshal.SizeOf<{vertexAttributeInfos[0].StructName}>(), VertexStepMode.Vertex, " +
+                $"[{string.Join(",\r\n", vertexAttributesCode)}])");
         }
 
-        return methodDeclaration.WithBody(Block(ParseStatement(
-            $"return new {VertexBufferLayout}((uint)Marshal.SizeOf<{vertexAttributes[0].StructName}>(), VertexStepMode.Vertex, " +
-            $"[{string.Join(",\r\n", vertexAttributesCode)}]);")));
+        return methodDeclaration.WithBody(Block(ReturnStatement(ParseExpression($"[{string.Join(",\r\n", body)}]"))));
     }
 
-    private MemberDeclarationSyntax GenerateInstanceBufferLayoutMethod(
+    private MemberDeclarationSyntax GenerateOutLayoutMethod(
         IReadOnlyList<VertexAttributeInfo> instanceAttributes, bool isInterface = false)
     {
-        // Method signature: public VertexBufferLayout GetInstanceBufferLayout()
+        // Method signature: public T[] ColorTarget()
+        var parameters = new List<ParameterSyntax>();
+
+        // add each instance attribute as a parameter
+        foreach (var vertexAttributeInfose in instanceAttributes)
+        {
+            parameters.Add(Parameter(Identifier(vertexAttributeInfose.Name.ToCamelCase()))
+                .WithType(IdentifierName("T")));
+        }
+
         var methodDeclaration = MethodDeclaration(
-            ParseTypeName(VertexBufferLayout),
-            "GetInstanceBufferLayout"
-        ).AddModifiers(_modifiers);
+                ArrayType(IdentifierName("T"), [ArrayRankSpecifier()]),
+                "ColorTarget")
+            .AddModifiers(_modifiers)
+            .WithTypeParameterList(TypeParameterList([TypeParameter("T")]))
+            .WithAttributeLists(DefaultAttributeList)
+            .WithParameterList(ParameterList(SeparatedList(parameters)));
 
         if (isInterface)
             return methodDeclaration.WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
-        var instanceAttributesCode = new List<string>();
-        foreach (var attr in instanceAttributes)
-        {
-            var formatName = GetVertexFormatName(attr.VertexFormat);
-            instanceAttributesCode.Add(
-                $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})), shaderLocation: {attr.Location})");
-        }
 
-        return methodDeclaration.WithBody(Block(ParseStatement(
-            $"return new {VertexBufferLayout}((uint)Marshal.SizeOf<{instanceAttributes[0].StructName}>(), VertexStepMode.Instance, " +
-            $"[{string.Join(",\r\n", instanceAttributesCode)}]);")));
+        return methodDeclaration.WithBody(Block(ReturnStatement(
+            ParseExpression($" [{string.Join(",\r\n", parameters.Select(a => $"{a.Identifier.Text}"))}]"))));
     }
+
 
     private MemberDeclarationSyntax GenerateGetPipelineLayoutMethod(IEnumerable<uint> groupIds, string className,
         bool isInterface = false)
@@ -533,6 +564,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
                 ParseTypeName(PipelineLayout),
                 "CreatePipelineLayout"
             ).AddModifiers(_modifiers)
+            .WithAttributeLists(DefaultAttributeList)
             .WithParameterList(ParameterList(SeparatedList(parameters)));
 
 
@@ -545,22 +577,23 @@ public class WgslShaderGenerator : IIncrementalGenerator
             Block(ReturnStatement(ParseExpression($"device.CreatePipelineLayout([{layoutsArray}], label: label)"))));
     }
 
-    private IEnumerable<MemberDeclarationSyntax> GenerateGetShaderEntryPointPorps(ShaderEntryInfo entryPoints,  bool isInterface = false)
+    private IEnumerable<MemberDeclarationSyntax> GenerateGetShaderEntryPointPorps(ShaderEntryInfo entryPoints,
+        bool isInterface = false)
     {
         // public string VertexEntryPoint { get; }
         // public string FragmentEntryPoint { get; }
 
-        if (entryPoints.VertexEntryPoint is not null)
-            yield return CreatePropWithValue(nameof(ShaderEntryInfo.VertexEntryPoint),
-                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.VertexEntryPoint)));
+        if (entryPoints.Vertex?.EntryPoint is not null)
+            yield return CreatePropWithValue("VertexEntryPoint",
+                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.Vertex?.EntryPoint)));
 
-        if (entryPoints.FragmentEntryPoint is not null)
-            yield return CreatePropWithValue(nameof(ShaderEntryInfo.FragmentEntryPoint),
-                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.FragmentEntryPoint)));
+        if (entryPoints.Fragment?.EntryPoint is not null)
+            yield return CreatePropWithValue("FragmentEntryPoint",
+                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.Fragment?.EntryPoint)));
 
-        if (entryPoints.ComputeEntryPoint is not null)
-            yield return CreatePropWithValue(nameof(ShaderEntryInfo.ComputeEntryPoint),
-                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.ComputeEntryPoint)));
+        if (entryPoints.Compute?.EntryPoint is not null)
+            yield return CreatePropWithValue("ComputeEntryPoint",
+                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entryPoints.Compute?.EntryPoint)));
     }
 
     private static PropertyDeclarationSyntax CreatePropWithValue(string name, ExpressionSyntax value)
@@ -577,9 +610,10 @@ public class WgslShaderGenerator : IIncrementalGenerator
         // Method signature: public ShaderModulePtr CreateShaderModule(Device device)
 
         var methodDeclaration = MethodDeclaration(
-            ParseTypeName("ShaderModulePtr"),
-            "CreateShaderModule"
-        ).AddModifiers(_modifiers);
+                ParseTypeName("ShaderModulePtr"),
+                "CreateShaderModule"
+            ).AddModifiers(_modifiers)
+            .WithAttributeLists(DefaultAttributeList);
 
         // Add parameters
         var parameters = new List<ParameterSyntax>
@@ -601,12 +635,12 @@ public class WgslShaderGenerator : IIncrementalGenerator
         return methodDeclaration.WithBody(
             Block(ReturnStatement(ParseExpression(
                 $"""
-                 device.CreateShaderModuleWGSL({ShaderSource}, [{(entryPoints.FragmentEntryPoint != null
-                     ? $"new {ShaderModuleHint}(\"{entryPoints.FragmentEntryPoint}\", pipelineLayout), "
-                     : "")}{(entryPoints.VertexEntryPoint != null
-                     ? $"new {ShaderModuleHint}(\"{entryPoints.VertexEntryPoint}\", pipelineLayout), "
-                     : "")}{(entryPoints.ComputeEntryPoint != null
-                     ? $"new {ShaderModuleHint}(\"{entryPoints.ComputeEntryPoint}\", pipelineLayout)"
+                 device.CreateShaderModuleWGSL({ShaderSource}, [{(entryPoints.Fragment?.EntryPoint != null
+                     ? $"new {ShaderModuleHint}(\"{entryPoints.Fragment?.EntryPoint}\", pipelineLayout), "
+                     : "")}{(entryPoints.Vertex?.EntryPoint != null
+                     ? $"new {ShaderModuleHint}(\"{entryPoints.Vertex?.EntryPoint}\", pipelineLayout), "
+                     : "")}{(entryPoints.Compute?.EntryPoint != null
+                     ? $"new {ShaderModuleHint}(\"{entryPoints.Compute?.EntryPoint}\", pipelineLayout)"
                      : "")}], label: label)
                  """))));
     }

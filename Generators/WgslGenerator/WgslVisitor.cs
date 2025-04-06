@@ -89,7 +89,6 @@ public class VertexAttributeInfo
     public string TypeName { get; set; } = string.Empty;
     public VertexFormat VertexFormat { get; set; }
     public string StructName { get; set; } = string.Empty;
-    public bool IsInstance { get; set; }
 }
 
 /// <summary>
@@ -97,9 +96,9 @@ public class VertexAttributeInfo
 /// </summary>
 public class ShaderEntryInfo
 {
-    public string? VertexEntryPoint { get; set; }
-    public string? FragmentEntryPoint { get; set; }
-    public string? ComputeEntryPoint { get; set; }
+    public TypeInOut? Vertex { get; set; }
+    public TypeInOut? Fragment { get; set; }
+    public TypeInOut? Compute { get; set; }
 }
 
 /// <summary>
@@ -123,6 +122,26 @@ public enum BindingType
     Texture,
 }
 
+public enum AttributeType
+{
+    Builtin,
+    Location,
+    VertexShader,
+    FragmentShader,
+    ComputeShader,
+    WorkgroupSize,
+    Group,
+    Binding,
+    BindingMode,
+}
+
+public class TypeInOut
+{
+    public string EntryPoint { get; set; }
+    public string ReturnType { get; set; }
+    public string[] Parameters { get; set; }
+}
+
 internal class WgslVisitor : CSharpSyntaxVisitor
 {
     private readonly SourceProductionContext _context;
@@ -130,24 +149,32 @@ internal class WgslVisitor : CSharpSyntaxVisitor
     private readonly ClassDeclarationSyntax _classDeclarationSyntax;
     private readonly StringBuilder _builder;
     private readonly IndentedTextWriter _writer;
-    private TypeMapper _typemapper = new();
+    private readonly TypeMapper _typemapper = new();
 
     // Collection of binding groups
     private readonly Dictionary<uint, BindGroupInfo> _bindGroups = new();
 
-    // Collection of vertex attributes
-    private readonly List<VertexAttributeInfo> _vertexAttributes = new();
+    // Fast lockup of Uniforms
+    private readonly Dictionary<string, BindingEntryInfo> _uniforms = new();
 
-    // Collection of instance attributes
-    private readonly List<VertexAttributeInfo> _instanceAttributes = new();
+    // Collection of input attributes
+    private readonly List<List<VertexAttributeInfo>> _inAttributes = new();
 
-    // Shader entry points
-    private readonly ShaderEntryInfo _entryPoints = new();
+    // Collection of output attributes
+    private List<VertexAttributeInfo>? _outAttribute;
 
     // Collection of shader structs
     private readonly Dictionary<string, List<VertexAttributeInfo>> _structAttributes = new();
 
     private readonly List<MemberDeclarationSyntax> _generatedStructs = new();
+
+    private readonly List<string> _warnings = [];
+
+    private ShaderEntryInfo _entryPoints = new();
+
+    private uint _vertexInCounter = 0;
+    private uint _varyngsCounter = 0;
+    private uint _targetCounter = 0;
 
     public WgslVisitor(SourceProductionContext context,
         Compilation compilation,
@@ -162,15 +189,16 @@ internal class WgslVisitor : CSharpSyntaxVisitor
 
     public IReadOnlyDictionary<uint, BindGroupInfo> GetBindingGroups() => _bindGroups;
 
-    public IReadOnlyList<VertexAttributeInfo> GetVertexAttributes() => _vertexAttributes;
+    public IReadOnlyList<IReadOnlyList<VertexAttributeInfo>> GetInputAttributes() => _inAttributes;
 
-    public IReadOnlyList<VertexAttributeInfo> GetInstanceAttributes() => _instanceAttributes;
+    public IReadOnlyList<VertexAttributeInfo>? GetOutputAttribute() => _outAttribute;
 
     public ShaderEntryInfo GetEntryPoints() => _entryPoints;
 
     public IReadOnlyDictionary<string, List<VertexAttributeInfo>> GetStructAttributes() => _structAttributes;
 
     public IReadOnlyList<MemberDeclarationSyntax> GetGeneratedStructs() => _generatedStructs;
+    public string[] GetWarnings() => _warnings.ToArray();
 
     public string GetResult()
     {
@@ -185,6 +213,15 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                                         node.GetLocation().GetLineSpan());
     }
 
+    private TypeInOut ParseInOut(MethodDeclarationSyntax syntax) => new()
+    {
+        EntryPoint = syntax.Identifier.Text,
+        ReturnType = _typemapper.Map(syntax.ReturnType),
+        Parameters = syntax.ParameterList.Parameters
+            .Select(p => _typemapper.Map(p.Type!))
+            .ToArray()
+    };
+
     #region Visitor
 
     // this is only allowed for the origional class declle;
@@ -193,6 +230,41 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         if (node != _classDeclarationSyntax)
         {
             throw new NotImplementedException("no nested calsses allowed, use structs instead");
+        }
+
+        foreach (var member in node.Members.OfType<TypeDeclarationSyntax>())
+        {
+            _typemapper.UserTypes.Add(member.Identifier.Text);
+        }
+
+        foreach (var syntax in node.Members.OfType<MethodDeclarationSyntax>())
+        {
+            foreach (var attribute in syntax.AttributeLists.SelectMany(x => x.Attributes))
+            {
+                var type = GetAttributeType(attribute);
+                switch (type)
+                {
+                    case AttributeType.VertexShader:
+                        _entryPoints.Vertex = ParseInOut(syntax);
+                        break;
+
+                    case AttributeType.FragmentShader:
+                        _entryPoints.Fragment = ParseInOut(syntax);
+                        break;
+
+                    case AttributeType.ComputeShader:
+                        _entryPoints.Compute = ParseInOut(syntax);
+                        break;
+                }
+            }
+        }
+
+        if (_entryPoints is { Vertex: { } vertex, Fragment: { } fragment })
+        {
+            if (!fragment.Parameters.Contains(vertex.ReturnType))
+            {
+                _warnings.Add("Fragment shader does not use vertex shader output");
+            }
         }
 
         _writer.WriteLine("//<auto-generated>");
@@ -218,20 +290,38 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         _writer.WriteLine("\n// <end-type/>\n");
     }
 
+
     public override void VisitStructDeclaration(StructDeclarationSyntax node)
     {
         var structName = node.Identifier.Text;
         _typemapper.UserTypes.Add(structName);
         _writer.WriteLine($"struct {structName} {{");
+
         var attributeList = new List<VertexAttributeInfo>();
         _structAttributes[structName] = attributeList;
 
-        // Check if this struct is for vertex attributes or instance attributes
-        var isInstance = structName.Equals("Instance", StringComparison.OrdinalIgnoreCase);
-        var isVertexAttributes = structName.Equals("Attributes", StringComparison.OrdinalIgnoreCase);
-
-        var fieldsImple = StructDeclaration(Identifier(structName))
+        var fieldsImplementation = StructDeclaration(Identifier(structName))
             .WithModifiers(node.Modifiers);
+
+        uint dummy = 0;
+        ref var counter = ref dummy;
+        if (_entryPoints.Vertex?.Parameters.Contains(structName) == true)
+        {
+            _inAttributes.Add(attributeList);
+            counter = ref _vertexInCounter;
+        }
+        else if (_entryPoints.Vertex?.ReturnType == structName)
+        {
+            counter = ref _varyngsCounter;
+        }
+        else if (_entryPoints.Fragment?.ReturnType == structName)
+        {
+            if (_outAttribute is not null)
+                _warnings.Add($"Fragment shader has multiple output structs, using {structName} as output");
+            _outAttribute ??= attributeList;
+            counter = ref _targetCounter;
+        }
+
 
         if (node.ParameterList is not null)
         {
@@ -240,7 +330,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             {
                 // add fields to struct
                 var fieldName = parameter.Identifier.Text.ToPascalCase();
-                fieldsImple = fieldsImple.AddMembers(FieldDeclaration(
+                fieldsImplementation = fieldsImplementation.AddMembers(FieldDeclaration(
                         VariableDeclaration(parameter.Type!)
                             .WithVariables(SingletonSeparatedList(
                                 VariableDeclarator(Identifier(fieldName))
@@ -251,9 +341,11 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 );
                 // for vectors generate reinterpretcast using:
                 // public unsafe ref Vector4 NormalVector => ref Unsafe.AsRef<Vector4>(Unsafe.AsPointer(ref Normal));
-                if (parameter.Type is IdentifierNameSyntax { Identifier.Text: { Length: 4 } s } && s.StartsWith("vec") && s[3] is var vDim)
+                if (parameter.Type is IdentifierNameSyntax { Identifier.Text: { Length: 4 } s } &&
+                    s.StartsWith("vec") && s[3] is var vDim)
                 {
-                    fieldsImple = fieldsImple.AddMembers(PropertyDeclaration(ParseTypeName($"Vector{vDim}"),
+                    fieldsImplementation = fieldsImplementation.AddMembers(PropertyDeclaration(
+                            ParseTypeName($"Vector{vDim}"),
                             Identifier(fieldName + "Ref"))
                         .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.UnsafeKeyword),
                             Token(SyntaxKind.RefKeyword)))
@@ -262,9 +354,10 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                         .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
                     );
                 }
-                else if (parameter.Type is IdentifierNameSyntax { Identifier.Text: { Length: 4 } m } && m.StartsWith("mat") && m[3] is var mDim)
+                else if (parameter.Type is IdentifierNameSyntax { Identifier.Text: { Length: 4 } m } &&
+                         m.StartsWith("mat") && m[3] is var mDim)
                 {
-                    fieldsImple = fieldsImple.AddMembers(PropertyDeclaration(
+                    fieldsImplementation = fieldsImplementation.AddMembers(PropertyDeclaration(
                             ParseTypeName($"Matrix{mDim}x{mDim}"),
                             Identifier(fieldName + "Ref"))
                         .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.UnsafeKeyword),
@@ -276,22 +369,45 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                     );
                 }
 
-                uint location = 0;
-                var attributes = parameter.AttributeLists.SelectMany(a => a.Attributes).ToList();
-
-                foreach (var attribute in attributes)
+                uint? location = null;
+                bool buildIn = false;
+                foreach (var attribute in parameter.AttributeLists.SelectMany(a => a.Attributes).ToList())
                 {
-                    Visit(attribute);
-
-                    // Extract location for vertex attributes
-                    if (attribute.Name.ToString() == "Location" && attribute.ArgumentList != null)
+                    var attributeType = GetAttributeType(attribute);
+                    if (attributeType == AttributeType.Builtin)
+                        buildIn = true;
+                    if (attributeType != AttributeType.Location)
                     {
-                        location = uint.Parse(attribute.ArgumentList.Arguments.First().Expression.ToString());
+                        VisitAttributeTyped(attribute, attributeType);
+                    }
+                    else if (attribute.ArgumentList?.Arguments.First().Expression.ToString() is { } str
+                             && uint.TryParse(str, out var loc))
+                    {
+                        location = loc;
                     }
                 }
 
-                if (attributes.Any())
+                uint finLocation;
+                if (location is null)
+                {
+                    finLocation = counter++;
+                }
+                else
+                {
+                    finLocation = (uint)location;
+                    if (counter < finLocation)
+                        counter = finLocation + 1;
+                }
+
+                // builtin location is not allowed
+                if (!buildIn)
+                {
+                    _writer.WriteLine($"@location({finLocation})");
+                }
+                else
+                {
                     _writer.WriteLine();
+                }
 
                 _writer.WriteLine($"{fieldName}: {_typemapper.Map(parameter.Type!)},");
 
@@ -299,44 +415,30 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 var attrInfo = new VertexAttributeInfo
                 {
                     Name = fieldName,
-                    Location = location,
+                    Location = finLocation,
                     TypeName = parameter.Type!.ToString(),
                     StructName = structName,
-                    IsInstance = isInstance,
                     VertexFormat = _typemapper.MapTypeToVertexFormat(parameter.Type!.ToString())
                 };
 
                 attributeList.Add(attrInfo);
-
-                // Add to vertex or instance attributes list
-                if (isVertexAttributes)
-                {
-                    _vertexAttributes.Add(attrInfo);
-                }
-                else if (isInstance)
-                {
-                    _instanceAttributes.Add(attrInfo);
-                }
             }
 
             _writer.Indent--;
         }
 
-        _generatedStructs.Add(fieldsImple);
+        _generatedStructs.Add(fieldsImplementation);
         _writer.WriteLine("}");
         _writer.WriteLine();
     }
 
     public override void VisitFieldDeclaration(FieldDeclarationSyntax node)
     {
-        // Current implementation...
-        var attributes = node.AttributeLists.SelectMany(a => a.Attributes).ToList();
-
         var fieldName = node.Declaration.Variables.First().Identifier.Text;
         var typeName = node.Declaration.Type.ToString();
 
-        uint groupId = 0, bindingId = 0;
-        BindingType bindingType = BindingType.Undefined;
+        uint groupId = 0;
+        var bindingType = BindingType.Undefined;
 
         string? textureFormat = null;
         if (typeName.Contains("texture_"))
@@ -385,16 +487,18 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             }
         }
 
-        foreach (var attribute in attributes)
+        bool seenBindingId = false;
+        foreach (var attribute in node.AttributeLists.SelectMany(a => a.Attributes).ToList())
         {
-            Visit(attribute);
+            var attributeType = GetAttributeType(attribute);
+            VisitAttributeTyped(attribute, attributeType);
 
             var expressionSyntax = attribute.ArgumentList?.Arguments.First()?.Expression;
             if (expressionSyntax is null) throw new InvalidOperationException("Access attribute must have an argument");
 
-            switch (attribute.Name.ToString())
+            switch (attributeType)
             {
-                case "BindingMode":
+                case AttributeType.BindingMode:
                     switch (expressionSyntax)
                     {
                         case null:
@@ -420,19 +524,17 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                     }
 
                     break;
-                case "Group":
+                case AttributeType.Group:
                     groupId = uint.Parse(expressionSyntax.ToString());
                     break;
-                case "Binding":
-                    bindingId = uint.Parse(expressionSyntax.ToString());
+                case AttributeType.Binding:
+                    seenBindingId = true;
                     break;
             }
         }
 
         if (bindingType == BindingType.Undefined)
             bindingType = typeName.Contains("sampler") ? BindingType.Filtering : BindingType.Uniform;
-
-        _writer.WriteLine();
 
         // Add to binding groups
         if (!_bindGroups.TryGetValue(groupId, out var bindGroup))
@@ -441,14 +543,25 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             _bindGroups[groupId] = bindGroup;
         }
 
-        bindGroup.Entries.Add(new BindingEntryInfo
+        var bindingEntryInfo = new BindingEntryInfo
         {
-            Binding = bindingId,
+            Binding = (uint)bindGroup.Entries.Count,
             Name = fieldName,
             TypeName = typeName,
             BindingType = bindingType,
             TextureFormat = textureFormat
-        });
+        };
+        if (!seenBindingId)
+        {
+            _writer.WriteLine($"@binding({bindingEntryInfo.Binding})");
+        }
+        else
+        {
+            _writer.WriteLine();
+        }
+
+        bindGroup.Entries.Add(bindingEntryInfo);
+
 
         switch (bindingType)
         {
@@ -477,18 +590,28 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             $"{node.Declaration.Variables.First().Identifier.Text}: {_typemapper.Map(node.Declaration.Type)};");
     }
 
-    public override void VisitAttribute(AttributeSyntax node)
-    {
-        var name = node.Name.ToString();
+    public override void VisitAttribute(AttributeSyntax node) => VisitAttributeTyped(node, GetAttributeType(node));
 
-        switch (name)
+    private AttributeType GetAttributeType(AttributeSyntax node) =>
+        GetAttributeType(node.Name.ToString());
+
+    private AttributeType GetAttributeType(string name)
+    {
+        return Enum.TryParse(name, true, out AttributeType attributeType)
+            ? attributeType
+            : throw new NotImplementedException($"Attribute {name} is not implemented.");
+    }
+
+    private void VisitAttributeTyped(AttributeSyntax node, AttributeType type)
+    {
+        switch (type)
         {
-            case "Builtin":
+            case AttributeType.Builtin:
                 var builtinName = node.ArgumentList?.Arguments.First().Expression.ToString().Trim('\"');
                 _writer.Write($"@builtin({builtinName}) ");
                 break;
 
-            case "Location":
+            case AttributeType.Location:
                 var location = node.ArgumentList?.Arguments.First().Expression.ToString();
                 _writer.Write($"@location({location}) ");
 
@@ -496,57 +619,36 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 // (will be associated with the parameter or field in the parent method)
                 break;
 
-            case "VertexShader":
+            case AttributeType.VertexShader:
                 _writer.Write("@vertex ");
-
-                // Store the method name as vertex entry point
-                if (node.Parent?.Parent is MethodDeclarationSyntax methodDecl)
-                {
-                    _entryPoints.VertexEntryPoint = methodDecl.Identifier.Text;
-                }
-
                 break;
 
-            case "FragmentShader":
+            case AttributeType.FragmentShader:
                 _writer.Write("@fragment ");
-
-                // Store the method name as fragment entry point
-                if (node.Parent?.Parent is MethodDeclarationSyntax fragMethodDecl)
-                {
-                    _entryPoints.FragmentEntryPoint = fragMethodDecl.Identifier.Text;
-                }
-
                 break;
-            
-            case "ComputeShader":
+
+            case AttributeType.ComputeShader:
                 _writer.Write("@compute ");
-
-                // Store the method name as compute entry point
-                if (node.Parent?.Parent is MethodDeclarationSyntax compMethodDecl)
-                {
-                    _entryPoints.ComputeEntryPoint = compMethodDecl.Identifier.Text;
-                }
-
                 break;
-            
-            case "WorkgroupSize":
+
+            case AttributeType.WorkgroupSize:
                 _writer.Write($"@workgroup_size{node.ArgumentList} ");
                 break;
 
-            case "Group":
+            case AttributeType.Group:
                 _writer.Write($"@group{node.ArgumentList} ");
                 break;
 
-            case "Binding":
+            case AttributeType.Binding:
                 _writer.Write($"@binding{node.ArgumentList} ");
                 break;
 
-            case "BindingMode":
+            case AttributeType.BindingMode:
                 // Special case for var<access flags>
                 break;
 
             default:
-                throw new NotImplementedException($"Attribute {name} is not implemented.");
+                throw new NotImplementedException($"Attribute {type} is not implemented.");
         }
     }
 
@@ -557,7 +659,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         var attributes = node.AttributeLists.SelectMany(a => a.Attributes).ToList();
         foreach (var attribute in attributes)
         {
-            Visit(attribute);
+            VisitAttribute(attribute);
         }
 
         if (attributes.Any())
@@ -578,7 +680,8 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         var location = "";
 
         // patching to add location to known types, user types are not our responsibility
-        if ((name == _entryPoints.VertexEntryPoint || name == _entryPoints.FragmentEntryPoint || name == _entryPoints.ComputeEntryPoint)
+        if ((name == _entryPoints.Vertex?.EntryPoint || name == _entryPoints.Fragment?.EntryPoint ||
+             name == _entryPoints.Compute?.EntryPoint)
             && _typemapper.KnownTypes.Contains(returnType))
             location = "@location(0) ";
 
@@ -732,12 +835,12 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         };
 
         var methodName = identifierIdentifier.Text;
-        if(methodName == "discard")
+        if (methodName == "discard")
         {
             _writer.Write("discard");
             return;
         }
-        
+
         if (!_typemapper.KnownMethods.Contains(methodName))
         {
             if (char.IsUpper(methodName[0]))
