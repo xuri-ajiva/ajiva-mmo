@@ -87,6 +87,7 @@ public class WgslShaderGenerator : IIncrementalGenerator
     private const string Device = "global::Silk.NET.WebGPU.Safe.DevicePtr";
     private const string PipelineLayout = "global::Silk.NET.WebGPU.Safe.PipelineLayoutPtr";
     private const string VertexBufferLayout = "global::Silk.NET.WebGPU.Safe.VertexBufferLayout";
+    private const string VertexStepMode = "VertexStepMode";
     private const string ColorTargetState = "global::Silk.NET.WebGPU.Safe.ColorTargetState";
     private const string VertexAttribute = "global::Silk.NET.WebGPU.VertexAttribute";
     private const string ShaderModuleHint = "global::Silk.NET.WebGPU.Safe.ShaderModuleCompilationHint";
@@ -481,6 +482,9 @@ public class WgslShaderGenerator : IIncrementalGenerator
                 ArrayType(ParseTypeName(VertexBufferLayout), [ArrayRankSpecifier()]),
                 "GetVertexBufferLayout"
             ).AddModifiers(_modifiers)
+            .WithParameterList(ParameterList(SeparatedList(vertexAttributes.Select(vertexAttributeInfos =>
+                Parameter(Identifier(vertexAttributeInfos[0].StructName.ToCamelCase()))
+                    .WithType(ParseTypeName(VertexStepMode))))))
             .WithAttributeLists(DefaultAttributeList);
 
         if (isInterface)
@@ -490,15 +494,17 @@ public class WgslShaderGenerator : IIncrementalGenerator
         foreach (var vertexAttributeInfos in vertexAttributes)
         {
             var vertexAttributesCode = new List<string>();
+            string structName = "";
             foreach (var attr in vertexAttributeInfos)
             {
+                structName = attr.StructName;
                 var formatName = GetVertexFormatName(attr.VertexFormat);
                 vertexAttributesCode.Add(
-                    $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{attr.StructName}>(nameof({attr.StructName}.{attr.Name})), shaderLocation: {attr.Location})");
+                    $"new {VertexAttribute}(VertexFormat.{formatName}, offset: (uint)Marshal.OffsetOf<{structName}>(nameof({structName}.{attr.Name})), shaderLocation: {attr.Location})");
             }
 
             body.Add(
-                $"new {VertexBufferLayout}((uint)Marshal.SizeOf<{vertexAttributeInfos[0].StructName}>(), VertexStepMode.Vertex, " +
+                $"new {VertexBufferLayout}((uint)Marshal.SizeOf<{structName}>(), {structName.ToCamelCase()}, " +
                 $"[{string.Join(",\r\n", vertexAttributesCode)}])");
         }
 
