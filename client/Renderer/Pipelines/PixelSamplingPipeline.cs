@@ -130,4 +130,6 @@ public class PixelSamplingPipeline : IDisposable
         _resultStorageBuffer.Destroy();
         _resultStagingBuffer.Destroy();
     }
+
+    public bool IsUpToDate(IObjectSamplingShader objectSamplingShader) => _shader == objectSamplingShader;
 }

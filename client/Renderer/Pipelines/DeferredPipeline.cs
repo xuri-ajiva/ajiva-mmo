@@ -132,4 +132,6 @@ public class DeferredPipeline : IDisposable
         _uniformBuffer.Destroy();
         _sampler.Release();
     }
+
+    public bool IsUpToDate(IDeferredShader deferred) => _shader == deferred;
 }

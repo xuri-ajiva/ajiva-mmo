@@ -253,10 +253,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _logger.LogDebug("Creating View Buffers");
 
         // TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm, TextureFormat.Rgba32float, TextureFormat.Depth24Plus,
-        _sceneGBuffer = GBuffer.Create(_api.Device, TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm,
-            TextureFormat.Rgba32float, TextureFormat.RG32Uint,
-            TextureFormat.Rgba32float, TextureFormat.R32float,
-            TextureFormat.Depth24Plus, label: "SceneGBuffer");
+        _sceneGBuffer = GBuffer.Create(_api.Device, TextureFormat.Rgba16float, TextureFormat.Rgba8Unorm,
+            TextureFormat.Rgb10A2Unorm, TextureFormat.Rgba32float, TextureFormat.RG32Uint, TextureFormat.Rgba32float,
+            TextureFormat.R32float, TextureFormat.Depth24Plus, label: "SceneGBuffer");
 
         _finalSceneTexture =
             RenderTexture.Create(_api.Device, TextureFormat.Rgba8Unorm, label: "FinalSceneTexture");
@@ -314,21 +313,43 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         nameof(_samplingPipeline), nameof(_transparentPipeline))]
     private void CreatePipelines()
     {
-        _deferredPipeline?.Dispose();
-        _deferredPipeline = DeferredPipeline.Create(_api, _shaderManager.GetCurrentShader<IDeferredShader>(),
-            _sceneGBuffer!.LightChannelFormat);
-        _compositorPipeline?.Dispose();
-        _compositorPipeline =
-            CompositorPipeline.Create(_api, _shaderManager.GetCurrentShader<ICompositorShader>(),
-                _sceneGBuffer.AlbedoChannelFormat);
-        _templePipeline?.Dispose();
-        _templePipeline = TemplePipeline.Create(_api, _shaderManager.GetCurrentShader<ITempleShader>(), _sceneGBuffer);
-        _samplingPipeline?.Dispose();
-        _samplingPipeline =
-            PixelSamplingPipeline.Create(_api, _shaderManager.GetCurrentShader<IObjectSamplingShader>());
-        _transparentPipeline?.Dispose();
-        _transparentPipeline = WboitPipeline.Create(_api, _loader, _shaderManager.GetCurrentShader<IWboitAccumShader>(),
-            _sceneGBuffer!);
+        var wboitAccum = _shaderManager.GetCurrentShader<IWboitAccumShader>();
+        var deferred = _shaderManager.GetCurrentShader<IDeferredShader>();
+        var compositor = _shaderManager.GetCurrentShader<ICompositorShader>();
+        var temple = _shaderManager.GetCurrentShader<ITempleShader>();
+        var objectSamplingShader = _shaderManager.GetCurrentShader<IObjectSamplingShader>();
+
+        if (_deferredPipeline?.IsUpToDate(deferred) != true)
+        {
+            _deferredPipeline?.Dispose();
+            _deferredPipeline = DeferredPipeline.Create(_api, deferred, _sceneGBuffer!.LightChannelFormat);
+        }
+
+        if (_compositorPipeline?.IsUpToDate(compositor) != true)
+        {
+            _compositorPipeline?.Dispose();
+            _compositorPipeline = CompositorPipeline.Create(_api, compositor, _sceneGBuffer!.AlbedoChannelFormat);
+        }
+
+        if (_templePipeline?.IsUpToDate(temple) != true)
+        {
+            _templePipeline?.Dispose();
+            _templePipeline = TemplePipeline.Create(_api, temple, _sceneGBuffer!);
+        }
+
+        if (_samplingPipeline?.IsUpToDate(objectSamplingShader) != true)
+        {
+            _samplingPipeline?.Dispose();
+            _samplingPipeline = PixelSamplingPipeline.Create(_api, objectSamplingShader);
+        }
+
+        if (_transparentPipeline?.IsUpToDate(wboitAccum) != true)
+        {
+            _transparentPipeline?.Dispose();
+            _transparentPipeline = WboitPipeline.Create(_api, _loader, wboitAccum,
+                _sceneGBuffer!);
+        }
+        
     }
 
     public void Update(UpdateInfo info)
@@ -358,23 +379,18 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _camera.AspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
         _sceneUniform = new TempleShader.SceneUniform
         {
-            ViewProjectionRef = _camera.ViewProjectionMatrix,
+            ViewRef = _camera.ViewMatrix,
+            ProjectionRef = _camera.ProjectionMatrix,
             CameraPositionRef = _camera.Position,
             Time = info.TotalTime
         };
-        //Debug.Assert(Unsafe.SizeOf<WboitAccumShader.SceneUniform>() == Unsafe.SizeOf<TempleShader.SceneUniform>(), "Size of SceneUniform is not equal");
-        Debug.Assert(
-            Marshal.OffsetOf<WboitAccumShader.SceneUniform>(nameof(WboitAccumShader.SceneUniform.ViewProjection)) ==
-            Marshal.OffsetOf<TempleShader.SceneUniform>(nameof(TempleShader.SceneUniform.ViewProjection)),
-            "Offset of ViewProjection is not equal");
-        Debug.Assert(
-            Marshal.OffsetOf<WboitAccumShader.SceneUniform>(nameof(WboitAccumShader.SceneUniform.CameraPosition)) ==
-            Marshal.OffsetOf<TempleShader.SceneUniform>(nameof(TempleShader.SceneUniform.CameraPosition)),
-            "Offset of CameraPosition is not equal");
-
-        _templePipeline!.WriteUniformBuffer(queue, ref _sceneUniform);
-        _transparentPipeline!.WriteUniformBuffer(queue,
-            ref Unsafe.As<TempleShader.SceneUniform, WboitAccumShader.SceneUniform>(ref _sceneUniform));
+        _templePipeline!.WriteUniformBuffer(queue, _sceneUniform);
+        _transparentPipeline!.WriteUniformBuffer(queue, new WboitAccumShader.SceneUniform
+        {
+            ViewProjectionRef = _sceneUniform.ViewRef * _sceneUniform.ProjectionRef,
+            CameraPositionRef = _camera.Position,
+            Time = info.TotalTime
+        });
 
         var players = _ecs.GetPlayers().ToArray();
         if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
@@ -483,9 +499,9 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _finalSceneTexture.EnsureSize(width, height);
         CreatePipelines();
 
-        if (_sceneGBuffer.TryGetTargets(out var albedo, out var normal, out var emission,
-                out var objectAndInstanceId, out var accum, out var reveal,
-                out var depth) && _finalSceneTexture.TryGetTargets(out var colorOutput))
+        if (_sceneGBuffer.TryGetTargets(out var positions, out var albedo, out var normal, out var emission,
+                out var objectAndInstanceId, out var accum, out var reveal, out var depth) &&
+            _finalSceneTexture.TryGetTargets(out var colorOutput))
         {
             var queue = target.QueuePtr;
             Render(info, target, new Extent3D(width, height, 1));
@@ -495,7 +511,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             _samplingPipeline.DispatchPixelRead(queue, new uvec2((u32)mousePosition.X, (u32)mousePosition.Y),
                 depth.DepthOnlyView, objectAndInstanceId.View);
 
-            if (!Matrix4x4.Invert(_sceneUniform.ViewProjectionRef, out var invViewProjection))
+            if (!Matrix4x4.Invert(_camera.ViewProjectionMatrix, out var invViewProjection))
                 throw new InvalidOperationException("ViewProjection Matrix could not be inverted");
 
             _deferredPipeline.Apply(queue, albedo.View, normal.View, depth.DepthOnlyView, emission.View,
@@ -522,10 +538,11 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     {
         if (ImGui.Begin("Controls"))
         {
-            if(ImGui.Button("Collect Resources"))
+            if (ImGui.Button("Collect Resources"))
             {
                 _loader.DoCollection();
             }
+
             ImGui.Text("Under Mouse Sample:");
             if (_underCursor is { } selected)
             {
@@ -549,7 +566,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                 ImGui.NextColumn();
                 ImGui.SetCursorPosY(y);
                 var imageButtonSize = ImGui.GetContentRegionAvail().X;
-                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.View.GetIntPtr(), new Vector2(imageButtonSize)))
+                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.View.GetIntPtr(),
+                        new Vector2(imageButtonSize)))
                 {
                     Task.Run(() =>
                     {
@@ -565,7 +583,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
                         selectedBuffer.AlbedoTexture = clone;
                     });
                 }
-                
+
 
                 if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
                 {

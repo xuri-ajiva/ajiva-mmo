@@ -155,7 +155,7 @@ public class WboitPipeline(
             buffer.ModelUniformBuffer.Offset, buffer.ModelUniformBuffer.Size);
     }
 
-    public void WriteUniformBuffer(QueuePtr queue, ref SceneUniform sceneUniform)
+    public void WriteUniformBuffer(QueuePtr queue, SceneUniform sceneUniform)
     {
         queue.WriteBuffer(sceneUniformBuffer.Buffer, sceneUniformBuffer.Offset,
             new ReadOnlySpan<SceneUniform>(ref sceneUniform));
@@ -165,8 +165,7 @@ public class WboitPipeline(
 
     public RenderPassEncoderPtr? BeginRenderPass(Extent3D sceneViewport)
     {
-        if (!gbuffer.TryGetTargets(out _, out _, out _, out var objectAndInstanceId, out var accum, out var reveal,
-                out var depth))
+        if (!gbuffer.TryGetAlphaBlend(out var objectAndInstanceId, out var accum, out var reveal, out var depth))
             return null;
 
         _cmd = _api.Device.CreateCommandEncoder();
@@ -174,7 +173,8 @@ public class WboitPipeline(
         var pass = _cmd.BeginRenderPass([
                 new RenderPassColorAttachment(accum.View, null, LoadOp.Clear, StoreOp.Store, new Color(0, 0, 0, 0)),
                 new RenderPassColorAttachment(reveal.View, null, LoadOp.Clear, StoreOp.Store, new Color(1, 0, 0, 0)),
-                new RenderPassColorAttachment(objectAndInstanceId.View, null, LoadOp.Load, StoreOp.Discard, new Color(0, 0, 0, 0)),
+                new RenderPassColorAttachment(objectAndInstanceId.View, null, LoadOp.Load, StoreOp.Discard,
+                    new Color(0, 0, 0, 0)),
             ],
             null,
             new RenderPassDepthStencilAttachment(depth.View, LoadOp.Load, StoreOp.Store, 1, true,
@@ -201,5 +201,10 @@ public class WboitPipeline(
         sceneBindGroup.Release();
         modelBindGroupLayout.Release();
         pipeline.Release();
+    }
+
+    public bool IsUpToDate(IWboitAccumShader other)
+    {
+        return shader == other;
     }
 }

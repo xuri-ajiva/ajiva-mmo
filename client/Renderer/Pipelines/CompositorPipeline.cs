@@ -117,5 +117,7 @@ namespace Client.Renderer.Pipelines
             _textureBindGroupLayout.Release();
             _uniformBuffer.Destroy();
         }
+
+        public bool IsUpToDate(ICompositorShader compositor) => _shader == compositor;
     }
 }

@@ -11,13 +11,13 @@ namespace Client.Renderer.VirtualFramebuffers
         public u32 Width => _framebuffer.Width;
         public u32 Height => _framebuffer.Height;
 
-        public TextureFormat AlbedoChannelFormat => _framebuffer.GetFormat(0);
-        public TextureFormat NormalChannelFormat => _framebuffer.GetFormat(1);
-        public TextureFormat LightChannelFormat => _framebuffer.GetFormat(2);
-        public TextureFormat ObjectAndInstanceIdChannelFormat => _framebuffer.GetFormat(3);
-        public TextureFormat AccumChannelFormat => _framebuffer.GetFormat(4);
-        public TextureFormat RevealChannelFormat => _framebuffer.GetFormat(5);
-
+        public TextureFormat PositionChannelFormat => _framebuffer.GetFormat(0);
+        public TextureFormat AlbedoChannelFormat => _framebuffer.GetFormat(1);
+        public TextureFormat NormalChannelFormat => _framebuffer.GetFormat(2);
+        public TextureFormat LightChannelFormat => _framebuffer.GetFormat(3);
+        public TextureFormat ObjectAndInstanceIdChannelFormat => _framebuffer.GetFormat(4);
+        public TextureFormat AccumChannelFormat => _framebuffer.GetFormat(5);
+        public TextureFormat RevealChannelFormat => _framebuffer.GetFormat(6);
         public TextureFormat DepthStencilFormat => _framebuffer.DepthStencilFormat!.Value;
 
         private GBuffer(VirtualFramebuffer framebuffer)
@@ -25,19 +25,19 @@ namespace Client.Renderer.VirtualFramebuffers
             _framebuffer = framebuffer;
         }
 
-        public static GBuffer Create(DevicePtr device, TextureFormat albedoFormat, TextureFormat normalFormat,
-            TextureFormat lightFormat, TextureFormat objectAndInstanceId, TextureFormat accumFormat,
-            TextureFormat revealFormat,
-            TextureFormat depthStencilFormat,
-            u32 width = 0, u32 height = 0, string? label = null)
+        public static GBuffer Create(DevicePtr device, TextureFormat positionFormat, TextureFormat albedoFormat,
+            TextureFormat normalFormat, TextureFormat lightFormat, TextureFormat objectAndInstanceId,
+            TextureFormat accumFormat, TextureFormat revealFormat, TextureFormat depthStencilFormat, u32 width = 0,
+            u32 height = 0, string? label = null)
         {
             var framebuffer = new VirtualFramebuffer(device, [
+                ("Position", positionFormat),
                 ("Albedo", albedoFormat),
                 ("Normal", normalFormat),
                 ("Light", lightFormat),
                 ("ObjectAndInstanceId", objectAndInstanceId),
                 ("Accum", accumFormat),
-                ("Reveal", revealFormat)
+                ("Reveal", revealFormat),
             ], depthStencilFormat, width, height, label);
 
             var gBuffer = new GBuffer(framebuffer);
@@ -47,18 +47,49 @@ namespace Client.Renderer.VirtualFramebuffers
             return gBuffer;
         }
 
-        public bool TryGetTargets(out ColorTargetView albedo, out ColorTargetView normal, out ColorTargetView light,
-            out ColorTargetView objectAndInstanceId, out ColorTargetView accum, out ColorTargetView reveal,
-            out DepthStencilTargetView depthStencil)
+        public bool TryGetTargets(out ColorTargetView position, out ColorTargetView albedo, out ColorTargetView normal,
+            out ColorTargetView light, out ColorTargetView objectAndInstanceId, out ColorTargetView accum,
+            out ColorTargetView reveal, out DepthStencilTargetView depthStencil)
         {
             var result = true;
 
-            result &= _framebuffer.TryGetColorTarget(0, out albedo);
-            result &= _framebuffer.TryGetColorTarget(1, out normal);
-            result &= _framebuffer.TryGetColorTarget(2, out light);
-            result &= _framebuffer.TryGetColorTarget(3, out objectAndInstanceId);
-            result &= _framebuffer.TryGetColorTarget(4, out accum);
-            result &= _framebuffer.TryGetColorTarget(5, out reveal);
+            result &= _framebuffer.TryGetColorTarget(0, out position);
+            result &= _framebuffer.TryGetColorTarget(1, out albedo);
+            result &= _framebuffer.TryGetColorTarget(2, out normal);
+            result &= _framebuffer.TryGetColorTarget(3, out light);
+            result &= _framebuffer.TryGetColorTarget(4, out objectAndInstanceId);
+            result &= _framebuffer.TryGetColorTarget(5, out accum);
+            result &= _framebuffer.TryGetColorTarget(6, out reveal);
+            result &= _framebuffer.TryGetDepthTarget(out var depthStencilTarget);
+            depthStencil = depthStencilTarget.GetValueOrDefault();
+
+            return result;
+        }
+
+        public bool TryGetAlphaBlend(out ColorTargetView objectAndInstanceId, out ColorTargetView accum,
+            out ColorTargetView reveal, out DepthStencilTargetView depthStencil)
+        {
+            var result = true;
+
+            result &= _framebuffer.TryGetColorTarget(4, out objectAndInstanceId);
+            result &= _framebuffer.TryGetColorTarget(5, out accum);
+            result &= _framebuffer.TryGetColorTarget(6, out reveal);
+            result &= _framebuffer.TryGetDepthTarget(out var depthStencilTarget);
+            depthStencil = depthStencilTarget.GetValueOrDefault();
+
+            return result;
+        }
+
+        public bool TryGetDeferred(out ColorTargetView position, out ColorTargetView albedo, out ColorTargetView normal,
+            out ColorTargetView light, out ColorTargetView objectAndInstanceId, out DepthStencilTargetView depthStencil)
+        {
+            var result = true;
+
+            result &= _framebuffer.TryGetColorTarget(0, out position);
+            result &= _framebuffer.TryGetColorTarget(1, out albedo);
+            result &= _framebuffer.TryGetColorTarget(2, out normal);
+            result &= _framebuffer.TryGetColorTarget(3, out light);
+            result &= _framebuffer.TryGetColorTarget(4, out objectAndInstanceId);
             result &= _framebuffer.TryGetDepthTarget(out var depthStencilTarget);
             depthStencil = depthStencilTarget.GetValueOrDefault();
 

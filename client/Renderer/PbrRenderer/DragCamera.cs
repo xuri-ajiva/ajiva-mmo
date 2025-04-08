@@ -14,15 +14,14 @@ public class DragCamera
 
     public Vector3 Position => _camTarget; //todo fix maybe
     public f32 AspectRatio { get; set; } = 1;
-    public Matrix4x4 ViewProjectionMatrix => GetViewProjectionMatrix(AspectRatio);
 
-    public Matrix4x4 GetViewProjectionMatrix(f32 aspectRatio)
-    {
-        return Matrix4x4.CreateTranslation(-_camTarget) *
-               Matrix4x4.CreateFromQuaternion(Quaternion.Inverse(_camRot)) *
-               Matrix4x4.CreatePerspectiveFieldOfView((f32)(2 * Math.PI / 5),
-                   aspectRatio, 0.01f, 1000f);
-    }
+    public Matrix4x4 ViewMatrix => Matrix4x4.CreateTranslation(-_camTarget) *
+                                   Matrix4x4.CreateFromQuaternion(Quaternion.Inverse(_camRot));
+
+    public Matrix4x4 ProjectionMatrix => Matrix4x4.CreatePerspectiveFieldOfView((f32)(2 * Math.PI / 5),
+        AspectRatio, 0.01f, 1000f);
+
+    public Matrix4x4 ViewProjectionMatrix => ViewMatrix * ProjectionMatrix;
 
     public void Update()
     {

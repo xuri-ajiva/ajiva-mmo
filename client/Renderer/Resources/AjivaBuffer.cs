@@ -36,7 +36,7 @@ public class AjivaBuffer<T>(ResourceLoader loader, BufferPtr buffer, u64 offset,
             data.Length);
         if (queue == default)
             queue = _loader.Queue;
-        queue.WriteBuffer(Buffer, 0, data);
+        queue.WriteBuffer(Buffer, Offset, data);
         Version++; //todo check if this is correct, as the buffer is not written directly
     }
 }

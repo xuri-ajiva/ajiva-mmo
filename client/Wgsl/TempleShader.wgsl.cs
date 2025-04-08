@@ -14,7 +14,8 @@ using static BuiltIn;
 public partial class TempleShader
 {
     public partial struct SceneUniform(
-        mat4 viewProjection,
+        mat4 view,
+        mat4 projection,
         vec3 cameraPosition,
         f32 time
     );
@@ -54,6 +55,8 @@ public partial class TempleShader
 
     public partial struct Varyings(
         [Builtin("position")] vec4 position,
+        vec4 worldPosition,
+        vec4 viewPosition,
         vec2 tex0Coord,
         vec2 tex1Coord,
         vec3 normal,
@@ -65,6 +68,7 @@ public partial class TempleShader
     );
 
     public partial struct ColorTargets(
+        vec4 position,
         vec4 albedo,
         vec4 normal,
         vec4 emission,
@@ -100,7 +104,8 @@ public partial class TempleShader
 
         var pos = new vec4(a.Position, 1.0f);
         var worldPos = modelTransform * pos;
-        var outPos = ubScene.ViewProjection * worldPos;
+        var viewPos = ubScene.View * worldPos;
+        var clipPos = ubScene.Projection * viewPos;
 
         // For normal and tangent, extract the rotation part from the combined transform.
         var nrmTransform = "mat3x3(modelTransform[0].xyz, modelTransform[1].xyz, modelTransform[2].xyz)"._raw<mat3>();
@@ -110,7 +115,9 @@ public partial class TempleShader
         var bitan = cross(tan, nrm);
 
         return new Varyings(
-            outPos,
+            clipPos,
+            worldPos,
+            viewPos,
             a.Tex0Coord,
             a.Tex1Coord,
             nrm,
@@ -138,13 +145,16 @@ public partial class TempleShader
             fma(normalMap.g, 2.0f, -1.0f) * v.Bitangent +
             fma(normalMap.b, 2.0f, -1.0f) * v.Normal;
 
+        var oPosition = v.ViewPosition;
+
         var ambient = new vec3(0.0f, 0.0f, 0.1f);
 
         var emission = textureSample(uEmission, uSampler, v.Tex1Coord).xyz * ubModel.Tex1Color;
 
         var oNormal = new vec4(mix(v.Normal, nrm, ubModel.NormalMapStrength) * 0.5f + new vec3(0.5f), 0.0f);
 
-        return new ColorTargets(oAlbedo, oNormal, new vec4(ambient + emission + v.HighlightColor.xyz * 0.5f, 1.0f),
+        return new ColorTargets(oPosition, oAlbedo, oNormal,
+            new vec4(ambient + emission + v.HighlightColor.xyz * 0.5f, 1.0f),
             new uvec2(v.MeshId, v.InstanceId));
     }
 }

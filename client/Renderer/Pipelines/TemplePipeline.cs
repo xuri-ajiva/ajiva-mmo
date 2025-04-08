@@ -98,6 +98,11 @@ public class TemplePipeline : IDisposable
                 EntryPoint = shader.FragmentEntryPoint,
                 Constants = [],
                 Targets = shader.ColorTarget(
+                    position: new ColorTargetState(
+                        gBuffer.PositionChannelFormat,
+                        blendState: null,
+                        ColorWriteMask.All
+                    ),
                     albedo: new ColorTargetState(
                         gBuffer.AlbedoChannelFormat,
                         blendState: null,
@@ -157,7 +162,7 @@ public class TemplePipeline : IDisposable
         );
     }
 
-    public void WriteUniformBuffer(QueuePtr queue, ref SceneUniform sceneUniform)
+    public void WriteUniformBuffer(QueuePtr queue, SceneUniform sceneUniform)
     {
         queue.WriteBuffer(_sceneUniformBuffer.Buffer, _sceneUniformBuffer.Offset,
             new ReadOnlySpan<SceneUniform>(ref sceneUniform));
@@ -167,13 +172,15 @@ public class TemplePipeline : IDisposable
 
     public RenderPassEncoderPtr? BeginRenderPass()
     {
-        if (!_gBuffer.TryGetTargets(out var albedo, out var normal, out var emission, out var objectAndInstanceId,
-                out _, out _, out var depthStencil))
+        if (!_gBuffer.TryGetDeferred(out var positions, out var albedo, out var normal, out var emission,
+                out var objectAndInstanceId, out var depthStencil))
             return null;
 
         _cmd = _api.Device.CreateCommandEncoder();
 
         var pass = _cmd.BeginRenderPass([
+                new RenderPassColorAttachment(positions.View, resolveTarget: null,
+                    LoadOp.Clear, StoreOp.Store, new Color(0, 0, 0, 1)),
                 new RenderPassColorAttachment(albedo.View, resolveTarget: null,
                     LoadOp.Clear, StoreOp.Store, new Color(.06, .1, .1, 1)),
                 new RenderPassColorAttachment(normal.View, resolveTarget: null,
@@ -208,4 +215,6 @@ public class TemplePipeline : IDisposable
         _modelPipeline.Release();
         _sceneUniformBuffer.Buffer.Destroy();
     }
+
+    public bool IsUpToDate(ITempleShader temple) => _shader == temple;
 }
