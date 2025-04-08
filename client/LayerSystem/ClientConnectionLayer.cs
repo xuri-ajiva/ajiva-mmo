@@ -6,7 +6,7 @@ namespace Client.LayerSystem;
 
 public class ClientConnectionLayer(Riptide.Client client, Ecs ecs) : IUiRenderLayer
 {
-    public Task Attach() => Task.CompletedTask;
+    public void Attach() {}
 
 
     public void Update(UpdateInfo info)
@@ -17,7 +17,7 @@ public class ClientConnectionLayer(Riptide.Client client, Ecs ecs) : IUiRenderLa
             client.Connection!, MessageSendMode.Unreliable);
     }
 
-    public Task Detach() => Task.CompletedTask;
+    public void Detach() {}
 
     public ref bool Enabled => ref _enabled;
 

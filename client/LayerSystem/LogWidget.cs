@@ -150,13 +150,13 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
         }
     }
 
-    public Task Attach() => Task.CompletedTask;
+    public void Attach() {}
 
     public void Update(UpdateInfo info)
     {
     }
 
-    public Task Detach() => Task.CompletedTask;
+    public void Detach() {}
 
     public ref bool Enabled => ref _enabled;
 }

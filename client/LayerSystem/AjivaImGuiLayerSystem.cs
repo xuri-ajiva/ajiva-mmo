@@ -99,27 +99,27 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         }
     }
 
-    public async Task PushLayer<T>(T? layer = default) where T : IAjivaLayer
+    public async void PushLayer<T>(T? layer = default) where T : IAjivaLayer
     {
         layer ??= _scope.ServiceProvider.GetRequiredService<T>();
-        await layer.Attach();
+        layer.Attach();
         Layers.Add(layer);
     }
 
-    public async Task PopLayer<T>() where T : IAjivaLayer
+    public void PopLayer<T>() where T : IAjivaLayer
     {
         var layer = Layers.OfType<T>().FirstOrDefault();
         if (layer is null) return;
 
-        await layer.Detach();
+        layer.Detach();
         Layers.Remove(layer);
     }
 
-    public async Task Detach()
+    public void Detach()
     {
         foreach (var ajivaLayer in Layers)
         {
-            await ajivaLayer.Detach();
+            ajivaLayer.Detach();
         }
 
         Layers.Clear();
@@ -251,7 +251,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
             if (layerToRemove is not null)
             {
-                Task.WaitAll(layerToRemove.Detach());
+                layerToRemove.Detach();
                 Layers.Remove(layerToRemove);
             }
 
@@ -327,7 +327,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     private void CreateLayer(TypeInfo layerType)
     {
         var layer = (IAjivaLayer)_scope.ServiceProvider.GetRequiredService(layerType);
-        Task.WaitAll(PushLayer(layer));
+        PushLayer(layer);
     }
 
     private i32 _location = -1;

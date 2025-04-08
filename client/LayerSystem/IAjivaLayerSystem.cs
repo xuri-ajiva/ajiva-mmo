@@ -8,9 +8,9 @@ public interface IAjivaLayerSystem
 {
     void Attach(AjivaWindow parent);
     void Update(UpdateInfo info);
-    Task PushLayer<T>(T? layer = default) where T : IAjivaLayer;
-    Task PopLayer<T>() where T : IAjivaLayer;
-    Task Detach();
+    void PushLayer<T>(T? layer = default) where T : IAjivaLayer;
+    void PopLayer<T>() where T : IAjivaLayer;
+    void Detach();
     void Render(UpdateInfo info);
 }
 
@@ -36,9 +36,9 @@ public ref struct RenderTarget(QueuePtr queuePtr, ImGuiController imguiControlle
 
 public interface IAjivaLayer
 {
-    Task Attach();
+    void Attach();
     void Update(UpdateInfo info);
-    Task Detach();
+    void Detach();
     ref bool Enabled { get; }
 }
 
@@ -50,18 +50,4 @@ public interface IRenderLayer : IAjivaLayer
 public interface IUiRenderLayer : IAjivaLayer
 {
     void RenderUi(UpdateInfo info);
-}
-
-public interface IVirtualView
-{
-    string Name { get; }
-    Task Render(UpdateInfo info, RenderTarget target);
-}
-
-public class DelegateView(string name, Func<UpdateInfo, RenderTarget, Task> renderFunc)
-    : IVirtualView
-{
-    public string Name { get; } = name;
-
-    public Task Render(UpdateInfo info, RenderTarget target) => renderFunc(info, target);
 }

@@ -248,7 +248,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         ];
     }
 
-    public async Task Attach()
+    public void Attach()
     {
         _logger.LogDebug("Creating View Buffers");
 
@@ -349,7 +349,6 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             _transparentPipeline = WboitPipeline.Create(_api, _loader, wboitAccum,
                 _sceneGBuffer!);
         }
-        
     }
 
     public void Update(UpdateInfo info)
@@ -362,9 +361,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
         if (_samplingPipeline is not null)
         {
-            var mappingTask = _samplingPipeline.RequestResultBufferMapping();
+            /*var mappingTask = _samplingPipeline.RequestResultBufferMapping();
             _api.Poll();
             _underCursor = _samplingPipeline.ReadResult(mappingTask);
+            _api.Poll();*/
             if (_underCursor is { } pos && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
             {
                 _selectedObjectId = pos.ObjectId;
@@ -471,8 +471,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
             buffer.InstanceBuffer = _loader.CreateBuffer(BufferUsage.Vertex | BufferUsage.CopyDst,
                 data, "DynamicRecreated::IndexBuffer");
         }
-
-        buffer.InstanceBuffer.QueuedWrite(data, queue);
+        else
+        {
+            buffer.InstanceBuffer.QueuedWrite(data, queue);
+        }
     }
 
     public void Render(UpdateInfo info, RenderTarget target)
@@ -638,7 +640,7 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         ImGui.End();
     }
 
-    public Task Detach()
+    public void Detach()
     {
         _sceneGBuffer?.Release();
         _finalSceneTexture?.Release();
@@ -668,7 +670,5 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         _compositorPipeline = null;
         _deferredPipeline = null;
         _lightsBuffer = null!;
-
-        return Task.CompletedTask;
     }
 }

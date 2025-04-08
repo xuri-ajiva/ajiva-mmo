@@ -44,11 +44,12 @@ public class Application : IHostedLifecycleService
     }
 
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        await _layerSystem.PushLayer<LogWidget>();
-        await _layerSystem.PushLayer<Instanced3dDeferredRenderer>();
-        await _layerSystem.PushLayer<ClientConnectionLayer>();
+        _layerSystem.PushLayer<LogWidget>();
+        _layerSystem.PushLayer<Instanced3dDeferredRenderer>();
+        _layerSystem.PushLayer<ClientConnectionLayer>();
+        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
