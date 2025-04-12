@@ -1,11 +1,25 @@
 ﻿using System.Numerics;
+using Client.LayerSystem;
 using GlmSharp;
 using ImGuiNET;
+using Silk.NET.Input;
 using Silk.NET.Maths;
 
 namespace Client.Renderer.PbrRenderer;
 
-public class DragCamera
+public interface ICamera
+{
+    Vector3 Position { get; }
+    f32 AspectRatio {  set; }
+    Matrix4x4 ViewMatrix { get; }
+    Matrix4x4 ProjectionMatrix { get; }
+    Matrix4x4 ViewProjectionMatrix { get; }
+    IInputContext? InputContext { set; }
+    void Update(UpdateInfo info);
+    void Attach();
+}
+
+public class DragCamera : ICamera
 {
     private f32 _yaw;
     private f32 _pitch;
@@ -22,8 +36,9 @@ public class DragCamera
         AspectRatio, 0.01f, 1000f);
 
     public Matrix4x4 ViewProjectionMatrix => ViewMatrix * ProjectionMatrix;
+    public IInputContext? InputContext { get; set; }
 
-    public void Update()
+    public void Update(UpdateInfo info)
     {
         if (ImGui.IsMouseDragging(ImGuiMouseButton.Left))
         {
@@ -48,5 +63,9 @@ public class DragCamera
         {
             _camTarget += Vector3.Transform(new Vector3(0, 0, scroll * -0.5f), _camRot);
         }
+    }
+
+    public void Attach()
+    {
     }
 }

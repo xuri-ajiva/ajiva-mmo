@@ -15,6 +15,7 @@ public class AjivaBuffer<T>(ResourceLoader loader, BufferPtr buffer, u64 offset,
     {
         GC.SuppressFinalize(this);
         if (!_cleanUp) return;
+        _loader.Logger.LogTrace("Destroying Buffer {Buffer}", Buffer.GetIntPtr());
         Buffer.Destroy();
         Buffer.Release();
     }

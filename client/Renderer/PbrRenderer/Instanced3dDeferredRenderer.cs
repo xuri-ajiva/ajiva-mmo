@@ -354,17 +354,8 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
     public void Update(UpdateInfo info)
     {
         _sceneLights.Animate(info.DeltaTime);
-        if (_isSceneViewHovered)
-        {
-            _camera.Update();
-        }
-
         if (_samplingPipeline is not null)
         {
-            /*var mappingTask = _samplingPipeline.RequestResultBufferMapping();
-            _api.Poll();
-            _underCursor = _samplingPipeline.ReadResult(mappingTask);
-            _api.Poll();*/
             if (_underCursor is { } pos && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
             {
                 _selectedObjectId = pos.ObjectId;
@@ -479,6 +470,10 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
 
     public void Render(UpdateInfo info, RenderTarget target)
     {
+        if (_isSceneViewHovered)
+        {
+            _camera.Update(info);
+        }
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
 
         if (!ImGui.Begin("Scene")) return;
@@ -499,8 +494,12 @@ public class Instanced3dDeferredRenderer : IRenderLayer, IUiRenderLayer
         var hasPrev = _finalSceneTexture.TryGetTargets(out var prevView);
         _sceneGBuffer.EnsureSize(width, height);
         _finalSceneTexture.EnsureSize(width, height);
+        
         CreatePipelines();
-
+        var mappingTask = _samplingPipeline.RequestResultBufferMapping();
+        _api.Poll();
+        _underCursor = _samplingPipeline.ReadResult(mappingTask);
+        
         if (_sceneGBuffer.TryGetTargets(out var positions, out var albedo, out var normal, out var emission,
                 out var objectAndInstanceId, out var accum, out var reveal, out var depth) &&
             _finalSceneTexture.TryGetTargets(out var colorOutput))

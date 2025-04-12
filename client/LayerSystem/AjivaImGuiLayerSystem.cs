@@ -16,7 +16,7 @@ namespace Client.LayerSystem;
 
 public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 {
-    private bool _initialized;
+    private bool _initialized, _attatched;
 
     private readonly ILogger<AjivaImGuiLayerSystem> _logger;
 
@@ -69,27 +69,34 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable; // Enable Multi-Viewport / Platform Windows
         _periodicUpdater.RegisterUpdate(UpdateCycle.Render, Render);
         _periodicUpdater.RegisterUpdate(UpdateCycle.Update, Update);
-        return;
 
-        unsafe void SetupFonts()
+        foreach (var layer in Layers)
         {
-            _imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
-
-            var fontPath = Path.GetFullPath("resources/Quicksand-SemiBold.ttf");
-
-            var nativeConfig = ImGuiNative.ImFontConfig_ImFontConfig();
-            //Add a higher horizontal/vertical sample rate for global scaling.
-            nativeConfig->OversampleH = 8;
-            nativeConfig->OversampleV = 8;
-            nativeConfig->RasterizerMultiply = 1f;
-            nativeConfig->GlyphOffset = new Vector2(0);
-
-            _quicksandFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPath, 18, nativeConfig);
+            layer.Attach();
         }
+
+        _attatched = true;
+    }
+
+    unsafe void SetupFonts()
+    {
+        _imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
+
+        var fontPath = Path.GetFullPath("resources/Quicksand-SemiBold.ttf");
+
+        var nativeConfig = ImGuiNative.ImFontConfig_ImFontConfig();
+        //Add a higher horizontal/vertical sample rate for global scaling.
+        nativeConfig->OversampleH = 8;
+        nativeConfig->OversampleV = 8;
+        nativeConfig->RasterizerMultiply = 1f;
+        nativeConfig->GlyphOffset = new Vector2(0);
+
+        _quicksandFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPath, 18, nativeConfig);
     }
 
     public void Update(UpdateInfo info)
     {
+        if (!_attatched) return;
         foreach (var layer in Layers)
         {
             if (layer.Enabled)
@@ -102,8 +109,9 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     public async void PushLayer<T>(T? layer = default) where T : IAjivaLayer
     {
         layer ??= _scope.ServiceProvider.GetRequiredService<T>();
-        layer.Attach();
         Layers.Add(layer);
+        if (_initialized)
+            layer.Attach();
     }
 
     public void PopLayer<T>() where T : IAjivaLayer
@@ -117,6 +125,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
     public void Detach()
     {
+        _attatched = false;
         foreach (var ajivaLayer in Layers)
         {
             ajivaLayer.Detach();
@@ -134,6 +143,8 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
     public void Render(UpdateInfo info)
     {
+        if (!_attatched) return;
+
         var window = _window.Window;
         var surface = _window.Surface;
         var framebufferSize = window.FramebufferSize;

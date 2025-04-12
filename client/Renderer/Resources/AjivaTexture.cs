@@ -88,6 +88,8 @@ public class AjivaTexture(
         }
     }
 
+    public bool IsDisposed => _refCount < 0;
+
     public u64 Version { get; private set; } = IAjivaVersionedObject.Sentinel;
 
     public void Swap(AjivaTexture other)

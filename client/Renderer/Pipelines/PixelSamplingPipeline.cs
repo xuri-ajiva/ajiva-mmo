@@ -109,7 +109,7 @@ public class PixelSamplingPipeline : IDisposable
         try
         {
             var resultSpan = _resultStagingBuffer
-                .GetMappedRange<Result>(0, (u32)Unsafe.SizeOf<Result>());
+                .GetConstMappedRange<Result>(0, (u32)Unsafe.SizeOf<Result>());
             var result = resultSpan[0];
             _resultStagingBuffer.Unmap();
             return result;
