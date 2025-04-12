@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Silk.NET.WebGPU;
@@ -15,7 +16,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 {
     public readonly ILogger<ResourceLoader> Logger = logger;
 
-    public AjivaTexture DefaultTexture = null!;
+    internal AjivaTexture DefaultTexture = null!;
 
     private Task InitDefaultResources()
     {
@@ -29,25 +30,33 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         CoolTextureGenerator.GenerateMissingTexture(data, (i32)extent3D.Width, (i32)extent3D.Height);
 
         tex.WriteTexture<Rgba32>(data, extent3D);
-        DefaultTexture = tex;
+        DefaultTexture = AjivaTexture.FromData(tex);
 
         return Task.CompletedTask;
     }
 
     public QueuePtr Queue => api.Device.GetQueue();
-    private readonly SemaphoreSlim _loadSem = new(4, 4);
+    private readonly SemaphoreSlim _loadSem = new(1, 1);
     private readonly SemaphoreSlim _writeSem = new(1, 1);
-    private Dictionary<string, AjivaTexture> _loadedTextures = new();
+    private readonly ConcurrentDictionary<string, AjivaTexture> _loadedTextures = new();
 
-    public void AsyncTextureLoad(string path, AjivaTexture target, TextureUsage usage = TextureUsage.TextureBinding,
-        string? label = null, u32 mipLevels = 8, TextureFormat format = TextureFormat.Rgba8Unorm,
-        TextureAspect aspect = TextureAspect.All)
+    public void AsyncTextureLoad(string path, AjivaTexture target,
+        TextureUsage usage = TextureUsage.TextureBinding, string? label = null, u32 mipLevels = 8,
+        TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
     {
-        if (_loadedTextures.TryGetValue(path, out var texture) && !texture.IsDisposed)
+        start:
+        if (!_loadedTextures.TryAdd(path, target))
         {
-            Logger.LogDebug("Texture {Path} already loaded, skipping.", path);
-            /*target.Swap(texture);
-            return;*/
+            var val = _loadedTextures[path];
+            if (val.IsDisposed)
+            {
+                _loadedTextures.TryRemove(path, out _);
+                goto start;
+            }
+
+            target.Assign(val.Data);
+
+            return;
         }
 
         Task.Run(async () =>
@@ -55,7 +64,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             try
             {
                 await _loadSem.WaitAsync();
-                await LoadTextureAndMips(path, target, usage, label ?? Path.GetFileNameWithoutExtension(path),
+                await LoadTextureAndMips(path, target.Data, usage, label ?? Path.GetFileNameWithoutExtension(path),
                     mipLevels, format, aspect);
             }
             catch (Exception e)
@@ -74,12 +83,12 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         string? label = null, u32 mipLevels = 8, TextureFormat format = TextureFormat.Rgba8Unorm,
         TextureAspect aspect = TextureAspect.All)
     {
-        var result = DefaultTexture.Clone();
+        var result = DefaultTexture.Clone(label ?? Path.GetFileNameWithoutExtension(path));
         AsyncTextureLoad(path, result, usage, label, mipLevels, format, aspect);
         return result;
     }
 
-    private async Task LoadTextureAndMips(string path, AjivaTexture tex, TextureUsage usage, string? label,
+    private async Task LoadTextureAndMips(string path, TextureData target, TextureUsage usage, string label,
         u32 requestedMipLevels, TextureFormat format, TextureAspect aspect)
     {
         await using var data = new FileStream(FindFile(path), FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
@@ -93,7 +102,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 
         var tmpTexture = CreateTexture(usage | TextureUsage.CopyDst, label, effectiveMipLevels, extent3D, format,
             aspect);
-        tex.Swap(tmpTexture);
+        target.Swap(tmpTexture);
 
         var currentLevelImage = originalImage;
 
@@ -112,7 +121,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 
                     if (mipLevel > 1)
                     {
-                        currentLevelImage?.Dispose();
+                        currentLevelImage.Dispose();
                     }
 
                     currentLevelImage = nextLevelImage;
@@ -132,7 +141,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
                     await _writeSem.WaitAsync();
                     try
                     {
-                        tex.WriteTexture<Rgba32>(rent.AsSpan(0, sizePixels),
+                        target.WriteTexture<Rgba32>(rent.AsSpan(0, sizePixels),
                             new Extent3D((u32)imageToUpload.Width, (u32)imageToUpload.Height, 1), mipLevel: mipLevel);
                     }
                     finally
@@ -247,12 +256,10 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         throw new FileNotFoundException($"File '{filePath}' not found in any of the searched locations.");
     }
 
-    private static u32 CalculateMaxMipLevels(Extent3D extent3D)
-    {
-        return (u32)MathF.Floor(MathF.Log2(Math.Max(extent3D.Width, extent3D.Height))) + 1;
-    }
+    private static u32 CalculateMaxMipLevels(Extent3D extent3D) =>
+        (u32)MathF.Floor(MathF.Log2(Math.Max(extent3D.Width, extent3D.Height))) + 1;
 
-    private AjivaTexture CreateTexture(TextureUsage usage, string? label, u32 mipLevels, Extent3D extent3D,
+    private TextureData CreateTexture(TextureUsage usage, string label, u32 mipLevels, Extent3D extent3D,
         TextureFormat format, TextureAspect aspect)
     {
         var texture = api.Device.CreateTexture(
@@ -270,10 +277,8 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             label: $"{label} - View");
 
         Logger.LogInformation("Created texture {Texure} ({Label})", texture.GetIntPtr(), label);
-        var tex = new AjivaTexture(this, texture, textureView, extent3D, aspect, mipLevels);
-        return tex;
+        return new TextureData(this, label ?? "", texture, textureView, extent3D, aspect, mipLevels);
     }
-
 
     public AjivaBuffer<T> CreateBuffer<T>(BufferUsage usage, i32 count, string? label = null)
         where T : unmanaged
@@ -307,10 +312,11 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     private readonly Channel<IDisposable> _disposables =
         Channel.CreateUnbounded<IDisposable>(new UnboundedChannelOptions { SingleReader = true });
 
-    public void DisposeLater(IDisposable disposable)
+    public void DisposeLater(IDisposable? disposable)
     {
+        if (disposable is null) return;
         // skip textures that are not supposed to be cleaned up (clone of default textures)
-        if (disposable is AjivaTexture { IsClone: true }) return;
+        //if (disposable is AjivaTexture) return;
 
         while (!_disposables.Writer.TryWrite(disposable))
         {
@@ -337,7 +343,26 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 
     public Task StartingAsync(CancellationToken cancellationToken) => InitDefaultResources();
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        DoCollection();
+        DefaultTexture.Dispose();
+        _loadSem.Dispose();
+        _writeSem.Dispose();
+        foreach (var key in _loadedTextures.Keys.ToArray())
+        {
+            if (_loadedTextures.TryRemove(key, out var value))
+            {
+                value.Dispose();
+            }
+        }
+
+        _loadedTextures.Clear();
+
+        return Task.CompletedTask;
+    }
+
     public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;

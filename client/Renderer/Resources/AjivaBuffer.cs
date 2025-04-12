@@ -33,8 +33,9 @@ public class AjivaBuffer<T>(ResourceLoader loader, BufferPtr buffer, u64 offset,
 
     public void QueuedWrite(ReadOnlySpan<T> data, QueuePtr queue)
     {
-        _loader.Logger.LogTrace("Queued Writing Buffer {Buffer} with {Size} new values", Buffer.GetIntPtr(),
-            data.Length);
+        if (_loader.Logger.IsEnabled(LogLevel.Trace))
+            _loader.Logger.LogTrace("Queued Writing Buffer {Buffer} with {Size} new values", Buffer.GetIntPtr(),
+                data.Length);
         if (queue == default)
             queue = _loader.Queue;
         queue.WriteBuffer(Buffer, Offset, data);

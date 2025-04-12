@@ -140,9 +140,9 @@ public class TemplePipeline : IDisposable
         var targetHash = new HashCode();
         targetHash.Add(_modelBindGroupLayout);
         targetHash.Add(pbrInstancedMeshBuffer.ModelUniformBuffer.Version);
-        targetHash.Add(pbrInstancedMeshBuffer.AlbedoTexture.Version);
-        targetHash.Add(pbrInstancedMeshBuffer.NormalTexture.Version);
-        targetHash.Add(pbrInstancedMeshBuffer.EmissionTexture.Version);
+        targetHash.Add(pbrInstancedMeshBuffer.AlbedoTexture!.Version);
+        targetHash.Add(pbrInstancedMeshBuffer.NormalTexture!.Version);
+        targetHash.Add(pbrInstancedMeshBuffer.EmissionTexture!.Version);
 
         if (pbrInstancedMeshBuffer.ModelBindGroupHash == targetHash.ToHashCode())
             return;
@@ -154,9 +154,9 @@ public class TemplePipeline : IDisposable
             _modelBindGroupLayout,
             pbrInstancedMeshBuffer.ModelUniformBuffer.Buffer,
             _linearSampler,
-            pbrInstancedMeshBuffer.AlbedoTexture.View,
-            pbrInstancedMeshBuffer.NormalTexture.View,
-            pbrInstancedMeshBuffer.EmissionTexture.View,
+            pbrInstancedMeshBuffer.AlbedoTexture!.View,
+            pbrInstancedMeshBuffer.NormalTexture!.View,
+            pbrInstancedMeshBuffer.EmissionTexture!.View,
             ubModelOffset: pbrInstancedMeshBuffer.ModelUniformBuffer.Offset,
             ubModelSize: pbrInstancedMeshBuffer.ModelUniformBuffer.Size
         );

@@ -48,8 +48,8 @@ public class PBRInstancedMeshBuffer(
         ModelBindGroup?.Release();
         ModelUniformBuffer.Dispose();
 
-        AlbedoTexture.Dispose();
-        NormalTexture.Dispose();
-        EmissionTexture.Dispose();
+        AlbedoTexture?.Dispose();
+        NormalTexture?.Dispose();
+        EmissionTexture?.Dispose();
     }
 }

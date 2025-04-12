@@ -173,8 +173,7 @@ public class WboitPipeline(
         var pass = _cmd.BeginRenderPass([
                 new RenderPassColorAttachment(accum.View, null, LoadOp.Clear, StoreOp.Store, new Color(0, 0, 0, 0)),
                 new RenderPassColorAttachment(reveal.View, null, LoadOp.Clear, StoreOp.Store, new Color(1, 0, 0, 0)),
-                new RenderPassColorAttachment(objectAndInstanceId.View, null, LoadOp.Load, StoreOp.Discard,
-                    new Color(0, 0, 0, 0)),
+                new RenderPassColorAttachment(objectAndInstanceId.View, null, LoadOp.Load, StoreOp.Store, default),
             ],
             null,
             new RenderPassDepthStencilAttachment(depth.View, LoadOp.Load, StoreOp.Store, 1, true,

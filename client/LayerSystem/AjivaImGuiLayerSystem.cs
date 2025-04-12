@@ -28,8 +28,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     private ImGuiController? _imguiController;
     private AjivaWindow _window = null!;
 
-    private readonly AjivaClock _updateClock;
-    private readonly AjivaClock _renderClock;
     private List<IAjivaLayer> Layers { get; } = [];
 
     public AjivaImGuiLayerSystem(ILogger<AjivaImGuiLayerSystem> logger, RendererApi api,
@@ -49,8 +47,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 #else
         _layerTypes = [];
 #endif
-        _updateClock = new AjivaClock();
-        _renderClock = new AjivaClock();
     }
 
     public void Attach(AjivaWindow parent)
@@ -106,7 +102,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         }
     }
 
-    public async void PushLayer<T>(T? layer = default) where T : IAjivaLayer
+    public void PushLayer<T>(T? layer = default) where T : IAjivaLayer
     {
         layer ??= _scope.ServiceProvider.GetRequiredService<T>();
         Layers.Add(layer);

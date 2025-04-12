@@ -286,6 +286,7 @@ public class Instanced3dDeferredRenderer(
         {
             _camera.Update(info);
         }
+
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
 
         if (!ImGui.Begin("Scene")) return;
@@ -306,12 +307,12 @@ public class Instanced3dDeferredRenderer(
         var hasPrev = _finalSceneTexture.TryGetTargets(out var prevView);
         _sceneGBuffer.EnsureSize(width, height);
         _finalSceneTexture.EnsureSize(width, height);
-        
+
         CreatePipelines();
         var mappingTask = _samplingPipeline.RequestResultBufferMapping();
         _api.Poll();
         _underCursor = _samplingPipeline.ReadResult(mappingTask);
-        
+
         if (_sceneGBuffer.TryGetTargets(out var positions, out var albedo, out var normal, out var emission,
                 out var objectAndInstanceId, out var accum, out var reveal, out var depth) &&
             _finalSceneTexture.TryGetTargets(out var colorOutput))
@@ -379,24 +380,26 @@ public class Instanced3dDeferredRenderer(
                 ImGui.NextColumn();
                 ImGui.SetCursorPosY(y);
                 var imageButtonSize = ImGui.GetContentRegionAvail().X;
-                if (ImGui.ImageButton("ChooseTexture", selectedBuffer.AlbedoTexture.View.GetIntPtr(),
-                        new Vector2(imageButtonSize)))
+                if (selectedBuffer.AlbedoTexture is { } texture)
                 {
-                    Task.Run(() =>
+                    if (ImGui.ImageButton("ChooseTexture", texture.View.GetIntPtr(),
+                            new Vector2(imageButtonSize)))
                     {
-                        var pickResult = Nfd.FileOpen([
-                            new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
-                        ]);
+                        Task.Run(() =>
+                        {
+                            var pickResult = Nfd.FileOpen([
+                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
+                            ]);
 
-                        if (pickResult.Status != NfdStatus.Ok) return;
+                            if (pickResult.Status != NfdStatus.Ok) return;
 
-                        var clone = selectedBuffer.AlbedoTexture.Clone();
-                        _loader.AsyncTextureLoad(pickResult.Path, clone);
-                        selectedBuffer.AlbedoTexture.Dispose();
-                        selectedBuffer.AlbedoTexture = clone;
-                    });
+                            using var clone = texture.Clone("TMP_CLONE_FOR_UI");
+                            _loader.AsyncTextureLoad(pickResult.Path, clone);
+                            _loader.DisposeLater(selectedBuffer.AlbedoTexture);
+                            selectedBuffer.AlbedoTexture = clone;
+                        });
+                    }
                 }
-
 
                 if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
                 {
