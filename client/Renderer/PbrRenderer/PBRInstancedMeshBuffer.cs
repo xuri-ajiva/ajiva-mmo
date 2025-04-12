@@ -26,9 +26,9 @@ public class PBRInstancedMeshBuffer(
 
     public TempleShader.Instance[] _instanceInfos = instanceInfos;
     public ref TempleShader.Instance[] InstanceInfos => ref _instanceInfos;
-    public AjivaTexture AlbedoTexture;
-    public AjivaTexture NormalTexture;
-    public AjivaTexture EmissionTexture;
+    public AjivaTexture? AlbedoTexture;
+    public AjivaTexture? NormalTexture;
+    public AjivaTexture? EmissionTexture;
 
     public void Deconstruct(out AjivaBuffer<TempleShader.Attributes> vertexBuffer, out AjivaBuffer<u32> indexBuffer,
         out AjivaBuffer<TempleShader.Instance>? instanceBuffer, out BindGroupPtr? modelBindGroup,

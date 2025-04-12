@@ -1,12 +1,7 @@
 ﻿using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
-using Client.Renderer.PbrRenderer;
-using Client.Wgsl;
-using Microsoft.CodeAnalysis.CSharp;
-using Serilog;
 using Silk.NET.WebGPU;
-using Silk.NET.WebGPU.Extensions.WGPU;
 using Silk.NET.WebGPU.Safe;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -40,15 +35,26 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     }
 
     public QueuePtr Queue => api.Device.GetQueue();
+    private readonly SemaphoreSlim _loadSem = new(4, 4);
+    private readonly SemaphoreSlim _writeSem = new(1, 1);
+    private Dictionary<string, AjivaTexture> _loadedTextures = new();
 
     public void AsyncTextureLoad(string path, AjivaTexture target, TextureUsage usage = TextureUsage.TextureBinding,
-        string? label = null,
-        u32 mipLevels = 1, TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
+        string? label = null, u32 mipLevels = 8, TextureFormat format = TextureFormat.Rgba8Unorm,
+        TextureAspect aspect = TextureAspect.All)
     {
+        if (_loadedTextures.TryGetValue(path, out var texture) && !texture.IsDisposed)
+        {
+            Logger.LogDebug("Texture {Path} already loaded, skipping.", path);
+            /*target.Swap(texture);
+            return;*/
+        }
+
         Task.Run(async () =>
         {
             try
             {
+                await _loadSem.WaitAsync();
                 await LoadTextureAndMips(path, target, usage, label ?? Path.GetFileNameWithoutExtension(path),
                     mipLevels, format, aspect);
             }
@@ -57,12 +63,16 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
                 Logger.LogCritical(e, "Failed to load texture {Path}", path);
                 throw;
             }
+            finally
+            {
+                _loadSem.Release();
+            }
         });
     }
 
     public AjivaTexture AsyncTextureLoad(string path, TextureUsage usage = TextureUsage.TextureBinding,
-        string? label = null,
-        u32 mipLevels = 1, TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
+        string? label = null, u32 mipLevels = 8, TextureFormat format = TextureFormat.Rgba8Unorm,
+        TextureAspect aspect = TextureAspect.All)
     {
         var result = DefaultTexture.Clone();
         AsyncTextureLoad(path, result, usage, label, mipLevels, format, aspect);
@@ -72,7 +82,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     private async Task LoadTextureAndMips(string path, AjivaTexture tex, TextureUsage usage, string? label,
         u32 requestedMipLevels, TextureFormat format, TextureAspect aspect)
     {
-        await using var data = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
+        await using var data = new FileStream(FindFile(path), FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         using var originalImage = Image.Load<Rgba32>(data);
 
@@ -118,10 +128,18 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
                 var rent = ArrayPool<Rgba32>.Shared.Rent(sizePixels);
                 try
                 {
-                    var pixelSpan = rent.AsSpan(0, sizePixels);
-                    imageToUpload.CopyPixelDataTo(pixelSpan);
-                    tex.WriteTexture<Rgba32>(pixelSpan,
-                        new Extent3D((u32)imageToUpload.Width, (u32)imageToUpload.Height, 1), mipLevel: mipLevel);
+                    imageToUpload.CopyPixelDataTo(rent.AsSpan(0, sizePixels));
+                    await _writeSem.WaitAsync();
+                    try
+                    {
+                        tex.WriteTexture<Rgba32>(rent.AsSpan(0, sizePixels),
+                            new Extent3D((u32)imageToUpload.Width, (u32)imageToUpload.Height, 1), mipLevel: mipLevel);
+                    }
+                    finally
+                    {
+                        _writeSem.Release();
+                    }
+
                     Logger.LogTrace("Uploaded mip level {MipLevel} ({MipWidth}x{MipHeight}) for '{Label}'.", mipLevel,
                         imageToUpload.Width, imageToUpload.Height, label ?? path);
                 }
@@ -148,6 +166,85 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         Logger.LogDebug("Successfully loaded texture '{Label}' with {EffectiveMipLevels} mip levels.", label ?? path,
             effectiveMipLevels);
         DisposeLater(tmpTexture);
+    }
+
+    private string FindFile(string filePath)
+    {
+        // search for a given path, in the following order:
+        // 1. filePath
+        // 2. resources/filePath
+        // 3. resources/**/filePath
+        // 4. ../resources/**/filePath
+        // 5. ../**/filePath
+        if (File.Exists(filePath))
+        {
+            return filePath;
+        }
+
+        var resourcesFile = Path.Combine("resources", filePath);
+
+        if (File.Exists(resourcesFile))
+        {
+            return resourcesFile;
+        }
+
+        var pattern = Path.GetFileName(filePath);
+        var directory = Path.GetDirectoryName(filePath);
+        var join = Path.Join(directory ?? string.Empty, pattern);
+
+        bool Compare(string testAgainst)
+        {
+            return testAgainst.EndsWith(join, StringComparison.InvariantCultureIgnoreCase);
+        }
+
+        var errors = 0;
+        try
+        {
+            if (Directory.EnumerateFiles("resources", pattern, SearchOption.AllDirectories)
+                    .FirstOrDefault(Compare) is
+                { } foundFile)
+            {
+                return foundFile;
+            }
+        }
+        catch
+        {
+            errors++;
+        }
+
+        try
+        {
+            if (Directory.EnumerateFiles("../resources/", pattern, SearchOption.AllDirectories)
+                    .FirstOrDefault(Compare) is
+                { } foundFile2)
+            {
+                return foundFile2;
+            }
+        }
+        catch
+        {
+            errors++;
+        }
+
+        try
+        {
+            if (Directory.EnumerateFiles("..", pattern, SearchOption.AllDirectories)
+                    .FirstOrDefault(Compare) is
+                { } foundFile3)
+            {
+                return foundFile3;
+            }
+        }
+        catch
+        {
+            errors++;
+        }
+
+        Logger.LogError(
+            "Failed to find file '{FilePath}' in any of the searched locations. Errors: {Errors}, Checks: 5", filePath,
+            errors);
+
+        throw new FileNotFoundException($"File '{filePath}' not found in any of the searched locations.");
     }
 
     private static u32 CalculateMaxMipLevels(Extent3D extent3D)
@@ -184,7 +281,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         var bufferSize = (u64)Unsafe.SizeOf<T>() * (u64)count;
         var buffer = api.Device.CreateBuffer(usage, bufferSize, mappedAtCreation: false, label);
         var result = new AjivaBuffer<T>(this, buffer, 0, bufferSize, true);
-        Logger.LogTrace("Created buffer {Label} with size {Size} bytes.", label, bufferSize);
+        Logger.LogDebug("Created buffer {Label} with size {Size} bytes.", label, bufferSize);
         return result;
     }
 
@@ -194,13 +291,15 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     {
         var bufferSize = (u64)Unsafe.SizeOf<T>() * (u64)data.Length;
 
-        var buffer = api.Device.CreateBuffer(usage, bufferSize, mappedAtCreation: true, label);
+        var buffer = api.Device.CreateBuffer(usage, bufferSize, mappedAtCreation: false, label);
         var result = new AjivaBuffer<T>(this, buffer, 0, bufferSize, true);
 
-        result.WriteBuffer(data);
+        // result.WriteBuffer(data);
         // Do not use queue here, as it is not guaranteed that the span is available after this method
-        //result.QueuedWrite(data, Queue);
-        Logger.LogTrace("Created buffer {Label} with size {Size} bytes and wrote {DataLength} elements.", label,
+        // Accutualy Unmap dose issue a queue submit, so this is not needed
+        result.QueuedWrite(data, Queue);
+
+        Logger.LogDebug("Created buffer {Label} with size {Size} bytes and wrote {DataLength} elements.", label,
             bufferSize, data.Length);
         return result;
     }
@@ -219,7 +318,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             Thread.Sleep(10);
         }
     }
-    
+
     public void DoCollection()
     {
         while (_disposables.Reader.TryRead(out var disposable))

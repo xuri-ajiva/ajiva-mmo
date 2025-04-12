@@ -43,6 +43,9 @@ builder.AddServiceDefaults();
     services.AddSingleton(logWidget);
     services.AddSingleton<PlatformSystem>();
     services.AddSingleton<Ecs>();
+    services.AddSingleton<ModelHelper>();
+    services.AddSingleton<ObjectScene>();
+    services.AddSingleton<ICamera, FreeCamera>();
 
 
     services.AddSingleton<IAjivaLayerSystem, AjivaImGuiLayerSystem>();
