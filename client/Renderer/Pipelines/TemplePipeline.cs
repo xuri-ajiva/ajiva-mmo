@@ -157,7 +157,7 @@ public class TemplePipeline : IDisposable
             pbrInstancedMeshBuffer.AlbedoTexture!.View,
             pbrInstancedMeshBuffer.NormalTexture!.View,
             pbrInstancedMeshBuffer.EmissionTexture!.View,
-            ubModelOffset: pbrInstancedMeshBuffer.ModelUniformBuffer.Offset,
+            ubModelOffset: pbrInstancedMeshBuffer.ModelUniformBuffer.OffsetBytes,
             ubModelSize: pbrInstancedMeshBuffer.ModelUniformBuffer.Size
         );
     }

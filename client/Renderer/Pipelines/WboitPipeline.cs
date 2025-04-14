@@ -152,12 +152,12 @@ public class WboitPipeline(
         buffer.ModelBindGroup?.Release();
         buffer.ModelBindGroup = shader.CreateBindGroup1(_api.Device, modelBindGroupLayout,
             buffer.ModelUniformBuffer.Buffer, defaultSampler, buffer.AlbedoTexture.View,
-            buffer.ModelUniformBuffer.Offset, buffer.ModelUniformBuffer.Size);
+            buffer.ModelUniformBuffer.OffsetBytes, buffer.ModelUniformBuffer.Size);
     }
 
     public void WriteUniformBuffer(QueuePtr queue, SceneUniform sceneUniform)
     {
-        queue.WriteBuffer(sceneUniformBuffer.Buffer, sceneUniformBuffer.Offset,
+        queue.WriteBuffer(sceneUniformBuffer.Buffer, sceneUniformBuffer.OffsetBytes,
             new ReadOnlySpan<SceneUniform>(ref sceneUniform));
     }
 

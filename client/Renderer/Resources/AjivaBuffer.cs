@@ -1,21 +1,30 @@
-﻿using Silk.NET.WebGPU.Safe;
+﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using Silk.NET.WebGPU;
+using Silk.NET.WebGPU.Safe;
 
 namespace Client.Renderer.Resources;
 
-public class AjivaBuffer<T>(ResourceLoader loader, BufferPtr buffer, u64 offset, u64 size, bool cleanUp)
+public class AjivaBuffer<T>(
+    ResourceLoader loader,
+    string? label,
+    BufferPtr buffer,
+    BufferUsage usage,
+    u64 count,
+    bool cleanUp)
     : IAjivaVersionedObject where T : unmanaged
 {
-    private readonly ResourceLoader _loader = loader;
-    private readonly bool _cleanUp = cleanUp;
+    private static readonly u32 SizeOfT = (u32)Unsafe.SizeOf<T>();
     public BufferPtr Buffer { get; private set; } = buffer;
-    public u64 Offset { get; private set; } = offset;
-    public u64 Size { get; private set; } = size;
+    public u64 OffsetBytes { get; private set; } = 0;
+    public u64 Count { get; private set; } = count;
+    public u64 Size => Count * SizeOfT;
 
     public void Dispose()
     {
         GC.SuppressFinalize(this);
-        if (!_cleanUp) return;
-        _loader.Logger.LogTrace("Destroying Buffer {Buffer}", Buffer.GetIntPtr());
+        if (!cleanUp) return;
+        loader.Logger.LogTrace("Destroying Buffer {Buffer}", Buffer.GetIntPtr());
         Buffer.Destroy();
         Buffer.Release();
     }
@@ -24,21 +33,35 @@ public class AjivaBuffer<T>(ResourceLoader loader, BufferPtr buffer, u64 offset,
 
     public void WriteBuffer(ReadOnlySpan<T> data)
     {
-        _loader.Logger.LogTrace("Writing Buffer {Buffer} with {Size} new values", Buffer.GetIntPtr(), data.Length);
+        loader.Logger.LogTrace("Writing Buffer {Buffer} with {Size} new values", Buffer.GetIntPtr(), data.Length);
         var mappedBuffer = Buffer.GetMappedRange<T>(UIntPtr.Zero, (nuint)Size);
         data.CopyTo(mappedBuffer);
         Buffer.Unmap();
-        Version++;
     }
 
     public void QueuedWrite(ReadOnlySpan<T> data, QueuePtr queue)
     {
-        if (_loader.Logger.IsEnabled(LogLevel.Trace))
-            _loader.Logger.LogTrace("Queued Writing Buffer {Buffer} with {Size} new values", Buffer.GetIntPtr(),
+        if (loader.Logger.IsEnabled(LogLevel.Trace))
+            loader.Logger.LogTrace("Queued Writing Buffer {Buffer} with {Size} new values", Buffer.GetIntPtr(),
                 data.Length);
         if (queue == default)
-            queue = _loader.Queue;
-        queue.WriteBuffer(Buffer, Offset, data);
-        Version++; //todo check if this is correct, as the buffer is not written directly
+            queue = loader.Queue;
+        queue.WriteBuffer(Buffer, OffsetBytes, data);
+    }
+
+    public void ResizeWithoutDataPreserve(u64 newCount)
+    {
+        if (Count != 0 && Buffer != default)
+        {
+            Buffer.Release();
+            Buffer.Destroy();
+        }
+
+        var range = loader.CreateBufferRaw(usage, newCount * SizeOfT, label);
+        Debug.Assert(range.Size >= newCount * SizeOfT);
+        Debug.Assert(range.Buffer != default);
+        Buffer = range.Buffer;
+        OffsetBytes = range.Offset;
+        Count = newCount;
     }
 }

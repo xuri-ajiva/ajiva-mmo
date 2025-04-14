@@ -282,21 +282,17 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     public AjivaBuffer<T> CreateBuffer<T>(BufferUsage usage, i32 count, string? label = null)
         where T : unmanaged
     {
-        var bufferSize = (u64)Unsafe.SizeOf<T>() * (u64)count;
-        var buffer = api.Device.CreateBuffer(usage, bufferSize, mappedAtCreation: false, label);
-        var result = new AjivaBuffer<T>(this, buffer, 0, bufferSize, true);
-        Logger.LogDebug("Created buffer {Label} with size {Size} bytes.", label, bufferSize);
+        var result = new AjivaBuffer<T>(this, label, default, usage, 0, true);
+        result.ResizeWithoutDataPreserve((u64)count);
+        Logger.LogDebug("Created buffer {Label} with {Count} items ({Type}).", label, count, typeof(T).Name);
         return result;
     }
-
 
     public AjivaBuffer<T> CreateBuffer<T>(BufferUsage usage, ReadOnlySpan<T> data, string? label = null)
         where T : unmanaged
     {
-        var bufferSize = (u64)Unsafe.SizeOf<T>() * (u64)data.Length;
-
-        var buffer = api.Device.CreateBuffer(usage, bufferSize, mappedAtCreation: false, label);
-        var result = new AjivaBuffer<T>(this, buffer, 0, bufferSize, true);
+        var result = new AjivaBuffer<T>(this, label, default, usage, 0, true);
+        result.ResizeWithoutDataPreserve((u64)data.Length);
 
         // result.WriteBuffer(data);
         // Do not use queue here, as it is not guaranteed that the span is available after this method
@@ -304,10 +300,12 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         // w.r.t. that the map dose copy the data to a memory location that is guaranteed to be available
         result.QueuedWrite(data, Queue);
 
-        Logger.LogDebug("Created buffer {Label} with size {Size} bytes and wrote {DataLength} elements.", label,
-            bufferSize, data.Length);
+        Logger.LogDebug("Created buffer {Label} with {Count} items ({Type}).", label, data.Length, typeof(T).Name);
         return result;
     }
+
+    public BufferRange CreateBufferRaw(BufferUsage usage, u64 sizeInBytes, string? label) =>
+        new(api.Device.CreateBuffer(usage, sizeInBytes, mappedAtCreation: false, label), 0, sizeInBytes);
 
     private readonly Channel<IDisposable> _disposables =
         Channel.CreateUnbounded<IDisposable>(new UnboundedChannelOptions { SingleReader = true });

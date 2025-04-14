@@ -225,11 +225,11 @@ public class Instanced3dDeferredRenderer(
         {
             foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _meshBuffers)
             {
-                pass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.Offset, vertexBuffer.Size);
-                pass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.Offset,
+                pass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.OffsetBytes, vertexBuffer.Size);
+                pass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.OffsetBytes,
                     instanceBuffer.Size);
 
-                pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset, indexBuffer.Size);
+                pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.OffsetBytes, indexBuffer.Size);
 
                 pass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
 
@@ -244,11 +244,11 @@ public class Instanced3dDeferredRenderer(
             foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in
                      _transparentMeshBuffers)
             {
-                transparentPass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.Offset, vertexBuffer.Size);
-                transparentPass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.Offset,
+                transparentPass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.OffsetBytes, vertexBuffer.Size);
+                transparentPass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.OffsetBytes,
                     instanceBuffer.Size);
 
-                transparentPass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.Offset,
+                transparentPass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.OffsetBytes,
                     indexBuffer.Size);
 
                 transparentPass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
@@ -267,12 +267,16 @@ public class Instanced3dDeferredRenderer(
             queue);
 
         var data = new ReadOnlySpan<T2>(buffer.InstanceInfos);
-        if (buffer.InstanceBuffer is null || buffer.InstanceBuffer.Size <
-            (u64)data.Length * (u64)Unsafe.SizeOf<T2>())
+        if (buffer.InstanceBuffer is null)
         {
-            buffer.InstanceBuffer?.Dispose();
             buffer.InstanceBuffer = _loader.CreateBuffer(BufferUsage.Vertex | BufferUsage.CopyDst,
                 data, "DynamicRecreated::IndexBuffer");
+            buffer.InstanceBuffer.QueuedWrite(data, queue);
+        }
+
+        if (buffer.InstanceBuffer.Size < (u64)data.Length * (u64)Unsafe.SizeOf<T2>())
+        {
+            buffer.InstanceBuffer.ResizeWithoutDataPreserve((u64)data.Length * (u64)Unsafe.SizeOf<T2>());
         }
         else
         {
@@ -344,7 +348,6 @@ public class Instanced3dDeferredRenderer(
         }
 
         ImGui.End();
-
         ImGui.PopStyleVar();
     }
 
@@ -373,16 +376,12 @@ public class Instanced3dDeferredRenderer(
             {
                 var selectedBuffer = _meshBuffers[_selectedObjectId - 1];
 
-                ImGui.Columns(2, null, false);
                 var y = ImGui.GetCursorPosY();
-                ImGui.SetCursorPosY(y + ImGui.GetStyle().FramePadding.Y);
-                ImGui.Text("Texture");
-                ImGui.NextColumn();
-                ImGui.SetCursorPosY(y);
+                ImGui.Text("Textures");
                 var imageButtonSize = ImGui.GetContentRegionAvail().X;
                 if (selectedBuffer.AlbedoTexture is { } texture)
                 {
-                    if (ImGui.ImageButton("ChooseTexture", texture.View.GetIntPtr(),
+                    if (ImGui.ImageButton("ChooseTextureA", texture.View.GetIntPtr(),
                             new Vector2(imageButtonSize)))
                     {
                         Task.Run(() =>
