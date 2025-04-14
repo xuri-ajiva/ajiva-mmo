@@ -55,7 +55,6 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             }
 
             target.Assign(val.Data);
-
             return;
         }
 
@@ -302,6 +301,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         // result.WriteBuffer(data);
         // Do not use queue here, as it is not guaranteed that the span is available after this method
         // Accutualy Unmap dose issue a queue submit, so this is not needed
+        // w.r.t. that the map dose copy the data to a memory location that is guaranteed to be available
         result.QueuedWrite(data, Queue);
 
         Logger.LogDebug("Created buffer {Label} with size {Size} bytes and wrote {DataLength} elements.", label,
@@ -347,17 +347,16 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     public Task StopAsync(CancellationToken cancellationToken)
     {
         DoCollection();
-        DefaultTexture.Dispose();
-        _loadSem.Dispose();
-        _writeSem.Dispose();
-        foreach (var key in _loadedTextures.Keys.ToArray())
+        foreach (var texture in _internal)
         {
-            if (_loadedTextures.TryRemove(key, out var value))
-            {
-                value.Dispose();
-            }
+            texture.Dispose();
         }
 
+        _loadSem.Dispose();
+        _writeSem.Dispose();
+
+        // Do not dispose, as textures in cache, as the cache doesn't ref them
+        // foreach (var key in _loadedTextures.Keys.ToArray()) if (_loadedTextures.TryRemove(key, out var value)) value.Dispose();
         _loadedTextures.Clear();
 
         return Task.CompletedTask;

@@ -183,10 +183,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         ImGui.PushFont(_quicksandFont);
 
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport());
-        ImGui.UpdatePlatformWindows();
-        //ImGui.RenderPlatformWindowsDefault();
-
-        // ImGui.ShowDemoWindow();
 
         foreach (var layer in Layers)
         {
@@ -221,6 +217,8 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
             null);
 
         _imguiController!.Render(pass);
+        ImGui.UpdatePlatformWindows();
+        //ImGui.RenderPlatformWindowsDefault();
 
         pass.End();
         queue.Submit(cmd.Finish());

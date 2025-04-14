@@ -91,7 +91,7 @@ public class Instanced3dDeferredRenderer(
             // for testing
             foreach (var instancedMeshBuffer in _transparentMeshBuffers)
             {
-                instancedMeshBuffer.EmissionTexture = emission;
+                instancedMeshBuffer.EmissionTexture = emission.Reference();
             }
         }
 

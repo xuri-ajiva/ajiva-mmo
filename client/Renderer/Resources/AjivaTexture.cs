@@ -22,7 +22,7 @@ public class TextureData(
     public TextureAspect Aspect { get; private set; } = aspect;
     public u32 MipLevels { get; private set; } = mipLevels;
     private bool _clone;
-    internal i32 RefCount = 1;
+    internal i32 RefCount;
     public bool IsClone => _clone;
 
     public void WriteTexture<T>(ReadOnlySpan<T> data, Extent3D writeSize, Origin3D origin = default,
