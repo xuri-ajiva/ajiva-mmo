@@ -400,6 +400,62 @@ public class Instanced3dDeferredRenderer(
                     }
                 }
 
+                if (selectedBuffer.NormalTexture is { } normalTexture)
+                {
+                    if (ImGui.ImageButton("ChooseTextureN", normalTexture.View.GetIntPtr(),
+                            new Vector2(imageButtonSize)))
+                    {
+                        Task.Run(() =>
+                        {
+                            var pickResult = Nfd.FileOpen([
+                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
+                            ]);
+
+                            if (pickResult.Status != NfdStatus.Ok) return;
+
+                            using var clone = normalTexture.Clone("TMP_CLONE_FOR_UI");
+                            _loader.AsyncTextureLoad(pickResult.Path, clone);
+                            _loader.DisposeLater(selectedBuffer.NormalTexture);
+                            selectedBuffer.NormalTexture = clone;
+                        });
+                    }
+                }
+
+                if (selectedBuffer.EmissionTexture is { } emission)
+                {
+                    if (ImGui.ImageButton("ChooseTextureE", emission.View.GetIntPtr(),
+                            new Vector2(imageButtonSize)))
+                    {
+                        Task.Run(() =>
+                        {
+                            var pickResult = Nfd.FileOpen([
+                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
+                            ]);
+
+                            if (pickResult.Status != NfdStatus.Ok) return;
+
+                            using var clone = emission.Clone("TMP_CLONE_FOR_UI");
+                            _loader.AsyncTextureLoad(pickResult.Path, clone);
+                            _loader.DisposeLater(selectedBuffer.EmissionTexture);
+                            selectedBuffer.EmissionTexture = clone;
+                        });
+                    }
+                }
+
+                ref var uniform = ref selectedBuffer.ModelUniform;
+                ImGui.Text($"Model ID: {uniform.ModelId}");
+                ImGui.Text($"Tex0 Color");
+                ImGui.DragFloat3($"##Tex0Color", ref uniform.Tex0ColorRef, 0.1f);
+                ImGui.Text($"Tex1 Color");
+                ImGui.DragFloat3($"##Tex1Color", ref uniform.Tex1ColorRef, 0.1f);
+                ImGui.Text($"NormalMap Strength");
+                ImGui.DragFloat($"##NormalStrength", ref uniform.NormalMapStrength, 0.1f);
+                ImGui.Text($"Transform");
+                ImGui.DragFloat4($"##Transform0", ref Unsafe.As<f32, Vector4>(ref uniform.Transform.m00), 0.1f);
+                ImGui.DragFloat4($"##Transform1", ref Unsafe.As<f32, Vector4>(ref uniform.Transform.m10), 0.1f);
+                ImGui.DragFloat4($"##Transform2", ref Unsafe.As<f32, Vector4>(ref uniform.Transform.m20), 0.1f);
+                ImGui.DragFloat4($"##Transform3", ref Unsafe.As<f32, Vector4>(ref uniform.Transform.m30), 0.1f);
+
                 if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
                 {
                     ref var selectedInstance = ref selectedBuffer.InstanceInfos[_selectedInstanceId];
@@ -448,6 +504,8 @@ public class Instanced3dDeferredRenderer(
         if (ImGui.Begin("DefTexture"))
         {
             ImGui.Image(_loader.DefaultTexture.View.GetIntPtr(), new Vector2(256, 256));
+            ImGui.Image(_loader.DefaultNormal.View.GetIntPtr(), new Vector2(256, 256));
+            ImGui.Image(_loader.DefaultRoughness.View.GetIntPtr(), new Vector2(256, 256));
         }
 
         ImGui.End();

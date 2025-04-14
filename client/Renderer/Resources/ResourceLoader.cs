@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Client.Renderer.PbrRenderer;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 using SixLabors.ImageSharp;
@@ -16,7 +17,11 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 {
     public readonly ILogger<ResourceLoader> Logger = logger;
 
+    private List<AjivaTexture> _internal = [];
     internal AjivaTexture DefaultTexture = null!;
+    internal AjivaTexture DefaultNormal = null!;
+    internal AjivaTexture DefaultRoughness = null!;
+    internal AjivaTexture DefaultEmissive = null!;
 
     private Task InitDefaultResources()
     {
@@ -30,7 +35,37 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         CoolTextureGenerator.GenerateMissingTexture(data, (i32)extent3D.Width, (i32)extent3D.Height);
 
         tex.WriteTexture<Rgba32>(data, extent3D);
-        DefaultTexture = AjivaTexture.FromData(tex);
+        var defaultTexture = AjivaTexture.FromData(tex);
+
+        var normalTex = CreateTexture(TextureUsage.TextureBinding, "DefaultNormal", 1, extent3D,
+            TextureFormat.Rgba8Unorm, TextureAspect.All);
+        CoolTextureGenerator.GenerateNormalMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        normalTex.WriteTexture<Rgba32>(data, extent3D);
+        var defaultNormal = AjivaTexture.FromData(normalTex);
+
+        var roughnessTex = CreateTexture(TextureUsage.TextureBinding, "DefaultRoughness", 1, extent3D,
+            TextureFormat.Rgba8Unorm, TextureAspect.All);
+        CoolTextureGenerator.GenerateRoughnessMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        roughnessTex.WriteTexture<Rgba32>(data, extent3D);
+        var defaultRoughness = AjivaTexture.FromData(roughnessTex);
+
+        var emissiveTex = CreateTexture(TextureUsage.TextureBinding, "DefaultEmissive", 1, extent3D,
+            TextureFormat.Rgba8Unorm, TextureAspect.All);
+        CoolTextureGenerator.GenerateEmissiveMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        emissiveTex.WriteTexture<Rgba32>(data, extent3D);
+        var defaultEmissive = AjivaTexture.FromData(emissiveTex);
+
+        _internal =
+        [
+            defaultTexture,
+            defaultNormal,
+            defaultRoughness,
+            defaultEmissive
+        ];
+        DefaultTexture = defaultTexture.Clone("defensive_copy");
+        DefaultNormal = defaultNormal.Clone("defensive_copy");
+        DefaultRoughness = defaultRoughness.Clone("defensive_copy");
+        DefaultEmissive = defaultEmissive.Clone("defensive_copy");
 
         return Task.CompletedTask;
     }
@@ -275,8 +310,8 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             aspect, baseMipLevel: 0, mipLevelCount: 1, baseArrayLayer: 0, arrayLayerCount: 1,
             label: $"{label} - View");
 
-        Logger.LogInformation("Created texture {Texure} ({Label})", texture.GetIntPtr(), label);
-        return new TextureData(this, label ?? "", texture, textureView, extent3D, aspect, mipLevels);
+        Logger.LogInformation("Created texture {Label}", label);
+        return new TextureData(this, label, texture, textureView, extent3D, aspect, mipLevels);
     }
 
     public AjivaBuffer<T> CreateBuffer<T>(BufferUsage usage, i32 count, string? label = null)

@@ -99,10 +99,13 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
             );
             if (mat is { DiffuseTexture: { } diffuseTexturePath })
                 pbrInstancedMeshBuffer.AlbedoTexture = _loader.AsyncTextureLoad(diffuseTexturePath);
-            if (mat is { NormalTexture: { } normalTexturePath })
-                pbrInstancedMeshBuffer.NormalTexture = _loader.AsyncTextureLoad(normalTexturePath);
-            if (mat is { EmissiveTexture: { } emissiveTexturePath })
-                pbrInstancedMeshBuffer.EmissionTexture = _loader.AsyncTextureLoad(emissiveTexturePath);
+            pbrInstancedMeshBuffer.NormalTexture = mat is { NormalTexture: { } normalTexturePath }
+                ? _loader.AsyncTextureLoad(normalTexturePath)
+                : _loader.DefaultNormal;
+            pbrInstancedMeshBuffer.EmissionTexture = mat is { EmissiveTexture: { } emissiveTexturePath }
+                ? _loader.AsyncTextureLoad(emissiveTexturePath)
+                : _loader.DefaultEmissive;
+
             if (mat is { EmissiveCoefficient: var emissiveColor })
                 pbrInstancedMeshBuffer.ModelUniform.Tex1ColorRef = emissiveColor;
 

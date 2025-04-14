@@ -133,10 +133,6 @@ public class AjivaTexture : IAjivaVersionedObject
         Data = data;
     }
 
-    public AjivaTexture(AjivaTexture texture) : this(texture.Data)
-    {
-    }
-
     public static AjivaTexture FromData(TextureData data) => new(data);
 
 
