@@ -322,7 +322,6 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             counter = ref _targetCounter;
         }
 
-
         if (node.ParameterList is not null)
         {
             _writer.Indent++;
@@ -428,7 +427,17 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             _writer.Indent--;
         }
 
-        _generatedStructs.Add(fieldsImplementation);
+        var toStringOverride =
+            MethodDeclaration(ParseTypeName("string"), Identifier("ToString"))
+                .WithModifiers(TokenList(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword)))
+                .WithBody(Block(
+                    ReturnStatement(
+                        ParseExpression($"$\"{structName}({string.Join(", ",
+                            attributeList.Select(a =>
+                                $"{a.Name}: {{ ({a.Name}).ToString() }}"))}))\"")
+                    )));
+
+        _generatedStructs.Add(fieldsImplementation.AddMembers(toStringOverride));
         _writer.WriteLine("}");
         _writer.WriteLine();
     }
@@ -687,7 +696,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             location = "@location(0) ";
 
         _writer.Write($") -> {location}{returnType} ");
-        Visit(node.Body);
+        EnsureBlockStatement(node.Body);
         _writer.WriteLine();
     }
 
@@ -729,8 +738,18 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             { Value: InvocationExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.Text: "array" } } };
 
         _writer.Write(updated ? "var " : "let ");
-        _writer.Write($"{variable.Identifier.Text} = ");
-        Visit(variable.Initializer!.Value);
+        _writer.Write($"{variable.Identifier.Text}");
+        if (variable.Initializer is not null)
+        {
+            _writer.Write(" = ");
+            Visit(variable.Initializer.Value);
+        }
+        else
+        {
+            _writer.Write(": ");
+            _writer.Write(_typemapper.Map(node.Declaration.Type));
+        }
+
         _writer.WriteLine(";");
     }
 
@@ -884,7 +903,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
     public override void VisitForStatement(ForStatementSyntax node)
     {
         _writer.Write($"for ({node.Declaration}; {node.Condition}; {node.Incrementors})");
-        Visit(node.Statement);
+        EnsureBlockStatement(node.Statement);
     }
 
     public override void VisitVariableDeclaration(VariableDeclarationSyntax node)
@@ -898,11 +917,11 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         _writer.Write("if (");
         Visit(node.Condition);
         _writer.Write(")");
-        Visit(node.Statement);
+        EnsureBlockStatement(node.Statement);
         if (node.Else is not null)
         {
             _writer.Write("else ");
-            Visit(node.Else.Statement);
+            EnsureBlockStatement(node.Else.Statement);
         }
     }
 
@@ -951,4 +970,20 @@ internal class WgslVisitor : CSharpSyntaxVisitor
     }
 
     #endregion
+
+    public void EnsureBlockStatement(StatementSyntax? syntax)
+    {
+        if (syntax is BlockSyntax block)
+        {
+            VisitBlock(block);
+        }
+        else if (syntax is not null)
+        {
+            VisitBlock(Block(syntax));
+        }
+        else
+        {
+            _writer.Write("{ }");
+        }
+    }
 }
