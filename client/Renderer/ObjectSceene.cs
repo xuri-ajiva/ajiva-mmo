@@ -3,7 +3,6 @@ using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
 using GlmSharp;
-using Silk.NET.Assimp;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 
@@ -57,19 +56,19 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
                 $"CubeMesh::IndexBuffer"));
     }
 
-    public PBRInstancedMeshBuffer[] CreateModelBuffers(string path,
+    public PbrInstancedMeshBuffer[] CreateModelBuffers(string path,
         string? label = null)
     {
         var (models, materials) = _modelHelper.LoadModels(path);
 
-        var buffers = new PBRInstancedMeshBuffer[models.Count + 2];
+        var buffers = new PbrInstancedMeshBuffer[models.Count + 2];
 
         for (var iModel = 0; iModel < models.Count; iModel++)
         {
             var mdl = models[iModel];
             var mat = materials.Count > mdl.MaterialIndex ? materials[mdl.MaterialIndex] : null;
 
-            var modelVertices = new TempleShader.Attributes[mdl.Positions.Length];
+            var modelVertices = new PbrGBufferShader.Attributes[mdl.Positions.Length];
 
             for (var iVertex = 0; iVertex < mdl.Positions.Length; iVertex++)
             {
@@ -77,43 +76,41 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
                 modelVertices[iVertex].Tex0CoordRef = mdl.TexCoords0[iVertex];
                 modelVertices[iVertex].Tex1CoordRef = mdl.TexCoords1[iVertex];
                 modelVertices[iVertex].NormalRef = mdl.Normals[iVertex];
-                modelVertices[iVertex].TangentRef = mdl.Tangents[iVertex];
+                modelVertices[iVertex].TangentRef = new Vector4(mdl.Tangents[iVertex], 1.0f);
             }
 
-            var vertexBuffer = _loader.CreateBuffer<TempleShader.Attributes>(BufferUsage.Vertex | BufferUsage.CopyDst,
+            var vertexBuffer = _loader.CreateBuffer<PbrGBufferShader.Attributes>(
+                BufferUsage.Vertex | BufferUsage.CopyDst,
                 modelVertices,
                 label == null ? null : $"{label}::VertexBuffer");
 
             var indexBuffer = _loader.CreateBuffer<u32>(BufferUsage.Index | BufferUsage.CopyDst, mdl.Indices,
                 label == null ? null : $"{label}::IndexBuffer");
 
-            TempleShader.Instance[] instances = [new()];
-            instances[0].SetTransform(Matrix4x4.Identity);
-            var pbrInstancedMeshBuffer = new PBRInstancedMeshBuffer(
-                new AjivaMesh<TempleShader.Attributes>(vertexBuffer, indexBuffer),
-                new TempleShader.ModelUniform
-                {
-                    Transform = mat4.Scale(0.01f), Tex0Color = new vec3(1, 1, 1), ModelId = (u32)iModel + 1,
-                    Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
-                }, instances
+            PbrGBufferShader.Instance[] instances = [new()];
+            instances[0].SetTransform(Matrix4x4.CreateScale(0.01f));
+            var pbrInstancedMeshBuffer = new PbrInstancedMeshBuffer(
+                new AjivaMesh<PbrGBufferShader.Attributes>(vertexBuffer, indexBuffer),
+                ModelHelper.MaterialConverter.ConvertToPbrUniform(mat, (u32)iModel + 1, (u32)mdl.MaterialIndex, false),
+                instances
             );
             if (mat is { DiffuseTexture: { } diffuseTexturePath })
-                pbrInstancedMeshBuffer.AlbedoTexture = _loader.AsyncTextureLoad(diffuseTexturePath);
+                pbrInstancedMeshBuffer.BaseColorTexture = _loader.AsyncTextureLoad(diffuseTexturePath);
             pbrInstancedMeshBuffer.NormalTexture = mat is { NormalTexture: { } normalTexturePath }
                 ? _loader.AsyncTextureLoad(normalTexturePath)
                 : _loader.DefaultNormal;
-            pbrInstancedMeshBuffer.EmissionTexture = mat is { EmissiveTexture: { } emissiveTexturePath }
+            pbrInstancedMeshBuffer.EmissiveTexture = mat is { EmissiveTexture: { } emissiveTexturePath }
                 ? _loader.AsyncTextureLoad(emissiveTexturePath)
                 : _loader.DefaultEmissive;
 
-            if (mat is { EmissiveCoefficient: var emissiveColor })
-                pbrInstancedMeshBuffer.ModelUniform.Tex1ColorRef = emissiveColor;
+            if (mat is { EmissiveCoefficient: { X: > 0, Y: > 0, Z: > 0 } emissiveColor })
+                pbrInstancedMeshBuffer.MaterialUniform.EmissiveFactorRef = emissiveColor;
 
             buffers[iModel] = pbrInstancedMeshBuffer;
         }
 
-        TempleShader.Instance[] cubes = [new()];
-        TempleShader.Instance[] floor = [new()];
+        PbrGBufferShader.Instance[] cubes = [new()];
+        PbrGBufferShader.Instance[] floor = [new()];
         floor[0].SetTransform(Matrix4x4.CreateScale(new Vector3(100, 0.1f, 100)) *
                               Matrix4x4.CreateFromYawPitchRoll(0, 0, 0) *
                               Matrix4x4.CreateTranslation(new Vector3(0, -2, 0)));
@@ -128,27 +125,19 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
                 new(tex1Scale, tex1Scale), new(1 - tex1Scale, tex1Scale), new(tex1Scale, 1 - tex1Scale),
                 new(1 - tex1Scale, 1 - tex1Scale)
             ];
-            return new TempleShader.Attributes
+            return new PbrGBufferShader.Attributes
             {
                 PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
                 Tex0CoordRef = tex0Coords[u],
                 Tex1CoordRef = tex1Coords[u],
                 NormalRef = normal,
-                TangentRef = tangent
+                TangentRef = new Vector4(tangent, 1)
             };
         });
-        buffers[^2] = new PBRInstancedMeshBuffer(generateCubeMesh, new TempleShader.ModelUniform
-            {
-                Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)models.Count + 1,
-                Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
-            }, floor
-        );
-        buffers[^1] = new PBRInstancedMeshBuffer(generateCubeMesh, new TempleShader.ModelUniform
-            {
-                Transform = mat4.Identity, Tex0Color = new vec3(1, 1, 1), ModelId = (u32)models.Count + 1,
-                Tex1Color = new vec3(1, 1, 1), NormalMapStrength = 1
-            }, cubes
-        );
+        buffers[^2] =
+            new PbrInstancedMeshBuffer(generateCubeMesh, ModelHelper.PbrMaterialExamples.PolishedChrome(), floor);
+        buffers[^1] =
+            new PbrInstancedMeshBuffer(generateCubeMesh, ModelHelper.PbrMaterialExamples.WornLeather(), cubes);
 
         buffers[2].InstanceInfos[0].HighlightColor = new vec4(1, 1, 0.5f, 0.5f);
         buffers[1].InstanceInfos[0].HighlightColor = new vec4(0.5f, 1, 1, 0.5f);
@@ -156,7 +145,7 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
         return buffers;
     }
 
-    public OITInstancedMeshBuffer[] CreateTransparentCubes()
+    public OitInstancedMeshBuffer[] CreateTransparentCubes()
     {
         var instances = new WboitAccumShader.Instance[10];
         for (var i = 0; i < 9; i++)
@@ -193,7 +182,7 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
 
         return
         [
-            new OITInstancedMeshBuffer(GenerateCubeMesh((u, rot, _, _) =>
+            new OitInstancedMeshBuffer(GenerateCubeMesh((u, rot, _, _) =>
                 {
                     ReadOnlySpan<Vector3D<f32>> positions =
                         [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];

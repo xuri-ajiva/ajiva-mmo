@@ -74,7 +74,7 @@ public class DeferredPipeline : IDisposable
                 Constants = [],
                 EntryPoint = shader.FragmentEntryPoint,
                 Module = module,
-                Targets = 
+                Targets =
                 [
                     new Safe.ColorTargetState(lightTextureFormat,
                         (
@@ -109,11 +109,11 @@ public class DeferredPipeline : IDisposable
             inAlbedo, inNormal, inDepth,
             lightsBufferSize: (u64)Marshal.SizeOf<LightData>() * lightCount);
 
-        var cmd = _api.Device.CreateCommandEncoder();
+        var cmd = _api.Device.CreateCommandEncoder("DeferredPipeline");
         var pass = cmd.BeginRenderPass([
             new Safe.RenderPassColorAttachment(view: output, null, loadOp: LoadOp.Load, storeOp: StoreOp.Store,
                 clearValue: default)
-        ], timestampWrites: null, depthStencilAttachment: null, occlusionQuerySet: null);
+        ], timestampWrites: null, depthStencilAttachment: null, occlusionQuerySet: null, label: "DeferredPipeline");
 
         pass.SetPipeline(_pipeline);
         pass.SetBindGroup(0, _textureBindGroup.Value, dynamicOffsets: null);

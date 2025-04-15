@@ -85,8 +85,8 @@ public class PixelSamplingPipeline : IDisposable
         _bindGroup = _shader.CreateBindGroup0(_api.Device, _bindGroupLayout, _inputBuffer, _resultStorageBuffer,
             depthTexture, objecTextureViewPtr);
 
-        var cmd = _api.Device.CreateCommandEncoder();
-        var pass = cmd.BeginComputePass(null);
+        var cmd = _api.Device.CreateCommandEncoder("PixelReaderCommandEncoder");
+        var pass = cmd.BeginComputePass(null, "PixelReaderPass");
         pass.SetPipeline(_computePipeline);
         pass.SetBindGroup(0, _bindGroup.Value, null);
         pass.DispatchWorkgroups(1, 1, 1);
@@ -114,7 +114,7 @@ public class PixelSamplingPipeline : IDisposable
             _resultStagingBuffer.Unmap();
             return result;
         }
-        catch 
+        catch
         {
             return null;
         }

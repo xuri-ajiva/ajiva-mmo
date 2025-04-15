@@ -1,8 +1,6 @@
-﻿using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Client.LayerSystem;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
@@ -11,7 +9,6 @@ using Client.Wgsl;
 using GlmSharp;
 using ImGuiNET;
 using NativeFileDialogExtendedSharp;
-using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
@@ -34,42 +31,53 @@ public class Instanced3dDeferredRenderer(
     private readonly Ecs _ecs = ecs;
 
 
-    private PBRInstancedMeshBuffer[] _meshBuffers = [];
-    private OITInstancedMeshBuffer[] _transparentMeshBuffers = [];
+    private PbrInstancedMeshBuffer[] _meshBuffers = [];
+    private OitInstancedMeshBuffer[] _transparentMeshBuffers = [];
     private ObjectScene _scene = scene;
 
     private GBuffer? _sceneGBuffer;
     private RenderTexture? _finalSceneTexture;
     private SceneLights _sceneLights = null!;
-    private AjivaBuffer<DeferredShader.LightData> _lightsBuffer;
+    private AjivaBuffer<PbrDeferredLightingShader.LightData> _lightsBuffer;
     private readonly ICamera _camera = camera;
 
     public ref bool Enabled => ref _enabled;
 
     private bool _isSceneViewHovered;
-    private DeferredPipeline? _deferredPipeline;
     private CompositorPipeline? _compositorPipeline;
-    private TemplePipeline? _templePipeline;
+    private PbrPipeline? _pbrPipeline;
     private PixelSamplingPipeline? _samplingPipeline;
     private WboitPipeline? _transparentPipeline;
-    private TempleShader.SceneUniform _sceneUniform;
+    private PbrGBufferShader.SceneUniform _sceneUniform;
     private bool _enabled = true;
     private ObjectSamplingShader.Result? _underCursor;
     private u32 _selectedObjectId;
     private u32 _selectedInstanceId;
+    private Vector2 _mousePosition;
 
     public void Attach()
     {
         _camera.Attach();
         _logger.LogDebug("Creating View Buffers");
 
-        // TextureFormat.Rgba8Unorm, TextureFormat.Rgb10A2Unorm, TextureFormat.Rgba32float, TextureFormat.Depth24Plus,
-        _sceneGBuffer = GBuffer.Create(_api.Device, TextureFormat.Rgba16float, TextureFormat.Rgba8Unorm,
-            TextureFormat.Rgb10A2Unorm, TextureFormat.Rgba32float, TextureFormat.RG32Uint, TextureFormat.Rgba32float,
-            TextureFormat.R32float, TextureFormat.Depth24Plus, label: "SceneGBuffer");
+        _sceneGBuffer = GBuffer.Create(
+            _api.Device,
+            // PBR Formats
+            baseColorAlphaFormat: TextureFormat.Bgra8Unorm, // Index 0
+            worldNormalFormat: TextureFormat.Rgb10A2Unorm, // Index 1
+            metallicRoughnessAoFormat: TextureFormat.Rgba8Unorm, // Index 2
+            emissiveFormat: TextureFormat.Rgba16float, // Index 3
+            // Other Formats
+            objectAndInstanceIdFormat: TextureFormat.RG32Uint, // Index 4
+            accumFormat: TextureFormat.Rgba32float, // Index 5
+            revealFormat: TextureFormat.R8Unorm, // Index 7
+            // Depth/Stencil
+            depthStencilFormat: TextureFormat.Depth32float, // Or Depth24PlusStencil8
+            label: "SceneGBuffer_PBR"
+        );
 
         _finalSceneTexture =
-            RenderTexture.Create(_api.Device, TextureFormat.Rgba8Unorm, label: "FinalSceneTexture");
+            RenderTexture.Create(_api.Device, _sceneGBuffer.BaseColorAlphaFormat, label: "FinalSceneTexture");
 
         _logger.LogDebug("Creating Model Buffers");
         //_meshBuffers = CreateModelBuffers("resources/Temple/TempleModel.glb", "Temple");
@@ -83,9 +91,9 @@ public class Instanced3dDeferredRenderer(
             using var emission = _loader.AsyncTextureLoad("resources/Temple/TempleStone_emm.png");
             foreach (var instancedMeshBuffer in _meshBuffers)
             {
-                instancedMeshBuffer.AlbedoTexture ??= albedo.Reference();
+                instancedMeshBuffer.BaseColorTexture ??= albedo.Reference();
                 instancedMeshBuffer.NormalTexture ??= normal.Reference();
-                instancedMeshBuffer.EmissionTexture ??= emission.Reference();
+                instancedMeshBuffer.EmissiveTexture ??= emission.Reference();
             }
 
             // for testing
@@ -99,15 +107,14 @@ public class Instanced3dDeferredRenderer(
         _lightsBuffer = _loader.CreateBuffer(BufferUsage.Storage | BufferUsage.CopyDst, _sceneLights.LightData,
             "LightBuffer");
 
-
         CreatePipelines();
 
         foreach (var instancedMeshBuffer in _meshBuffers)
         {
-            instancedMeshBuffer.ModelUniformBuffer = _loader.CreateBuffer<TempleShader.ModelUniform>(
+            instancedMeshBuffer.MaterialUniformBuffer = _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
                 BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer");
 
-            _templePipeline.RecreateBindGroup(instancedMeshBuffer);
+            _pbrPipeline.RecreateMaterialBindGroup(instancedMeshBuffer);
         }
 
         foreach (var instancedMeshBuffer in _transparentMeshBuffers)
@@ -121,32 +128,26 @@ public class Instanced3dDeferredRenderer(
         _logger.LogDebug("Done");
     }
 
-    [MemberNotNull(nameof(_deferredPipeline), nameof(_compositorPipeline), nameof(_templePipeline),
-        nameof(_samplingPipeline), nameof(_transparentPipeline))]
+    [MemberNotNull(nameof(_compositorPipeline), nameof(_pbrPipeline), nameof(_samplingPipeline),
+        nameof(_transparentPipeline))]
     private void CreatePipelines()
     {
         var wboitAccum = _shaderManager.GetCurrentShader<IWboitAccumShader>();
-        var deferred = _shaderManager.GetCurrentShader<IDeferredShader>();
         var compositor = _shaderManager.GetCurrentShader<ICompositorShader>();
-        var temple = _shaderManager.GetCurrentShader<ITempleShader>();
+        var pbrDeferred = _shaderManager.GetCurrentShader<IPbrDeferredLightingShader>();
+        var pbrGBuffer = _shaderManager.GetCurrentShader<IPbrGBufferShader>();
         var objectSamplingShader = _shaderManager.GetCurrentShader<IObjectSamplingShader>();
 
-        if (_deferredPipeline?.IsUpToDate(deferred) != true)
+        if (_pbrPipeline?.IsUpToDate(pbrGBuffer, pbrDeferred) != true)
         {
-            _deferredPipeline?.Dispose();
-            _deferredPipeline = DeferredPipeline.Create(_api, deferred, _sceneGBuffer!.LightChannelFormat);
+            _pbrPipeline?.Dispose();
+            _pbrPipeline = PbrPipeline.Create(_api, _loader, pbrGBuffer, pbrDeferred, _sceneGBuffer!);
         }
 
         if (_compositorPipeline?.IsUpToDate(compositor) != true)
         {
             _compositorPipeline?.Dispose();
-            _compositorPipeline = CompositorPipeline.Create(_api, compositor, _sceneGBuffer!.AlbedoChannelFormat);
-        }
-
-        if (_templePipeline?.IsUpToDate(temple) != true)
-        {
-            _templePipeline?.Dispose();
-            _templePipeline = TemplePipeline.Create(_api, temple, _sceneGBuffer!);
+            _compositorPipeline = CompositorPipeline.Create(_api, compositor, _sceneGBuffer!.BaseColorAlphaFormat);
         }
 
         if (_samplingPipeline?.IsUpToDate(objectSamplingShader) != true)
@@ -166,28 +167,20 @@ public class Instanced3dDeferredRenderer(
     public void Update(UpdateInfo info)
     {
         _sceneLights.Animate(info.DeltaTime);
-        if (_samplingPipeline is not null)
-        {
-            if (_underCursor is { } pos && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-            {
-                _selectedObjectId = pos.ObjectId;
-                _selectedInstanceId = pos.InstanceId;
-            }
-        }
     }
 
     public void Render(UpdateInfo info, RenderTarget target, Extent3D sceneViewport)
     {
         var queue = target.QueuePtr;
         _camera.AspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
-        _sceneUniform = new TempleShader.SceneUniform
+        _sceneUniform = new PbrGBufferShader.SceneUniform
         {
             ViewRef = _camera.ViewMatrix,
             ProjectionRef = _camera.ProjectionMatrix,
             CameraPositionRef = _camera.Position,
             Time = info.TotalTime
         };
-        _templePipeline!.WriteUniformBuffer(queue, _sceneUniform);
+        _pbrPipeline!.WriteGBufferSceneUniforms(queue, _sceneUniform);
         _transparentPipeline!.WriteUniformBuffer(queue, new WboitAccumShader.SceneUniform
         {
             ViewProjectionRef = _sceneUniform.ViewRef * _sceneUniform.ProjectionRef,
@@ -197,7 +190,7 @@ public class Instanced3dDeferredRenderer(
 
         var players = _ecs.GetPlayers().ToArray();
         if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
-            _meshBuffers[^1].InstanceInfos = new TempleShader.Instance[players.Length + 1];
+            _meshBuffers[^1].InstanceInfos = new PbrGBufferShader.Instance[players.Length + 1];
 
         ref var instanceInfo = ref _meshBuffers[^1].InstanceInfos;
         instanceInfo[0].SetTransform(Matrix4x4.CreateTranslation(_camera.Position));
@@ -210,7 +203,7 @@ public class Instanced3dDeferredRenderer(
         foreach (var buffer in _meshBuffers)
         {
             WriteBuffer(queue, buffer);
-            _templePipeline.RecreateBindGroup(buffer);
+            _pbrPipeline.RecreateMaterialBindGroup(buffer);
         }
 
         foreach (var buffer in _transparentMeshBuffers)
@@ -221,22 +214,14 @@ public class Instanced3dDeferredRenderer(
 
         _lightsBuffer.QueuedWrite(_sceneLights.LightData, queue);
 
-        if (_templePipeline.BeginRenderPass() is { } pass)
+        if (_pbrPipeline.BeginGBufferPass() is { } pass)
         {
-            foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in _meshBuffers)
+            foreach (var meshBuffer in _meshBuffers)
             {
-                pass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.OffsetBytes, vertexBuffer.Size);
-                pass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.OffsetBytes,
-                    instanceBuffer.Size);
-
-                pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.OffsetBytes, indexBuffer.Size);
-
-                pass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
-
-                pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
+                _pbrPipeline.DrawMesh(pass, meshBuffer);
             }
 
-            queue.Submit(_templePipeline.EndRenderPass(pass));
+            queue.Submit(_pbrPipeline.EndGBufferPass(pass));
         }
 
         if (_transparentPipeline.BeginRenderPass(sceneViewport) is { } transparentPass)
@@ -263,7 +248,7 @@ public class Instanced3dDeferredRenderer(
     private void WriteBuffer<T1, T2, T3>(QueuePtr queue,
         IInstancedMeshBuffer<T1, T2, T3> buffer) where T1 : unmanaged where T2 : unmanaged where T3 : unmanaged
     {
-        buffer.ModelUniformBuffer.QueuedWrite(new ReadOnlySpan<T3>(ref buffer.ModelUniform),
+        buffer.UniformBuffer.QueuedWrite(new ReadOnlySpan<T3>(ref buffer.MaterialUniform),
             queue);
 
         var data = new ReadOnlySpan<T2>(buffer.InstanceInfos);
@@ -289,6 +274,14 @@ public class Instanced3dDeferredRenderer(
         if (_isSceneViewHovered)
         {
             _camera.Update(info);
+            if (_underCursor is { } pos && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+            {
+                _selectedObjectId = pos.ObjectId;
+                _selectedInstanceId = pos.InstanceId;
+            }
+
+            _mousePosition = ImGui.GetMousePos() -
+                             (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
@@ -317,25 +310,41 @@ public class Instanced3dDeferredRenderer(
         _api.Poll();
         _underCursor = _samplingPipeline.ReadResult(mappingTask);
 
-        if (_sceneGBuffer.TryGetTargets(out var positions, out var albedo, out var normal, out var emission,
-                out var objectAndInstanceId, out var accum, out var reveal, out var depth) &&
-            _finalSceneTexture.TryGetTargets(out var colorOutput))
+
+        if (_sceneGBuffer.TryGetCompositorOutputView(out var emissive, out var objectAndInstanceId, out var accum,
+                out var reveal, out var depth) && _finalSceneTexture.TryGetTargets(out var colorOutput))
         {
             var queue = target.QueuePtr;
             Render(info, target, new Extent3D(width, height, 1));
 
-            var mousePosition = ImGui.GetMousePos() -
-                                (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
-            _samplingPipeline.DispatchPixelRead(queue, new uvec2((u32)mousePosition.X, (u32)mousePosition.Y),
-                depth.DepthOnlyView, objectAndInstanceId.View);
+            _samplingPipeline.DispatchPixelRead(queue, new uvec2((u32)Math.Clamp(_mousePosition.X, 0, width - 1),
+                (u32)Math.Clamp(_mousePosition.Y, 0, height - 1)), depth.DepthOnlyView, objectAndInstanceId.View);
 
-            if (!Matrix4x4.Invert(_camera.ViewProjectionMatrix, out var invViewProjection))
-                throw new InvalidOperationException("ViewProjection Matrix could not be inverted");
+            if (!Matrix4x4.Invert(_camera.ProjectionMatrix, out var invViewProjection))
+            {
+                _logger.LogError("Failed to invert projection matrix");
+                return;
+            }
 
-            _deferredPipeline.Apply(queue, albedo.View, normal.View, depth.DepthOnlyView, emission.View,
-                invViewProjection, _lightsBuffer.Buffer, _sceneLights.LightCount);
+            if (!Matrix4x4.Invert(_camera.ViewMatrix, out var invView))
+            {
+                _logger.LogError("Failed to invert view matrix");
+                return;
+            }
 
-            _compositorPipeline.Apply(queue, emission.View, depth.DepthOnlyView, colorOutput.View, accum.View,
+            _pbrPipeline.WriteDeferredSceneUniforms(queue, new PbrDeferredLightingShader.SceneUniforms
+            {
+                InverseProjectionRef = invViewProjection,
+                InverseViewRef = invView,
+                CameraPositionWorldRef = camera.Position,
+                LightCount = _sceneLights.LightCount,
+                AmbientColorRef = new Vector3(0.1f, 0.1f, 0.1f),
+                IblIntensity = 1f,
+            });
+
+            _pbrPipeline.ApplyDeferredLighting(queue, _lightsBuffer.Buffer, _sceneLights.LightCount);
+
+            _compositorPipeline.Apply(queue, emissive.View, depth.DepthOnlyView, colorOutput.View, accum.View,
                 reveal.View);
 
             if (prevWidth != width && prevHeight != height && hasPrev)
@@ -379,7 +388,7 @@ public class Instanced3dDeferredRenderer(
                 var y = ImGui.GetCursorPosY();
                 ImGui.Text("Textures");
                 var imageButtonSize = ImGui.GetContentRegionAvail().X;
-                if (selectedBuffer.AlbedoTexture is { } texture)
+                if (selectedBuffer.BaseColorTexture is { } texture)
                 {
                     if (ImGui.ImageButton("ChooseTextureA", texture.View.GetIntPtr(),
                             new Vector2(imageButtonSize)))
@@ -394,8 +403,8 @@ public class Instanced3dDeferredRenderer(
 
                             using var clone = texture.Clone("TMP_CLONE_FOR_UI");
                             _loader.AsyncTextureLoad(pickResult.Path, clone);
-                            _loader.DisposeLater(selectedBuffer.AlbedoTexture);
-                            selectedBuffer.AlbedoTexture = clone;
+                            _loader.DisposeLater(selectedBuffer.BaseColorTexture);
+                            selectedBuffer.BaseColorTexture = clone;
                         });
                     }
                 }
@@ -421,7 +430,7 @@ public class Instanced3dDeferredRenderer(
                     }
                 }
 
-                if (selectedBuffer.EmissionTexture is { } emission)
+                if (selectedBuffer.EmissiveTexture is { } emission)
                 {
                     if (ImGui.ImageButton("ChooseTextureE", emission.View.GetIntPtr(),
                             new Vector2(imageButtonSize)))
@@ -436,25 +445,14 @@ public class Instanced3dDeferredRenderer(
 
                             using var clone = emission.Clone("TMP_CLONE_FOR_UI");
                             _loader.AsyncTextureLoad(pickResult.Path, clone);
-                            _loader.DisposeLater(selectedBuffer.EmissionTexture);
-                            selectedBuffer.EmissionTexture = clone;
+                            _loader.DisposeLater(selectedBuffer.EmissiveTexture);
+                            selectedBuffer.EmissiveTexture = clone;
                         });
                     }
                 }
 
-                ref var uniform = ref selectedBuffer.ModelUniform;
-                ImGui.Text($"Model ID: {uniform.ModelId}");
-                ImGui.Text($"Tex0 Color");
-                ImGui.DragFloat3($"##Tex0Color", ref uniform.Tex0ColorRef, 0.1f);
-                ImGui.Text($"Tex1 Color");
-                ImGui.DragFloat3($"##Tex1Color", ref uniform.Tex1ColorRef, 0.1f);
-                ImGui.Text($"NormalMap Strength");
-                ImGui.DragFloat($"##NormalStrength", ref uniform.NormalMapStrength, 0.1f);
-                ImGui.Text($"Transform");
-                ImGui.DragFloat4($"##Transform0", ref Unsafe.As<f32, Vector4>(ref uniform.Transform.m00), 0.1f);
-                ImGui.DragFloat4($"##Transform1", ref Unsafe.As<f32, Vector4>(ref uniform.Transform.m10), 0.1f);
-                ImGui.DragFloat4($"##Transform2", ref Unsafe.As<f32, Vector4>(ref uniform.Transform.m20), 0.1f);
-                ImGui.DragFloat4($"##Transform3", ref Unsafe.As<f32, Vector4>(ref uniform.Transform.m30), 0.1f);
+                ref var uniform = ref selectedBuffer.MaterialUniform;
+                ImGui.Text(uniform.ToString());
 
                 if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
                 {
@@ -527,8 +525,7 @@ public class Instanced3dDeferredRenderer(
         }
 
         _compositorPipeline?.Dispose();
-        _deferredPipeline?.Dispose();
-        _templePipeline?.Dispose();
+        _pbrPipeline?.Dispose();
 
         _lightsBuffer.Buffer.Destroy();
 
@@ -539,7 +536,7 @@ public class Instanced3dDeferredRenderer(
         _meshBuffers = [];
         _transparentMeshBuffers = [];
         _compositorPipeline = null;
-        _deferredPipeline = null;
+        _pbrPipeline = null;
         _lightsBuffer = null!;
     }
 }

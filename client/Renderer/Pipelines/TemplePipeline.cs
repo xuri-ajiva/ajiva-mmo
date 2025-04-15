@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿/*
+using System.Runtime.CompilerServices;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
@@ -192,7 +193,7 @@ public class TemplePipeline : IDisposable
             ],
             null,
             new RenderPassDepthStencilAttachment(depthStencil.View, LoadOp.Clear, StoreOp.Store, 1f, false,
-                /*stencil*/ LoadOp.Clear, StoreOp.Discard, 0, true), null);
+                /*stencil#1# LoadOp.Clear, StoreOp.Discard, 0, true), null);
 
         pass.SetPipeline(_modelPipeline);
         pass.SetBindGroup(0, _sceneBindGroup, ReadOnlySpan<u32>.Empty);
@@ -218,3 +219,4 @@ public class TemplePipeline : IDisposable
 
     public bool IsUpToDate(ITempleShader temple) => _shader == temple;
 }
+*/

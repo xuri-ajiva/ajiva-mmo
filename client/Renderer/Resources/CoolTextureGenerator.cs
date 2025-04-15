@@ -248,4 +248,22 @@ internal static class CoolTextureGenerator
             }
         }
     }
+
+    public static void GenerateMetallicRoughnessAoMap(Span<Rgba32> data, i32 width, i32 height)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(width), "Width and height must be positive.");
+        }
+
+        // flat metallic roughness map
+        var metallicRoughnessColor = new Rgba32(0.5f, 0.5f, 0.5f, 1.0f); // Flat metallic and roughness
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                data[y * width + x] = metallicRoughnessColor;
+            }
+        }
+    }
 }

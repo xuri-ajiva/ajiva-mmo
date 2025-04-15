@@ -126,10 +126,7 @@ public class ShaderReloadManager : IHostedService, IShaderManager
             MetadataReference.CreateFromFile(typeof(DynamicAttribute).Assembly.Location));
 
         _logger.LogInformation("Loaded {Count} assemblies", _references.Count);
-
-        Task.Run(() => _shaderChannel.Writer.WriteAsync("./Wgsl/DeferredShader.wgsl.cs", cancellationToken),
-            cancellationToken);
-
+        
         return _shaderTask.IsCompleted ? _shaderTask : Task.CompletedTask;
     }
 

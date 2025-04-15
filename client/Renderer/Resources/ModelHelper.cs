@@ -1,8 +1,7 @@
 ﻿using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using Client.Wgsl;
+using GlmSharp;
 using Silk.NET.Assimp;
 
 namespace Client.Renderer.Resources;
@@ -322,6 +321,301 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
             var y = BitConverter.ToSingle(span[4..8]);
             var z = BitConverter.ToSingle(span[8..12]);
             return new Vector3(x, y, z);
+        }
+    }
+
+    public static class MaterialConverter
+    {
+        // Texture Flags Constants (match shader)
+        private const u32 TEX_BASECOLOR = 1u;
+        private const u32 TEX_NORMAL = 2u;
+
+        private const u32
+            TEX_MRA = 4u; // Assuming AmbientTexture (map_Ka) OR a potential combined MRA texture maps here
+
+        private const u32 TEX_EMISSIVE = 8u;
+        private const u32 TEX_OCCLUSION = 16u; // Use this if AO (map_Ka) is treated separately from MRA
+
+        // Alpha Mode Constants (match shader)
+        private const u32 ALPHA_OPAQUE = 0u;
+        private const u32 ALPHA_MASK = 1u;
+        // Note: Alpha Blend (2u) would require a different pipeline/pass
+
+        // Roughness clamping defaults
+        private const f32 MIN_ROUGHNESS = 0.04f; // Min roughness to avoid pure mirrors/division issues
+        private const f32 MAX_ROUGHNESS = 1.0f;
+
+        public static PbrGBufferShader.PbrMaterialUniform ConvertToPbrUniform(
+            Material? sourceMaterial,
+            u32 objectId = 0u, // Pass object ID if needed
+            u32 materialId = 0u, // Pass material ID if needed
+            bool assumeMetallicRoughnessTexture = false, // Set true if map_Ks/map_Ns hint at a packed MRA texture
+            string? metallicRoughnessAOTexturePath = null // Explicit path if known
+        )
+        {
+            if (sourceMaterial == null)
+            {
+                // Return a default fallback material uniform
+                Console.WriteLine(
+                    "Warning: Null source material provided to converter. Returning default PBR uniform.");
+                return new PbrGBufferShader.PbrMaterialUniform(
+                    baseColorFactor: new vec4(0.8f, 0.8f, 0.8f, 1.0f), // Default grey
+                    metallicFactor: 0.0f,
+                    roughnessFactor: 0.5f,
+                    occlusionStrength: 1.0f,
+                    objectId: objectId,
+                    materialId: materialId,
+                    emissiveFactor: vec3.Zero,
+                    normalScale: 1.0f,
+                    textureFlags: 0u,
+                    alphaCutoff: 0.5f,
+                    alphaMode: ALPHA_OPAQUE
+                );
+            }
+
+            var pbr = new PbrGBufferShader.PbrMaterialUniform();
+
+            // --- Assign IDs ---
+            pbr.ObjectId = objectId;
+            pbr.MaterialId = materialId;
+
+            // --- Setup Defaults ---
+            pbr.MetallicFactor = 0.0f; // Default to dielectric
+            pbr.RoughnessFactor = 0.5f; // Default to moderately rough
+            pbr.OcclusionStrength = 1.0f; // Default to no occlusion modification
+            pbr.NormalScale = 1.0f; // Default normal map strength
+            pbr.AlphaCutoff = 0.01f; // Default cutoff for masking
+            pbr.TextureFlags = 0u; // Start with no texture flags
+
+            // --- Base Color & Alpha ---
+            // Start with diffuse color and material opacity
+            pbr.BaseColorFactorRef = new Vector4(sourceMaterial.DiffuseReflectivity, sourceMaterial.Transparency);
+
+            // --- Metallic Heuristic ---
+            // Simple heuristic: Illum model 3 suggests metallic reflection workflow
+            // A more complex one could check Ks brightness vs Kd darkness, but it's unreliable.
+            var likelyMetal = sourceMaterial.IlluminationModel == 3;
+
+            if (likelyMetal &&
+                sourceMaterial.SpecularReflectivity.LengthSquared() > 0.01f) // Check if Ks is non-trivial
+            {
+                pbr.MetallicFactor = 1.0f;
+                // For metals, baseColor *is* the specular color (F0)
+                pbr.BaseColorFactorRef = new Vector4(sourceMaterial.SpecularReflectivity, sourceMaterial.Transparency);
+                // We generally ignore map_Ks in simple metallic conversions, assuming baseColor texture is used instead.
+                // If map_Ks is meant to be the BaseColor map for metals, override here:
+                // if (!string.IsNullOrEmpty(sourceMaterial.SpecularTexture)) {
+                //     pbr.BaseColorTexturePath = sourceMaterial.SpecularTexture; // Requires PbrMaterialUniform to hold paths or texture handles
+                // }
+            }
+            else
+            {
+                pbr.MetallicFactor = 0.0f;
+                // BaseColorFactor remains based on Kd (already set)
+            }
+
+            // --- Roughness Conversion ---
+            // Convert Ns (Shininess) to Roughness. High Ns = low roughness.
+            if (sourceMaterial.SpecularExponent > 0.0f)
+            {
+                pbr.RoughnessFactor = MathF.Sqrt(2.0f / (sourceMaterial.SpecularExponent + 2.0f));
+            }
+            else
+            {
+                pbr.RoughnessFactor = MAX_ROUGHNESS; // Default to max roughness if Ns is invalid
+            }
+
+            // Clamp roughness to a sensible range
+            pbr.RoughnessFactor = glm.Clamp(pbr.RoughnessFactor, MIN_ROUGHNESS, MAX_ROUGHNESS);
+
+            // --- Emissive ---
+            pbr.EmissiveFactorRef = sourceMaterial.EmissiveCoefficient;
+
+            // --- Texture Flags & Paths ---
+            // Note: PbrMaterialUniform only stores flags. The actual texture loading/binding
+            // happens elsewhere using the sourceMaterial's texture path strings.
+
+            if (!string.IsNullOrEmpty(sourceMaterial.DiffuseTexture))
+            {
+                pbr.TextureFlags |= TEX_BASECOLOR;
+                // If this texture contains alpha, it might influence alpha mode, but we base mode on Opacity/map_d first.
+            }
+
+            if (!string.IsNullOrEmpty(sourceMaterial.NormalTexture))
+            {
+                pbr.TextureFlags |= TEX_NORMAL;
+            }
+            else if (!string.IsNullOrEmpty(sourceMaterial.BumpMapTexture))
+            {
+                // Has a bump map, but needs conversion to normal map offline.
+                // We don't set the TEX_NORMAL flag here, but could set a custom flag
+                // or log a warning. The pipeline needs to know not to bind a normal map yet.
+                Console.WriteLine(
+                    $"Warning: Material '{sourceMaterial.Name}' uses bump map '{sourceMaterial.BumpMapTexture}'. Convert to Normal Map.");
+                // Option: Provide the path if PbrMaterialUniform stored it, assuming offline conversion
+                // pbr.NormalTexturePath = "CONVERTED_" + sourceMaterial.BumpMapTexture;
+            }
+
+            if (!string.IsNullOrEmpty(sourceMaterial.EmissiveTexture))
+            {
+                pbr.TextureFlags |= TEX_EMISSIVE;
+            }
+
+            // Handle AO / MRA Texture(s)
+            var hasExplicitMRATexture = !string.IsNullOrEmpty(metallicRoughnessAOTexturePath);
+            if (hasExplicitMRATexture)
+            {
+                pbr.TextureFlags |= TEX_MRA;
+                // If MRA includes AO, potentially don't set TEX_OCCLUSION separately
+                // pbr.TextureFlags |= TEX_OCCLUSION; // Or maybe MRA implies AO? Depends on shader.
+                // Here we might assume MRA map provides Metallic, Roughness, AND AO.
+            }
+            else if (assumeMetallicRoughnessTexture &&
+                     !string.IsNullOrEmpty(sourceMaterial.SpecularTexture) /* or SpecularExponent map */)
+            {
+                // Heuristic: If we're told to assume packing, and map_Ks/map_Ns exist, treat them as one MRA map.
+                // This is a big assumption! The actual packing order (MRA/ARM/etc.) isn't known.
+                Console.WriteLine(
+                    $"Warning: Assuming packed Metallic/Roughness(/AO?) texture for Material '{sourceMaterial.Name}' based on map_Ks/map_Ns presence.");
+                pbr.TextureFlags |= TEX_MRA;
+                // If map_Ka also exists, decide if it's separate or part of the pack. Let's assume separate for now if MRA is just inferred.
+                if (!string.IsNullOrEmpty(sourceMaterial.AmbientTexture))
+                {
+                    pbr.TextureFlags |= TEX_OCCLUSION; // Treat map_Ka as separate AO
+                    pbr.OcclusionStrength = 1.0f; // Enable usage of the AO texture
+                }
+            }
+            else
+            {
+                // No explicit or assumed MRA map. Check for separate AO map (map_Ka).
+                if (!string.IsNullOrEmpty(sourceMaterial.AmbientTexture))
+                {
+                    Console.WriteLine(
+                        $"Info: Using AmbientTexture (map_Ka) as Occlusion texture for Material '{sourceMaterial.Name}'.");
+                    pbr.TextureFlags |= TEX_OCCLUSION; // Use separate AO flag
+                    pbr.OcclusionStrength = 1.0f; // Enable usage of the AO texture
+                    // Our shader setup uses MRA texture slot, need to ensure AO sampling works correctly
+                    // Might require binding map_Ka to the MRA slot and shader logic to sample only B channel?
+                }
+            }
+
+            // --- Alpha Mode ---
+            // Determine alpha mode based on Opacity and map_d hint.
+            // Opaque GBuffer pass handles Opaque and Alpha Mask. Blend requires separate pass.
+            var hasAlphaMaskTexture = !string.IsNullOrEmpty(sourceMaterial.StencilTexture);
+            if (sourceMaterial.Opacity < (1.0f - 1e-5f) || hasAlphaMaskTexture)
+            {
+                pbr.AlphaMode = ALPHA_MASK;
+                // BaseColorFactor alpha component already set from Opacity
+            }
+            else
+            {
+                pbr.AlphaMode = ALPHA_OPAQUE;
+                // Ensure alpha is 1.0 for fully opaque materials if needed by downstream compositing
+                // pbr.BaseColorFactor.a = 1.0f; // Optional override
+            }
+
+            // Ignored source properties:
+            // sourceMaterial.AmbientReflectivity (Ka color) - AO texture used instead
+            // sourceMaterial.TransmissionFilter (Tf)
+            // sourceMaterial.Sharpness
+            // sourceMaterial.OpticalDensity (Ni)
+            // sourceMaterial.SpecularTexture (map_Ks) - Usually ignored
+            // sourceMaterial.DisplacementMapTexture
+
+            return pbr;
+        }
+    }
+
+    public class PbrMaterialExamples
+    {
+        // Texture Flags Constants (match shader)
+        private const u32 TEX_BASECOLOR = 1u;
+        private const u32 TEX_NORMAL = 2u;
+        private const u32 TEX_MRA = 4u; // MetallicRoughnessAO
+        private const u32 TEX_EMISSIVE = 8u;
+        private const u32 TEX_OCCLUSION = 16u; // Use this if AO is separate
+
+        // Alpha Mode Constants (match shader)
+        private const u32 ALPHA_OPAQUE = 0u;
+        private const u32 ALPHA_MASK = 1u;
+
+        public static PbrGBufferShader.PbrMaterialUniform PolishedChrome()
+        {
+            return new PbrGBufferShader.PbrMaterialUniform(
+                // BaseColorFactor: For metals, this is the specular reflectance F0.
+                // Chrome is highly reflective white/grey. Alpha is 1.0 (opaque).
+                baseColorFactor: new vec4(0.95f, 0.95f, 0.95f, 1.0f),
+
+                // MetallicFactor: Chrome is a metal.
+                metallicFactor: 1.0f,
+
+                // RoughnessFactor: "Polished" implies very low roughness for sharp reflections.
+                // Avoid 0.0 exactly, use a small value.
+                roughnessFactor: 0.05f,
+
+                // OcclusionStrength: Assume maybe slight occlusion from a texture (e.g., dust).
+                occlusionStrength: 1.0f,
+
+                // IDs: Example identifiers.
+                objectId: 10u,
+                materialId: 1u,
+
+                // EmissiveFactor: Not emissive.
+                emissiveFactor: new vec3(0.0f),
+
+                // NormalScale: Assume no normal map, or a very subtle one.
+                normalScale: 1.0f,
+
+                // TextureFlags: Assume textures for MRA (Metallic/Roughness/AO variation).
+                // No basecolor texture needed if uniform color. No normal map assumed here.
+                textureFlags: TEX_MRA, // 4u
+
+                // AlphaCutoff: Not relevant for opaque mode.
+                alphaCutoff: 0.5f,
+
+                // AlphaMode: Fully opaque.
+                alphaMode: ALPHA_OPAQUE // 0u
+            );
+        }
+
+        public static PbrGBufferShader.PbrMaterialUniform WornLeather()
+        {
+            return new PbrGBufferShader.PbrMaterialUniform(
+                // BaseColorFactor: For dielectrics, this is diffuse color.
+                // A typical brown leather color. Alpha 1.0 (opaque).
+                // This factor can tint the base color texture.
+                baseColorFactor: new vec4(0.4f, 0.2f, 0.1f, 1.0f),
+
+                // MetallicFactor: Leather is non-metallic (dielectric).
+                metallicFactor: 0.0f,
+
+                // RoughnessFactor: Leather is quite rough, especially if worn.
+                roughnessFactor: 0.75f,
+
+                // OcclusionStrength: Enable occlusion from texture.
+                occlusionStrength: 1.0f,
+
+                // IDs: Example identifiers.
+                objectId: 11u,
+                materialId: 2u,
+
+                // EmissiveFactor: Not emissive.
+                emissiveFactor: new vec3(0.0f),
+
+                // NormalScale: Leather has significant surface detail, use normal map.
+                normalScale: 1.0f,
+
+                // TextureFlags: Assume textures for BaseColor (pattern/color variation),
+                // Normal Map (surface bumps/grain), and MRA map (roughness/AO variation).
+                textureFlags: TEX_BASECOLOR | TEX_NORMAL | TEX_MRA, // 1u | 2u | 4u = 7u
+
+                // AlphaCutoff: Not relevant for opaque mode.
+                alphaCutoff: 0.5f,
+
+                // AlphaMode: Fully opaque.
+                alphaMode: ALPHA_OPAQUE // 0u
+            );
         }
     }
 }

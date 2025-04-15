@@ -1,9 +1,7 @@
 ﻿using System.Numerics;
 using Client.LayerSystem;
-using GlmSharp;
 using ImGuiNET;
 using Silk.NET.Input;
-using Silk.NET.Maths;
 
 namespace Client.Renderer.PbrRenderer;
 

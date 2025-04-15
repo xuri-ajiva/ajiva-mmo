@@ -1,6 +1,5 @@
 ﻿using System.Buffers;
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Client.Renderer.PbrRenderer;
 using Silk.NET.WebGPU;
@@ -21,6 +20,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     internal AjivaTexture DefaultTexture = null!;
     internal AjivaTexture DefaultNormal = null!;
     internal AjivaTexture DefaultRoughness = null!;
+    internal AjivaTexture DefaultMetallicRoughnessAo = null!;
     internal AjivaTexture DefaultEmissive = null!;
 
     private Task InitDefaultResources()
@@ -55,17 +55,26 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         emissiveTex.WriteTexture<Rgba32>(data, extent3D);
         var defaultEmissive = AjivaTexture.FromData(emissiveTex);
 
+        var metallicRoughnessTex = CreateTexture(TextureUsage.TextureBinding, "DefaultMetallicRoughnessAO", 1,
+            extent3D,
+            TextureFormat.Rgba8Unorm, TextureAspect.All);
+        CoolTextureGenerator.GenerateMetallicRoughnessAoMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        metallicRoughnessTex.WriteTexture<Rgba32>(data, extent3D);
+        var defaultMetallicRoughnessAo = AjivaTexture.FromData(metallicRoughnessTex);
+
         _internal =
         [
             defaultTexture,
             defaultNormal,
             defaultRoughness,
-            defaultEmissive
+            defaultMetallicRoughnessAo,
+            defaultEmissive,
         ];
         DefaultTexture = defaultTexture.Clone("defensive_copy");
         DefaultNormal = defaultNormal.Clone("defensive_copy");
         DefaultRoughness = defaultRoughness.Clone("defensive_copy");
         DefaultEmissive = defaultEmissive.Clone("defensive_copy");
+        DefaultMetallicRoughnessAo = defaultMetallicRoughnessAo.Clone("defensive_copy");
 
         return Task.CompletedTask;
     }

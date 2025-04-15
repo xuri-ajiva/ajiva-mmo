@@ -2,7 +2,6 @@
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
-using Silk.NET.Core;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 using ColorTargetState = Silk.NET.WebGPU.Safe.ColorTargetState;
@@ -122,7 +121,7 @@ public class WboitPipeline(
                         ),
                         // Target 2: Object and Instance ID Buffer (read only)
                         new ColorTargetState(
-                            gbuffer.ObjectAndInstanceIdChannelFormat,
+                            gbuffer.ObjectAndInstanceIdFormat,
                             blendState: null,
                             writeMask: ColorWriteMask.None
                         )
@@ -137,7 +136,7 @@ public class WboitPipeline(
             shader, gbuffer);
     }
 
-    public void RecreateBindGroup(OITInstancedMeshBuffer buffer)
+    public void RecreateBindGroup(OitInstancedMeshBuffer buffer)
     {
         var targetHash = new HashCode();
         targetHash.Add(modelBindGroupLayout);
@@ -165,7 +164,7 @@ public class WboitPipeline(
 
     public RenderPassEncoderPtr? BeginRenderPass(Extent3D sceneViewport)
     {
-        if (!gbuffer.TryGetAlphaBlend(out var objectAndInstanceId, out var accum, out var reveal, out var depth))
+        if (!gbuffer.TryGetAlphaBlendViews(out var objectAndInstanceId, out var accum, out var reveal, out var depth))
             return null;
 
         _cmd = _api.Device.CreateCommandEncoder();

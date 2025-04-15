@@ -73,7 +73,8 @@ namespace Client.Renderer.Pipelines
                         new Safe.ColorTargetState(outputTextureFormat,
                             blendState: null, ColorWriteMask.All)
                     ]
-                }
+                },
+                label: "CompositorPipeline"
             );
 
             module.Release();
@@ -96,11 +97,11 @@ namespace Client.Renderer.Pipelines
                 _shader.CreateBindGroup0(_api.Device, _textureBindGroupLayout, _uniformBuffer, inColor, inDepth,
                     inAccum, inReveal);
 
-            var cmd = _api.Device.CreateCommandEncoder();
+            var cmd = _api.Device.CreateCommandEncoder("CompositorPass");
             var pass = cmd.BeginRenderPass([
                 new Safe.RenderPassColorAttachment(view: output, null, loadOp: LoadOp.Load, storeOp: StoreOp.Store,
                     clearValue: default)
-            ], timestampWrites: null, depthStencilAttachment: null, occlusionQuerySet: null);
+            ], timestampWrites: null, depthStencilAttachment: null, occlusionQuerySet: null, label: "CompositorPass");
 
             pass.SetPipeline(_pipeline);
             pass.SetBindGroup(0, _textureBindGroup.Value, dynamicOffsets: null);

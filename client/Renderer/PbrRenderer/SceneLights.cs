@@ -1,7 +1,8 @@
 ﻿using GlmSharp;
-using static Client.Wgsl.DeferredShader;
 
 namespace Client.Renderer.PbrRenderer;
+
+using static Client.Wgsl.PbrDeferredLightingShader;
 
 internal class SceneLights
 {
@@ -10,8 +11,7 @@ internal class SceneLights
 
     private f32 _time;
 
-    private readonly LightData[] _lightData =
-        new LightData[8];
+    private readonly LightData[] _lightData = new LightData[10];
 
     public SceneLights() => Update();
 
@@ -23,8 +23,8 @@ internal class SceneLights
         var d = -MathF.Cos(_time) * 0.5f + 0.5f;
 
         var i = 0;
-
         const f32 circleRadius = 4;
+        /*
         var (sin, cos) = MathF.SinCos(_time + MathF.Tau * 0 / 4f);
         _lightData[i++] = Light(
             x: circleRadius * sin, z: circleRadius * cos,
@@ -73,6 +73,42 @@ internal class SceneLights
             x: 7.5f, y: 0, z: 6,
             col: (1, 1, 1),
             intensity: 2, radius: 10
+        );*/
+
+
+        ReadOnlySpan<LightData> lights =
+        [
+            // sun
+            new(glm.Normalized(new vec3(-0.5f, -1.0f, -0.3f)), 0, new vec3(1.0f, 0.95f, 0.9f) * 2f, 0.0f),
+
+            // dynamic lights (n in [0, 1, 2, 3])
+            CircleLight(_time, 0, 4),
+            CircleLight(_time, 1, 4),
+            CircleLight(_time, 2, 4),
+            CircleLight(_time, 3, 4),
+
+            // static lights
+            Light(x: -7.5f, y: 0, z: -6, col: (1, 1, 1), intensity: 2, radius: 10),
+            Light(x: 7.5f, y: 0, z: -6, col: (1, 1, 1), intensity: 2, radius: 10),
+            Light(x: -7.5f, y: 0, z: 6, col: (1, 1, 1), intensity: 2, radius: 10),
+            Light(x: 7.5f, y: 0, z: 6, col: (1, 1, 1), intensity: 2, radius: 10),
+
+            // ambient light
+            Light(x: 0, y: 0, z: 0, col: (1, 0.3f, 0), intensity: 200f, radius: 100f),
+        ];
+
+        lights.CopyTo(_lightData);
+    }
+
+    private static LightData CircleLight(f32 time, i32 light, i32 numLights)
+    {
+        var (sin, cos) = MathF.SinCos(time * 1f + MathF.Tau * light / numLights);
+        const f32 circleRadius = 4;
+        return Light(
+            x: circleRadius * sin, z: circleRadius * cos,
+            y: 1f + MathF.Sin(time),
+            col: (1, 0.5f, 0),
+            intensity: 3, radius: 10
         );
     }
 
@@ -80,7 +116,8 @@ internal class SceneLights
         f32 intensity, f32 radius)
         => new()
         {
-            Position = new vec4(x, y, z, 1),
+            Position = new vec3(x, y, z),
+            Type = 1,
             Color = new vec3(col.r, col.g, col.b) * intensity,
             Radius = radius
         };

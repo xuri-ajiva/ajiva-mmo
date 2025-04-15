@@ -4,7 +4,7 @@ using Silk.NET.WebGPU.Safe;
 
 namespace Client.Renderer.PbrRenderer;
 
-public class OITInstancedMeshBuffer(
+public class OitInstancedMeshBuffer(
     AjivaMesh<WboitAccumShader.Attributes> mesh,
     WboitAccumShader.ModelUniform modelUniform,
     WboitAccumShader.Instance[] instanceInfos)
@@ -15,14 +15,15 @@ public class OITInstancedMeshBuffer(
     // buffers
     public AjivaBuffer<WboitAccumShader.Instance>? InstanceBuffer { get; set; }
     public AjivaBuffer<WboitAccumShader.ModelUniform> ModelUniformBuffer { get; set; }
-
+    public AjivaBuffer<WboitAccumShader.ModelUniform> UniformBuffer => ModelUniformBuffer;
+    
     // bind groups
     public BindGroupPtr? ModelBindGroup { get; set; }
     public i32 ModelBindGroupHash { get; set; }
 
     // values
     private WboitAccumShader.ModelUniform _modelUniform = modelUniform;
-    public ref WboitAccumShader.ModelUniform ModelUniform => ref _modelUniform;
+    public ref WboitAccumShader.ModelUniform MaterialUniform => ref _modelUniform;
 
 
     private WboitAccumShader.Instance[] _instanceInfos = instanceInfos;
@@ -43,7 +44,7 @@ public class OITInstancedMeshBuffer(
 
     public void Dispose()
     {
-        Mesh.Dispose();
+        Mesh.Dispose();    
         InstanceBuffer?.Dispose();
         ModelBindGroup?.Release();
         ModelUniformBuffer.Dispose();
