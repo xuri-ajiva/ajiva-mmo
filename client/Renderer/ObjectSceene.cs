@@ -56,23 +56,22 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
                 $"CubeMesh::IndexBuffer"));
     }
 
-    public PbrInstancedMeshBuffer[] CreateModelBuffers(string path,
-        string? label = null)
+    public PbrInstancedMeshBuffer[] CreateModelBuffers(string path, string? label = null)
     {
-        var (models, materials) = _modelHelper.LoadModels(path);
+        var (meshDatas, data, root, materials) = _modelHelper.LoadModels(path);
 
-        var buffers = new PbrInstancedMeshBuffer[models.Count + 2];
+        var buffers = new PbrInstancedMeshBuffer[meshDatas.Count + 2];
 
-        for (var iModel = 0; iModel < models.Count; iModel++)
+        for (var iModel = 0; iModel < meshDatas.Count; iModel++)
         {
-            var mdl = models[iModel];
+            var mdl = meshDatas[iModel];
             var mat = materials.Count > mdl.MaterialIndex ? materials[mdl.MaterialIndex] : null;
 
-            var modelVertices = new PbrGBufferShader.Attributes[mdl.Positions.Length];
+            var modelVertices = new PbrGBufferShader.Attributes[mdl.Vertices.Length];
 
-            for (var iVertex = 0; iVertex < mdl.Positions.Length; iVertex++)
+            for (var iVertex = 0u; iVertex < mdl.Vertices.Length; iVertex++)
             {
-                modelVertices[iVertex].PositionRef = mdl.Positions[iVertex];
+                modelVertices[iVertex].PositionRef = mdl.Vertices[iVertex];
                 modelVertices[iVertex].Tex0CoordRef = mdl.TexCoords0[iVertex];
                 modelVertices[iVertex].Tex1CoordRef = mdl.TexCoords1[iVertex];
                 modelVertices[iVertex].NormalRef = mdl.Normals[iVertex];
@@ -87,12 +86,9 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
             var indexBuffer = _loader.CreateBuffer<u32>(BufferUsage.Index | BufferUsage.CopyDst, mdl.Indices,
                 label == null ? null : $"{label}::IndexBuffer");
 
-            PbrGBufferShader.Instance[] instances = [new()];
-            instances[0].SetTransform(Matrix4x4.CreateScale(0.01f));
             var pbrInstancedMeshBuffer = new PbrInstancedMeshBuffer(
                 new AjivaMesh<PbrGBufferShader.Attributes>(vertexBuffer, indexBuffer),
-                ModelHelper.MaterialConverter.ConvertToPbrUniform(mat, (u32)iModel + 1, (u32)mdl.MaterialIndex, false),
-                instances
+                ModelHelper.MaterialConverter.ConvertToPbrUniform(mat, (u32)iModel + 1, (u32)mdl.MaterialIndex, false)
             );
             if (mat is { DiffuseTexture: { } diffuseTexturePath })
                 pbrInstancedMeshBuffer.BaseColorTexture = _loader.AsyncTextureLoad(diffuseTexturePath);
@@ -139,8 +135,25 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
         buffers[^1] =
             new PbrInstancedMeshBuffer(generateCubeMesh, ModelHelper.PbrMaterialExamples.WornLeather(), cubes);
 
-        buffers[2].InstanceInfos[0].HighlightColor = new vec4(1, 1, 0.5f, 0.5f);
-        buffers[1].InstanceInfos[0].HighlightColor = new vec4(0.5f, 1, 1, 0.5f);
+        // populate instances
+        var jobs = new Stack<ModelHelper.SceneNode>();
+        jobs.Push(root);
+
+        while (jobs.TryPop(out var node))
+        {
+            foreach (var meshId in node.Meshes ?? Enumerable.Empty<i32>())
+            {
+                if (meshId < meshDatas.Count)
+                {
+                    var instance = new PbrGBufferShader.Instance();
+                    instance.SetTransform(node.GlobalTransform * Matrix4x4.CreateScale(0.01f));
+                    buffers[meshId]._instanceInfos.Add(instance);
+                }
+            }
+
+            foreach (var child in node.Children ?? Enumerable.Empty<ModelHelper.SceneNode>())
+                jobs.Push(child);
+        }
 
         return buffers;
     }
@@ -187,7 +200,7 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
                     ReadOnlySpan<Vector3D<f32>> positions =
                         [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];
                     ReadOnlySpan<Vector2> tex0Coords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
-                    return new WboitAccumShader.Attributes()
+                    return new WboitAccumShader.Attributes
                     {
                         PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
                         Tex0CoordRef = tex0Coords[u],

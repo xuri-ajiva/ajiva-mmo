@@ -1,13 +1,8 @@
-﻿using System.Runtime.CompilerServices;
-using Client.Renderer.PbrRenderer;
-using Serilog;
+﻿using System.Diagnostics;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.WGPU;
 using Silk.NET.WebGPU.Safe;
 using Silk.NET.WebGPU.Safe.Extensions;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using ImageCopyTexture = Silk.NET.WebGPU.Safe.ImageCopyTexture;
 using ShaderModuleCompilationHint = Silk.NET.WebGPU.Safe.ShaderModuleCompilationHint;
 
 namespace Client.Renderer;
@@ -81,6 +76,11 @@ public class RendererApi(ILogger<RendererApi> logger)
                 default:
                     logger.LogError("Unknown error type: {Type} with message: {Message}", type, message);
                     break;
+            }
+
+            if (Debugger.IsAttached)
+            {
+                Debugger.Break();
             }
         });
     }

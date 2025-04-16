@@ -1,23 +1,87 @@
-﻿using System.Numerics;
+﻿using System.Diagnostics;
+using System.Numerics;
 using System.Text;
+using Client.Renderer.PbrRenderer;
 using Client.Wgsl;
 using GlmSharp;
 using Silk.NET.Assimp;
 
 namespace Client.Renderer.Resources;
 
+internal static class ReadOnlyRangeExtensions
+{
+    public static ReadWriteRange<T> AsRoR<T>(this T[] @this, u64 start, u64 count) =>
+        new(@this, start, count);
+}
+
+public readonly struct ReadWriteRange<T>(T[] backing, u64 start, u64 count)
+{
+    private readonly T[] _backing = backing;
+    private readonly u64 _start = start;
+    private readonly u64 _count = count;
+
+    public static implicit operator ReadOnlySpan<T>(ReadWriteRange<T> range) =>
+        new(range._backing, (i32)range._start, (i32)range._count);
+
+    public static implicit operator Span<T>(ReadWriteRange<T> range) =>
+        new(range._backing, (i32)range._start, (i32)range._count);
+
+    public static implicit operator ReadOnlyMemory<T>(ReadWriteRange<T> range) =>
+        new(range._backing, (i32)range._start, (i32)range._count);
+
+    public Span<T> RwSpan => new(_backing, (i32)_start, (i32)_count);
+    public ReadOnlySpan<T> Span => new(_backing, (i32)_start, (i32)_count);
+
+    public ref T this[u64 index] => ref _backing[_start + index];
+    public u64 Length => _count;
+}
+
 public unsafe class ModelHelper(ILogger<ModelHelper> logger)
 {
-    public class Model
+    public class MeshData
     {
-        public required u32[] Indices;
-        public required Vector3[] Positions;
-        public required Vector3[] Normals;
-        public required Vector3[] Tangents;
-        public required Vector2[] TexCoords0;
-        public required Vector2[] TexCoords1;
+        public ReadWriteRange<u32> Indices;
+        public ReadWriteRange<Vector3> Vertices;
+        public ReadWriteRange<Vector3> Normals;
+        public ReadWriteRange<Vector3> Tangents;
+        public ReadWriteRange<Vector2> TexCoords0;
+        public ReadWriteRange<Vector2> TexCoords1;
         public required i32 MaterialIndex;
     }
+
+    public class SceneNode
+    {
+        public required string Name;
+        public required Matrix4x4 NodeTransform;
+        public required Matrix4x4 GlobalTransform;
+        public List<SceneNode>? Children;
+        public List<i32>? Meshes;
+    }
+
+    public record PackedMeshes(
+        u32[] Indices,
+        Vector3[] Vertices,
+        Vector3[] Normals,
+        Vector3[] Tangents,
+        Vector2[] TexCoords0,
+        Vector2[] TexCoords1)
+    {
+        public PackedMeshes(u64 totalIndices, u64 totalVertices) : this(new u32[totalIndices],
+            new Vector3[totalVertices], new Vector3[totalVertices], new Vector3[totalVertices],
+            new Vector2[totalVertices], new Vector2[totalVertices])
+        {
+        }
+
+        private u32 _refCount = 0;
+        public void IncrementRefCount() => Interlocked.Increment(ref _refCount);
+        public void DecrementRefCount() => Interlocked.Decrement(ref _refCount);
+    }
+
+    public record class ResolvedScene(
+        IReadOnlyList<MeshData> Models,
+        PackedMeshes Data,
+        SceneNode Root,
+        IReadOnlyList<Material> Materials);
 
     public class Material
     {
@@ -43,159 +107,207 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
         public string? StencilTexture;
     }
 
-    public (IReadOnlyList<Model> models, IReadOnlyList<Material> materials) LoadModels(string file)
+
+    private ResolvedScene LoadModels(Scene* scene)
     {
-        var assimp = Assimp.GetApi();
+        u64 gIndices = 0;
+        u64 gVertices = 0;
 
-        if (!System.IO.File.Exists(file))
-            throw new FileNotFoundException(file);
-
-        var scene = assimp.ImportFile(file, 0);
-
-        if (scene == null)
-            throw new Exception($"model could not be loaded");
-
-        var result = LoadModels(scene);
-
-        assimp.FreeScene(scene);
-        return result;
-    }
-
-    public (IReadOnlyList<Model> models, IReadOnlyList<Material> materials) LoadModels(u8[] data,
-        string? formatHint)
-    {
-        var assimp = Assimp.GetApi();
-
-        var scene = assimp.ImportFileFromMemory(data, (u32)data.Length, 0, formatHint);
-
-        if (scene == null)
-            throw new Exception($"model could not be loaded");
-
-        var result = LoadModels(scene);
-
-        assimp.FreeScene(scene);
-        return result;
-    }
-
-    private (IReadOnlyList<Model> models, IReadOnlyList<Material> materials) LoadModels(Scene* scene)
-    {
-        List<Model> models = new List<Model>();
-
-        var jobs = new Stack<(nuint node, Matrix4x4 tranform)>();
-
-        jobs.Push(((nuint)scene->MRootNode, scene->MRootNode->MTransformation));
-
-        do
+        // prepass
+        for (var i = 0; i < scene->MNumMeshes; i++)
         {
-            var (nodePtr, transform) = jobs.Pop();
-            var node = (Node*)nodePtr;
+            var mesh = scene->MMeshes[i];
+            if (mesh == null)
+                continue;
 
-            for (i32 iMesh = 0; iMesh < node->MNumMeshes; iMesh++)
+            u64 indices = 0;
+            for (var iFace = 0; iFace < mesh->MNumFaces; iFace++)
             {
-                var mesh = scene->MMeshes[node->MMeshes[iMesh]];
-
-                var indexList = new List<u32>();
-                var positions = new Vector3[mesh->MNumVertices];
-                var normals = new Vector3[mesh->MNumVertices];
-                var tangents = new Vector3[mesh->MNumVertices];
-                var texCoords0 = new Vector2[mesh->MNumVertices];
-                var texCoords1 = new Vector2[mesh->MNumVertices];
-
-                for (i32 iFace = 0; iFace < mesh->MNumFaces; iFace++)
-                {
-                    var face = mesh->MFaces[iFace];
-
-                    u32 first = face.MIndices[0];
-                    u32 previous = face.MIndices[1];
-
-                    for (i32 i = 2; i < face.MNumIndices; i++)
-                    {
-                        indexList.Add(first);
-                        indexList.Add(previous);
-                        indexList.Add((previous = face.MIndices[i]));
-                    }
-                }
-
-                {
-                    var sourceSpan = new ReadOnlySpan<Vector3>(mesh->MVertices, (i32)mesh->MNumVertices);
-                    var destSpan = positions;
-                    for (i32 i = 0; i < sourceSpan.Length; i++)
-                        destSpan[i] = Vector3.Transform(sourceSpan[i], transform);
-                }
-
-                {
-                    var sourceSpan = new ReadOnlySpan<Vector3>(mesh->MTextureCoords.Element0, (i32)mesh->MNumVertices);
-                    var destSpan = texCoords0;
-                    for (i32 i = 0; i < sourceSpan.Length; i++)
-                        destSpan[i] = new(sourceSpan[i].X, sourceSpan[i].Y);
-                }
-
-                {
-                    var next = mesh->MTextureCoords.Element1;
-                    if (next != null)
-                    {
-                        var sourceSpan =
-                            new ReadOnlySpan<Vector3>(mesh->MTextureCoords.Element1, (i32)mesh->MNumVertices);
-                        var destSpan = texCoords1;
-                        for (i32 i = 0; i < sourceSpan.Length; i++)
-                            destSpan[i] = new(sourceSpan[i].X, sourceSpan[i].Y);
-                    }
-                    else
-                    {
-                        texCoords0.CopyTo(texCoords1.AsSpan());
-                    }
-                }
-
-                new ReadOnlySpan<Vector3>(mesh->MNormals, (i32)mesh->MNumVertices)
-                    .CopyTo(normals);
-                if (mesh->MTangents == null)
-                {
-                    for (i32 i = 0; i < mesh->MNumVertices; i++)
-                        tangents[i] = Vector3.UnitX;
-                }
-                else
-                {
-                    new ReadOnlySpan<Vector3>(mesh->MTangents, (i32)mesh->MNumVertices)
-                        .CopyTo(tangents);
-                }
-
-                models.Add(new Model
-                {
-                    Indices = indexList.ToArray(),
-                    Positions = positions,
-                    Normals = normals,
-                    Tangents = tangents,
-                    TexCoords0 = texCoords0,
-                    TexCoords1 = texCoords1,
-                    MaterialIndex = (i32)mesh->MMaterialIndex,
-                });
+                //indices += mesh->MFaces[iFace].MNumIndices;
+                indices += 3 * (mesh->MFaces[iFace].MNumIndices - 2);
             }
 
-            for (i32 iChild = 0; iChild < node->MNumChildren; iChild++)
+            gIndices += indices;
+            gVertices += mesh->MNumVertices;
+            logger.LogInformation("Mesh {i}: {Vertices} vertices, {Indices} indices", i,
+                mesh->MNumVertices, indices);
+        }
+
+        // allocate
+        var meshes = new List<MeshData>();
+        var data = new PackedMeshes(gIndices, gVertices);
+
+        // copy pass
+        gIndices = 0;
+        gVertices = 0;
+        for (var i = 0; i < scene->MNumMeshes; i++)
+        {
+            var mesh = scene->MMeshes[i];
+            if (mesh == null)
+                continue;
+
+            var iVertices = mesh->MNumVertices;
+
+            var verticesRef = data.Vertices.AsRoR(gVertices, iVertices);
+            var normalsRef = data.Normals.AsRoR(gVertices, iVertices);
+            var tangentsRef = data.Tangents.AsRoR(gVertices, iVertices);
+            var texCoords0Ref = data.TexCoords0.AsRoR(gVertices, iVertices);
+            var texCoords1Ref = data.TexCoords1.AsRoR(gVertices, iVertices);
+
+            new Span<Vector3>(mesh->MVertices, (i32)mesh->MNumVertices).CopyTo(verticesRef);
+            new Span<Vector3>(mesh->MNormals, (i32)mesh->MNumVertices).CopyTo(normalsRef);
+            if (mesh->MTangents != null)
             {
-                var child = node->MChildren[iChild];
-                jobs.Push(((nuint)child, Matrix4x4.Transpose(child->MTransformation) * transform));
+                new Span<Vector3>(mesh->MTangents, (i32)mesh->MNumVertices).CopyTo(tangentsRef);
             }
-        } while (jobs.Count > 0);
+            else
+            {
+                tangentsRef.RwSpan.Fill(Vector3.UnitX);
+            }
 
-        List<Material> materials = new List<Material>();
+            for (var j = 0u; j < mesh->MNumVertices; j++)
+            {
+                var src = mesh->MTextureCoords.Element0[j];
+                texCoords0Ref[j] = new Vector2(src.X, src.Y);
+            }
 
-        for (int i = 0; i < scene->MNumMaterials; i++)
+            if (mesh->MTextureCoords.Element1 != null)
+            {
+                for (var j = 0u; j < mesh->MNumVertices; j++)
+                {
+                    var src = mesh->MTextureCoords.Element1[j];
+                    texCoords1Ref[j] = new Vector2(src.X, src.Y);
+                }
+            }
+            else
+            {
+                texCoords0Ref.Span.CopyTo(texCoords1Ref);
+            }
+
+            var start = gIndices;
+            for (var iFace = 0; iFace < mesh->MNumFaces; iFace++)
+            {
+                var face = mesh->MFaces[iFace];
+                var first = face.MIndices[0];
+                var previous = face.MIndices[1];
+
+                for (var j = 2; j < face.MNumIndices; j++)
+                {
+                    data.Indices[gIndices++] = first;
+                    data.Indices[gIndices++] = previous;
+                    data.Indices[gIndices++] = previous = face.MIndices[j];
+                }
+            }
+
+            gVertices += iVertices;
+
+            meshes.Add(new MeshData
+            {
+                MaterialIndex = (i32)mesh->MMaterialIndex,
+                Indices = data.Indices.AsRoR(start, gIndices - start),
+                Vertices = verticesRef,
+                Normals = normalsRef,
+                Tangents = tangentsRef,
+                TexCoords0 = texCoords0Ref,
+                TexCoords1 = texCoords1Ref,
+            });
+        }
+
+        Debug.Assert(gIndices == (u64)data.Indices.LongLength, "gIndices != data.Indices.Length");
+        Debug.Assert(gVertices == (u64)data.Vertices.LongLength, "gVertices != data.Vertices.Length");
+
+        var totalNodes = 0;
+        var root = Convert(scene->MRootNode, Matrix4x4.Identity);
+
+        var materials = new List<Material>();
+
+        for (var i = 0; i < scene->MNumMaterials; i++)
         {
             var material = scene->MMaterials[i];
             var result = ParseMaterial(material);
             materials.Add(result);
         }
 
+        return new ResolvedScene(meshes, data, root, materials);
 
-        return (models, materials);
+        SceneNode Convert(Node* node, Matrix4x4 transform)
+        {
+            totalNodes++;
+            var result = new SceneNode
+            {
+                Name = node->MName,
+                GlobalTransform = node->MTransformation * transform,
+                NodeTransform = node->MTransformation,
+            };
+            if (node->MNumChildren > 0)
+            {
+                result.Children = new List<SceneNode>((i32)node->MNumChildren);
+                for (var iChild = 0; iChild < node->MNumChildren; iChild++)
+                {
+                    var child = node->MChildren[iChild];
+                    result.Children.Add(Convert(child, Matrix4x4.Transpose(child->MTransformation) * transform));
+                }
+            }
+
+            if (node->MNumMeshes <= 0) return result;
+
+            result.Meshes = new List<i32>((i32)node->MNumMeshes);
+            for (var iMesh = 0; iMesh < node->MNumMeshes; iMesh++)
+            {
+                var meshIndex = node->MMeshes[iMesh];
+                if (meshIndex < meshes.Count)
+                {
+                    result.Meshes.Add((i32)meshIndex);
+                }
+                else
+                {
+                    logger.LogWarning("Mesh index out of bounds: {meshIndex}", meshIndex);
+                }
+            }
+
+            return result;
+        }
+    }
+
+    private static u64 ComputeKey(Mesh* mesh)
+    {
+        HashCode code = new();
+        code.Add(mesh->MMaterialIndex);
+        code.Add(mesh->MNumVertices);
+        code.Add(mesh->MNumFaces);
+
+        // add first 10 vertices and faces
+        var h1 = code.ToHashCode();
+        //return (u64)h1;
+        code = new HashCode();
+        for (var i = 0; i < Math.Min(mesh->MNumVertices, 10); i++)
+        {
+            code.Add(mesh->MVertices[i]);
+            code.Add(mesh->MNormals[i]);
+            if (mesh->MTangents != null)
+                code.Add(mesh->MTangents[i]);
+            code.Add(mesh->MTextureCoords.Element0[i]);
+            if (mesh->MTextureCoords.Element1 != null)
+                code.Add(mesh->MTextureCoords.Element1[i]);
+        }
+
+        for (var i = 0; i < Math.Min(mesh->MNumFaces, 10); i++)
+        {
+            code.Add(mesh->MFaces[i].MNumIndices);
+            for (var j = 0; j < mesh->MFaces[i].MNumIndices; j++)
+            {
+                code.Add(mesh->MFaces[i].MIndices[j]);
+            }
+        }
+
+        return ((u64)code.ToHashCode() << 32) + (u64)h1;
     }
 
     private Material ParseMaterial(Silk.NET.Assimp.Material* material)
     {
         var result = new Material();
         string? lastFile = null;
-        for (int j = 0; j < material->MNumProperties; j++)
+        for (var j = 0; j < material->MNumProperties; j++)
         {
             var property = material->MProperties[j];
             var span = new ReadOnlySpan<u8>(property->MData, (i32)property->MDataLength);
@@ -265,6 +377,15 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
             {
                 AssertType(property->MType, PropertyTypeInfo.String);
                 lastFile = ParseString(span);
+                if (lastFile.StartsWith(@"..\..\..\Unity\Projects\SponzaHDRP\Assets\Art\"))
+                {
+                    lastFile = lastFile[@"..\..\..\Unity\Projects\SponzaHDRP\Assets\Art\".Length..];
+                }
+            }
+            else if ("$raw.DiffuseColor|file" == str)
+            {
+                AssertType(property->MType, PropertyTypeInfo.String);
+                result.DiffuseTexture = ParseString(span);
             }
             else if ("$tex.uvwsrc" == str)
             {
@@ -288,11 +409,13 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
                 }
             }
             else
-
+            {
                 logger.LogWarning(
                     "Unknown property: {str}\n   - lastFile: {lastFile}\n   - MSemantic: {MSemantic}\n   - MIndex: {MIndex}\n   - MType: {MType}\n   - MDataLength: {MDataLength}\n   - MData: [{Data}]",
-                    str, lastFile ?? "", property->MSemantic, property->MIndex, property->MType, property->MDataLength,
+                    str, lastFile ?? "", property->MSemantic, property->MIndex, property->MType,
+                    property->MDataLength,
                     string.Join(", ", span.ToArray()));
+            }
         }
 
         return result;
@@ -300,7 +423,8 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
         static void AssertType(PropertyTypeInfo type, PropertyTypeInfo expected)
         {
             if (type != expected)
-                throw new Exception($"Invalid property type: {type} != {expected}");
+                Console.WriteLine("Invalid property type: {0} != {1}", type, expected);
+            //throw new Exception($"Invalid property type: {type} != {expected}");
         }
 
         static string ParseString(ReadOnlySpan<u8> span)
@@ -322,6 +446,39 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
             var z = BitConverter.ToSingle(span[8..12]);
             return new Vector3(x, y, z);
         }
+    }
+
+    public ResolvedScene LoadModels(string file)
+    {
+        var assimp = Assimp.GetApi();
+
+        if (!System.IO.File.Exists(file))
+            throw new FileNotFoundException(file);
+
+        var scene = assimp.ImportFile(file, 0);
+
+        if (scene == null)
+            throw new Exception($"model could not be loaded");
+
+        var result = LoadModels(scene);
+
+        assimp.FreeScene(scene);
+        return result;
+    }
+
+    public ResolvedScene LoadModels(u8[] data, string? formatHint)
+    {
+        var assimp = Assimp.GetApi();
+
+        var scene = assimp.ImportFileFromMemory(data, (u32)data.Length, 0, formatHint);
+
+        if (scene == null)
+            throw new Exception($"model could not be loaded");
+
+        var result = LoadModels(scene);
+
+        assimp.FreeScene(scene);
+        return result;
     }
 
     public static class MaterialConverter

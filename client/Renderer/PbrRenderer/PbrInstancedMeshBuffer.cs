@@ -1,4 +1,5 @@
-﻿using Client.Renderer.Resources;
+﻿using System.Runtime.InteropServices;
+using Client.Renderer.Resources;
 using Client.Wgsl;
 using Silk.NET.WebGPU.Safe;
 
@@ -7,8 +8,8 @@ namespace Client.Renderer.PbrRenderer;
 public class PbrInstancedMeshBuffer(
     AjivaMesh<PbrGBufferShader.Attributes> mesh,
     PbrGBufferShader.PbrMaterialUniform materialUniform,
-    PbrGBufferShader.Instance[] instanceInfos)
-: IInstancedMeshBuffer<PbrGBufferShader.Attributes, PbrGBufferShader.Instance, PbrGBufferShader.PbrMaterialUniform>
+    params IEnumerable<PbrGBufferShader.Instance> instanceInfos)
+    : IInstancedMeshBuffer<PbrGBufferShader.Attributes, PbrGBufferShader.Instance, PbrGBufferShader.PbrMaterialUniform>
 {
     public AjivaMesh<PbrGBufferShader.Attributes> Mesh { get; set; } = mesh;
 
@@ -19,16 +20,16 @@ public class PbrInstancedMeshBuffer(
 
     // bind groups
     public BindGroupPtr? TextureBindGroup { get; set; }
-    public i32  TextureBindGroupHash { get; set; }
+    public i32 TextureBindGroupHash { get; set; }
     public BindGroupPtr? MaterialBindGroup { get; set; }
-    public i32  MaterialBindGroupHash { get; set; }
+    public i32 MaterialBindGroupHash { get; set; }
 
     // values
     private PbrGBufferShader.PbrMaterialUniform _materialUniform = materialUniform;
     public ref PbrGBufferShader.PbrMaterialUniform MaterialUniform => ref _materialUniform;
 
-    private PbrGBufferShader.Instance[] _instanceInfos = instanceInfos;
-    public ref PbrGBufferShader.Instance[] InstanceInfos => ref _instanceInfos;
+    public readonly List<PbrGBufferShader.Instance> _instanceInfos = [..instanceInfos];
+    public Span<PbrGBufferShader.Instance> InstanceInfos => CollectionsMarshal.AsSpan(_instanceInfos);
     public AjivaTexture? BaseColorTexture;
     public AjivaTexture? NormalTexture;
     public AjivaTexture? MetallicRoughnessAoTexture;
@@ -36,14 +37,14 @@ public class PbrInstancedMeshBuffer(
 
     public void Deconstruct(out AjivaBuffer<PbrGBufferShader.Attributes> vertexBuffer, out AjivaBuffer<u32> indexBuffer,
         out AjivaBuffer<PbrGBufferShader.Instance>? instanceBuffer, out BindGroupPtr? textureBindGroup,
-        out BindGroupPtr? materialBindGroup, out PbrGBufferShader.Instance[] instanceInfos)
+        out BindGroupPtr? materialBindGroup, out List<PbrGBufferShader.Instance> instanceInfos)
     {
         vertexBuffer = Mesh.VertexBuffer;
         indexBuffer = Mesh.IndexBuffer;
         instanceBuffer = InstanceBuffer;
         textureBindGroup = TextureBindGroup;
         materialBindGroup = MaterialBindGroup;
-        instanceInfos = InstanceInfos;
+        instanceInfos = _instanceInfos;
     }
 
     public void Dispose()

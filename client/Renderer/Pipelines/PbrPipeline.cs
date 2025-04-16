@@ -300,7 +300,7 @@ public class PbrPipeline : IDisposable
         pass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.OffsetBytes, instanceBuffer.Size);
 
         pass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.OffsetBytes, indexBuffer.Size);
-        pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
+        pass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Count, 0, 0, 0);
     }
 
 

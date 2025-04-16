@@ -16,7 +16,7 @@ public class OitInstancedMeshBuffer(
     public AjivaBuffer<WboitAccumShader.Instance>? InstanceBuffer { get; set; }
     public AjivaBuffer<WboitAccumShader.ModelUniform> ModelUniformBuffer { get; set; }
     public AjivaBuffer<WboitAccumShader.ModelUniform> UniformBuffer => ModelUniformBuffer;
-    
+
     // bind groups
     public BindGroupPtr? ModelBindGroup { get; set; }
     public i32 ModelBindGroupHash { get; set; }
@@ -27,7 +27,7 @@ public class OitInstancedMeshBuffer(
 
 
     private WboitAccumShader.Instance[] _instanceInfos = instanceInfos;
-    public ref WboitAccumShader.Instance[] InstanceInfos => ref _instanceInfos;
+    public Span<WboitAccumShader.Instance> InstanceInfos => _instanceInfos.AsSpan();
     public AjivaTexture AlbedoTexture;
     public AjivaTexture EmissionTexture;
 
@@ -39,12 +39,12 @@ public class OitInstancedMeshBuffer(
         indexBuffer = Mesh.IndexBuffer;
         instanceBuffer = InstanceBuffer;
         modelBindGroup = ModelBindGroup;
-        instanceInfos = InstanceInfos;
+        instanceInfos = _instanceInfos;
     }
 
     public void Dispose()
     {
-        Mesh.Dispose();    
+        Mesh.Dispose();
         InstanceBuffer?.Dispose();
         ModelBindGroup?.Release();
         ModelUniformBuffer.Dispose();

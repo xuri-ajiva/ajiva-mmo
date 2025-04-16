@@ -14,5 +14,5 @@ public interface IInstancedMeshBuffer<TAttributes, TInstance, TModelUniform> : I
 
     //public BindGroupPtr? ModelBindGroup { get; set; }
     public ref TModelUniform MaterialUniform { get; }
-    public ref TInstance[] InstanceInfos { get; }
+    public Span<TInstance> InstanceInfos { get; }
 }

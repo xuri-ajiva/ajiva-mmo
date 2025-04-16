@@ -54,7 +54,6 @@ public class AjivaBuffer<T>(
         if (Count != 0 && Buffer != default)
         {
             Buffer.Release();
-            Buffer.Destroy();
         }
 
         var range = loader.CreateBufferRaw(usage, newCount * SizeOfT, label);

@@ -16,6 +16,8 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 {
     public readonly ILogger<ResourceLoader> Logger = logger;
 
+    #region Textures
+
     private List<AjivaTexture> _internal = [];
     internal AjivaTexture DefaultTexture = null!;
     internal AjivaTexture DefaultNormal = null!;
@@ -113,7 +115,6 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             catch (Exception e)
             {
                 Logger.LogCritical(e, "Failed to load texture {Path}", path);
-                throw;
             }
             finally
             {
@@ -286,6 +287,11 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             {
                 return foundFile3;
             }
+
+            if (Directory.EnumerateFiles("..", pattern, SearchOption.AllDirectories).FirstOrDefault() is { } foundFile4)
+            {
+                return foundFile4;
+            }
         }
         catch
         {
@@ -323,6 +329,10 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         return new TextureData(this, label, texture, textureView, extent3D, aspect, mipLevels);
     }
 
+    #endregion
+
+    #region Buffer
+
     public AjivaBuffer<T> CreateBuffer<T>(BufferUsage usage, i32 count, string? label = null)
         where T : unmanaged
     {
@@ -353,6 +363,12 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 
     private readonly Channel<IDisposable> _disposables =
         Channel.CreateUnbounded<IDisposable>(new UnboundedChannelOptions { SingleReader = true });
+
+    #endregion
+
+    #region Mesh
+
+    #endregion
 
     public void DisposeLater(IDisposable? disposable)
     {

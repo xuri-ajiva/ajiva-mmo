@@ -48,7 +48,6 @@ public class Instanced3dDeferredRenderer(
     private PbrPipeline? _pbrPipeline;
     private PixelSamplingPipeline? _samplingPipeline;
     private WboitPipeline? _transparentPipeline;
-    private PbrGBufferShader.SceneUniform _sceneUniform;
     private bool _enabled = true;
     private ObjectSamplingShader.Result? _underCursor;
     private u32 _selectedObjectId;
@@ -81,7 +80,8 @@ public class Instanced3dDeferredRenderer(
 
         _logger.LogDebug("Creating Model Buffers");
         //_meshBuffers = CreateModelBuffers("resources/Temple/TempleModel.glb", "Temple");
-        _meshBuffers = _scene.CreateModelBuffers("resources/SponzaAtrium/sponza.obj", "SponzaAtrium");
+        //_meshBuffers = _scene.CreateModelBuffers("resources/SponzaAtrium/sponza.obj", "SponzaAtrium");
+        _meshBuffers = _scene.CreateModelBuffers("resources/Sponza/Meshes/Sponza_Modular.FBX", "Sponza_Modular");
         _transparentMeshBuffers = _scene.CreateTransparentCubes();
 
         _logger.LogDebug("Creating uniform resources");
@@ -173,26 +173,25 @@ public class Instanced3dDeferredRenderer(
     {
         var queue = target.QueuePtr;
         _camera.AspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
-        _sceneUniform = new PbrGBufferShader.SceneUniform
+        _pbrPipeline!.WriteGBufferSceneUniforms(queue, new PbrGBufferShader.SceneUniform
         {
             ViewRef = _camera.ViewMatrix,
             ProjectionRef = _camera.ProjectionMatrix,
             CameraPositionRef = _camera.Position,
             Time = info.TotalTime
-        };
-        _pbrPipeline!.WriteGBufferSceneUniforms(queue, _sceneUniform);
+        });
         _transparentPipeline!.WriteUniformBuffer(queue, new WboitAccumShader.SceneUniform
         {
-            ViewProjectionRef = _sceneUniform.ViewRef * _sceneUniform.ProjectionRef,
+            ViewProjectionRef = _camera.ViewProjectionMatrix,
             CameraPositionRef = _camera.Position,
             Time = info.TotalTime
         });
 
         var players = _ecs.GetPlayers().ToArray();
         if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
-            _meshBuffers[^1].InstanceInfos = new PbrGBufferShader.Instance[players.Length + 1];
+            _meshBuffers[^1]._instanceInfos.Capacity = players.Length + 1;
 
-        ref var instanceInfo = ref _meshBuffers[^1].InstanceInfos;
+        var instanceInfo = _meshBuffers[^1].InstanceInfos;
         instanceInfo[0].SetTransform(Matrix4x4.CreateTranslation(_camera.Position));
         _ecs.LocalPos = _camera.Position;
         for (var i = 0; i < players.Length; i++)
@@ -251,22 +250,16 @@ public class Instanced3dDeferredRenderer(
         buffer.UniformBuffer.QueuedWrite(new ReadOnlySpan<T3>(ref buffer.MaterialUniform),
             queue);
 
-        var data = new ReadOnlySpan<T2>(buffer.InstanceInfos);
-        if (buffer.InstanceBuffer is null)
-        {
-            buffer.InstanceBuffer = _loader.CreateBuffer(BufferUsage.Vertex | BufferUsage.CopyDst,
-                data, "DynamicRecreated::IndexBuffer");
-            buffer.InstanceBuffer.QueuedWrite(data, queue);
-        }
+        ReadOnlySpan<T2> data = buffer.InstanceInfos;
+        buffer.InstanceBuffer ??= _loader.CreateBuffer<T2>(BufferUsage.Vertex | BufferUsage.CopyDst, data.Length,
+            "DynamicRecreated::IndexBuffer");
 
         if (buffer.InstanceBuffer.Size < (u64)data.Length * (u64)Unsafe.SizeOf<T2>())
         {
             buffer.InstanceBuffer.ResizeWithoutDataPreserve((u64)data.Length * (u64)Unsafe.SizeOf<T2>());
         }
-        else
-        {
-            buffer.InstanceBuffer.QueuedWrite(data, queue);
-        }
+
+        buffer.InstanceBuffer.QueuedWrite(data, queue);
     }
 
     public void Render(UpdateInfo info, RenderTarget target)
@@ -456,7 +449,7 @@ public class Instanced3dDeferredRenderer(
 
                 if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
                 {
-                    ref var selectedInstance = ref selectedBuffer.InstanceInfos[_selectedInstanceId];
+                    ref var selectedInstance = ref selectedBuffer.InstanceInfos[(i32)_selectedInstanceId];
                     ImGui.Text($"Instance");
                     ImGui.DragFloat4($"##Position", ref selectedInstance.Transform0Ref, 0.1f);
                     ImGui.DragFloat4($"##Rotation", ref selectedInstance.Transform1Ref, 0.1f);
