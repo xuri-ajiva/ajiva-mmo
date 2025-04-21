@@ -56,8 +56,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         _window = parent;
         var input = parent.Input;
 
-        _imguiController = new ImGuiController(_api.Device,
-            TextureFormat.Bgra8Unorm, parent.Window, input, SetupFonts);
+        _imguiController = new ImGuiController(_api.Device, TextureFormat.Bgra8Unorm, parent.Window, input, SetupFonts);
 
         var io = ImGui.GetIO();
 
@@ -65,6 +64,10 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable; // Enable Multi-Viewport / Platform Windows
         _periodicUpdater.RegisterUpdate(UpdateCycle.Render, Render);
         _periodicUpdater.RegisterUpdate(UpdateCycle.Update, Update);
+        var style = ImGui.GetStyle();
+        style.FrameRounding = 4;
+        style.FrameBorderSize = 1;
+        io.FontGlobalScale = 1.25f;
 
         foreach (var layer in Layers)
         {
@@ -76,7 +79,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
     unsafe void SetupFonts()
     {
-        _imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
+        //_imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
 
         var fontPath = Path.GetFullPath("resources/Quicksand-SemiBold.ttf");
 
@@ -179,10 +182,8 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
         var queue = _api.Device.GetQueue();
 
-        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4);
         ImGui.PushFont(_quicksandFont);
-
-        ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport());
+        ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
 
         foreach (var layer in Layers)
         {
@@ -204,15 +205,14 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         RenderLayerControls();
 
         ImGui.PopFont();
-        ImGui.PopStyleVar();
 
         if (ImGui.GetFrameCount() == 4) //seems to be the magic number for loading dock layouts
             ImGui.LoadIniSettingsFromDisk("imgui.ini");
 
-        var cmd = _api.Device.CreateCommandEncoder();
+        var cmd = _api.Device.CreateCommandEncoder(label: "ImGui Composite");
         var pass = cmd.BeginRenderPass([
                 new RenderPassColorAttachment(_swapchainView.Value, resolveTarget: null,
-                    LoadOp.Clear, StoreOp.Store, new Color(.1, .1, .1, 1))
+                    LoadOp.Clear, StoreOp.Store, default)
             ], null, null,
             null);
 
