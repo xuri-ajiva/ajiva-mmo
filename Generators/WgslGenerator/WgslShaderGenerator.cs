@@ -170,7 +170,14 @@ public class WgslShaderGenerator : IIncrementalGenerator
     {
         foreach (var classDeclarationSyntax in classDeclarations)
         {
-            var wgslVisitor = new WgslVisitor(context, compilation, classDeclarationSyntax);
+            var anlayzerVisitor = new WgslVisitor(compilation, classDeclarationSyntax, VisitorMode.Analyze);
+            classDeclarationSyntax.Accept(anlayzerVisitor);
+            foreach (var diagnostic in anlayzerVisitor.GetDiagnostics())
+            {
+                context.ReportDiagnostic(diagnostic);
+            }
+
+            var wgslVisitor = new WgslVisitor(compilation, classDeclarationSyntax, VisitorMode.Generate);
             classDeclarationSyntax.Accept(wgslVisitor);
             var shaderSource = $""""
                                 """
@@ -185,7 +192,6 @@ public class WgslShaderGenerator : IIncrementalGenerator
             var entryPoints = wgslVisitor.GetEntryPoints();
             var structAttributes = wgslVisitor.GetStructAttributes();
             var generatedStructs = wgslVisitor.GetGeneratedStructs();
-            var warnings = wgslVisitor.GetWarnings();
 
             // Generate a partial class with a ShaderSource constant
             var className = classDeclarationSyntax.Identifier.Text;
@@ -655,4 +661,6 @@ public class WgslShaderGenerator : IIncrementalGenerator
     {
         return format.ToString();
     }
+
+
 }
