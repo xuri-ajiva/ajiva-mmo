@@ -140,7 +140,7 @@ public class TypeInOut
     public required string EntryPoint { get; set; }
     public required string ReturnType { get; set; }
     public required string[] Parameters { get; set; }
-    
+
     public required CSharpSyntaxNode Node { get; set; }
 }
 
@@ -248,8 +248,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
 
     public override void DefaultVisit(SyntaxNode node)
     {
-        throw new NotSupportedException($"Visit{node.GetType().Name} is not implemented." +
-                                        node.GetLocation().GetLineSpan());
+        Report(WgslGeneratorRules.UnsupportedSyntaxNodeRule, node.GetLocation(), node.GetType().Name);
     }
 
     private TypeInOut ParseInOut(MethodDeclarationSyntax syntax) => new()
@@ -269,7 +268,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
     {
         if (node != _classDeclarationSyntax)
         {
-            throw new NotImplementedException("no nested calsses allowed, use structs instead");
+            Report(WgslGeneratorRules.NestedClassesNotAllowedRule, node.GetLocation());
         }
 
         foreach (var member in node.Members.OfType<TypeDeclarationSyntax>())
@@ -533,7 +532,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             }
             else
             {
-                throw new NotSupportedException($"Unsupported type {typeName}, Can't determine texture format");
+                Report(WgslGeneratorRules.UnsupportedTextureFormatRule, node.GetLocation(), typeName);
             }
         }
 
@@ -543,8 +542,12 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             var attributeType = GetAttributeType(attribute);
             VisitAttributeTyped(attribute, attributeType);
 
-            var expressionSyntax = attribute.ArgumentList?.Arguments.First()?.Expression;
-            if (expressionSyntax is null) throw new InvalidOperationException("Access attribute must have an argument");
+            if (attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression is not { } expressionSyntax)
+            {
+                Report(WgslGeneratorRules.MissingAttributeArgumentRule, attribute.GetLocation(),
+                    attribute.Name.ToString());
+                continue;
+            }
 
             switch (attributeType)
             {
@@ -552,25 +555,27 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                     switch (expressionSyntax)
                     {
                         case null:
-                            throw new InvalidOperationException("Access attribute must have an argument");
+                            Report(WgslGeneratorRules.MissingAttributeArgumentRule, attribute.GetLocation(),
+                                attribute.Name.ToString());
+                            break;
                         case MemberAccessExpressionSyntax { Name.Identifier.Text: var bindType }:
                             if (!Enum.TryParse<BindingType>(bindType, out bindingType))
                             {
-                                throw new InvalidOperationException($"Unknown binding type {bindType}");
+                                Report(WgslGeneratorRules.UnknownBindingTypeRule, attribute.GetLocation(), bindType);
                             }
 
                             if (typeName.Contains("sampler") &&
                                 bindingType is not (BindingType.Filtering or BindingType.NonFiltering
                                     or BindingType.Comparison))
                             {
-                                throw new InvalidOperationException(
-                                    "Sampler must have filtering, non-filtering or comparison access");
+                                Report(WgslGeneratorRules.InvalidSamplerBindingModeRule, attribute.GetLocation());
                             }
 
                             break;
                         default:
-                            throw new InvalidOperationException(
-                                $"Did not know what to do with {expressionSyntax.ToString()}");
+                            Report(WgslGeneratorRules.UnexpectedAttributeArgumentSyntaxRule, attribute.GetLocation(),
+                                expressionSyntax.ToString());
+                            break;
                     }
 
                     break;
@@ -616,7 +621,8 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         switch (bindingType)
         {
             case BindingType.Undefined:
-                throw new NotImplementedException("Binding type must be defined");
+                Report(WgslGeneratorRules.UndefinedBindingTypeRule, node.GetLocation(), fieldName);
+                break;
             case BindingType.Uniform:
                 Write("var<uniform> ");
                 break;
@@ -633,7 +639,8 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 Write("var ");
                 break;
             default:
-                throw new ArgumentOutOfRangeException();
+                Report(WgslGeneratorRules.InvalidBindingTypeEnumValueRule, node.GetLocation(), fieldName);
+                break;
         }
 
         WriteLine(
@@ -642,14 +649,13 @@ internal class WgslVisitor : CSharpSyntaxVisitor
 
     public override void VisitAttribute(AttributeSyntax node) => VisitAttributeTyped(node, GetAttributeType(node));
 
-    private AttributeType GetAttributeType(AttributeSyntax node) =>
-        GetAttributeType(node.Name.ToString());
-
-    private AttributeType GetAttributeType(string name)
+    private AttributeType GetAttributeType(AttributeSyntax node)
     {
-        return Enum.TryParse(name, true, out AttributeType attributeType)
-            ? attributeType
-            : throw new NotImplementedException($"Attribute {name} is not implemented.");
+        Location location = node.GetLocation();
+        if (Enum.TryParse(node.Name.ToString(), true, out AttributeType attributeType))
+            return attributeType;
+        Report(WgslGeneratorRules.UnknownAttributeNameRule, location, node.Name.ToString());
+        return default;
     }
 
     private void VisitAttributeTyped(AttributeSyntax node, AttributeType type)
@@ -698,7 +704,8 @@ internal class WgslVisitor : CSharpSyntaxVisitor
                 break;
 
             default:
-                throw new NotImplementedException($"Attribute {type} is not implemented.");
+                Report(WgslGeneratorRules.UnsupportedAttributeRule, node.GetLocation(), type.ToString());
+                break;
         }
     }
 
@@ -841,9 +848,27 @@ internal class WgslVisitor : CSharpSyntaxVisitor
 
     public override void VisitReturnStatement(ReturnStatementSyntax node)
     {
-        Write("return ");
-        Visit(node.Expression);
-        WriteLine(";");
+        if (node.Expression is ConditionalExpressionSyntax conditional)
+        {
+            Write("if (");
+            Visit(conditional.Condition);
+            Write(") { return ");
+            Visit(conditional.WhenTrue);
+            WriteLine("; } else { return ");
+            Visit(conditional.WhenFalse);
+            WriteLine("; }");
+        }
+        else if (node.Expression is null)
+        {
+            Report(WgslGeneratorRules.EmptyReturnStatementRule, node.GetLocation());
+            WriteLine("return;");
+        }
+        else
+        {
+            Write("return ");
+            Visit(node.Expression);
+            WriteLine(";");
+        }
     }
 
     public override void VisitIdentifierName(IdentifierNameSyntax node)
@@ -886,13 +911,24 @@ internal class WgslVisitor : CSharpSyntaxVisitor
             return;
         }
 
-        var identifierIdentifier = node.Expression switch
+        ISymbol? symbol = default;
+
+        SyntaxToken identifierIdentifier;
+        switch (node.Expression)
         {
-            GenericNameSyntax genericNameSyntax => genericNameSyntax.Identifier,
-            IdentifierNameSyntax identifier => identifier.Identifier,
-            _ => throw new NotImplementedException("For now only generic and identifier names are supported, got: " +
-                                                   node.Expression.GetType().Name)
-        };
+            case GenericNameSyntax genericNameSyntax:
+                identifierIdentifier = genericNameSyntax.Identifier;
+                break;
+            case IdentifierNameSyntax identifier:
+                identifierIdentifier = identifier.Identifier;
+                // get type the identifier refers was on
+                symbol = _compilation.GetSemanticModel(node.SyntaxTree)?.GetSymbolInfo(identifier).Symbol;
+                break;
+            default:
+                Report(WgslGeneratorRules.UnsupportedInvocationExpressionRule, node.GetLocation(),
+                    node.Expression.GetType().Name);
+                return;
+        }
 
         var methodName = identifierIdentifier.Text;
         if (methodName == "discard")
@@ -905,24 +941,51 @@ internal class WgslVisitor : CSharpSyntaxVisitor
         {
             if (char.IsUpper(methodName[0]))
             {
-                // _diagnosticsHelper.ReportWarning("Method was made lowercase", "Method was made lowercase", node.GetLocation());
+                var originalMethodName = methodName;
                 methodName = string.Concat(char.ToLower(methodName[0]), methodName.Substring(1));
+                Report(WgslGeneratorRules.MethodNameCasingChangedRule, node.GetLocation(), originalMethodName,
+                    methodName);
             }
 
             if (!_typemapper.KnownMethods.Contains(methodName))
             {
-                // _diagnosticsHelper.ReportWarning($"Unknown method {identifierIdentifier.Text}", "Unknown method", node.GetLocation());
-                methodName = methodName switch
-                {
-                    "normalized" => "normalize",
-                    _ => methodName,
-                };
+                if (symbol is { ContainingType.Name: var containingType })
+                    switch (containingType)
+                    {
+                        case "BuiltIn":
+                            // this is a built-in method, so we can use it
+                            _typemapper.KnownMethods.Add(methodName);
+                            break;
+                        case "Math":
+                            Report(WgslGeneratorRules.MethodCallNotValidatedRule, node.GetLocation(),
+                                "Math", methodName);
+                            break;
+                        case "Glm":
+                            Report(WgslGeneratorRules.MethodCallNotValidatedRule, node.GetLocation(),
+                                "Glm", methodName);
+                            methodName = methodName switch
+                            {
+                                "normalized" => "normalize",
+                                _ => methodName,
+                            };
+                            break;
+                        default:
+                            Report(WgslGeneratorRules.UnknownMethodCallRule, node.GetLocation(), methodName);
+                            break;
+                    }
+            }
+            else
+            {
+                Report(WgslGeneratorRules.UnknownMethodCallRule, node.GetLocation(), methodName);
             }
         }
 
         Write(methodName);
+
         Write("(");
-        for (var index = 0; index < node.ArgumentList.Arguments.Count; index++)
+        for (var index = 0;
+             index < node.ArgumentList.Arguments.Count;
+             index++)
         {
             var argument = node.ArgumentList.Arguments[index];
             Visit(argument.Expression);
@@ -948,7 +1011,7 @@ internal class WgslVisitor : CSharpSyntaxVisitor
 
     public override void VisitVariableDeclaration(VariableDeclarationSyntax node)
     {
-        //todo imrove this?
+        Report(WgslGeneratorRules.IncompleteVariableDeclarationHandlingRule, node.GetLocation());
         Write(node.ToString());
     }
 

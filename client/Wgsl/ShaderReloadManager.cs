@@ -65,11 +65,11 @@ public class ShaderReloadManager : IHostedService, IShaderManager
         return default!;
     }
 
-    public ShaderReloadManager(IConfiguration config, ILogger<ShaderReloadManager> logger)
+    public ShaderReloadManager(IHostEnvironment environment, IConfiguration config, ILogger<ShaderReloadManager> logger)
     {
         _config = config.GetSection(nameof(ShaderReloadManager));
         _logger = logger;
-        _watcher = new FileSystemWatcher(_config["Path"] ?? "Shaders")
+        _watcher = new FileSystemWatcher(Path.Combine(environment.ContentRootPath, _config["Path"] ?? "Shaders"))
         {
             NotifyFilter = NotifyFilters.LastWrite,
             Filter = "*.wgsl.cs",
@@ -126,7 +126,7 @@ public class ShaderReloadManager : IHostedService, IShaderManager
             MetadataReference.CreateFromFile(typeof(DynamicAttribute).Assembly.Location));
 
         _logger.LogInformation("Loaded {Count} assemblies", _references.Count);
-        
+
         return _shaderTask.IsCompleted ? _shaderTask : Task.CompletedTask;
     }
 

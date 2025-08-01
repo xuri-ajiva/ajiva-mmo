@@ -69,7 +69,7 @@ public partial class DeferredShader
 
     private static vec3 AlbedoColor(vec3 nrm, vec3 L, f32 distance, LightData light, vec3 albedo)
     {
-        var lambert = max(Dot(nrm, normalize(L)), 0.0f);
+        var lambert = max(dot(nrm, normalize(L)), 0.0f);
         var color = lambert * pow(1.0f - distance / light.Radius, 2.0f) * light.Color * albedo;
         return color;
     }

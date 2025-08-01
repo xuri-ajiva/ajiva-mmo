@@ -62,6 +62,7 @@ public partial class BuiltIn
     public static u32 u32<T>(T x) => default!;
     public static i32 i32<T>(T x) => default!;
     public static void discard() {}
+    public static u32 arrayLength<T>(T[] array) => (u32)array.Length;
 }
 
 public static class StrExt

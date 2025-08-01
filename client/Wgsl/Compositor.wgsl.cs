@@ -71,18 +71,11 @@ public partial class CompositorShader
         // Alternative formulation (often clearer): Under operator
         // Out = Src * SrcAlpha + Dst * (1 - SrcAlpha)
         var finalColor = avgTransparentColor * totalOpacity + color.rgb * (1.0f - totalOpacity);
-
         // Clamp color if needed (optional, helps prevent issues from slight inaccuracies)
         //finalColor = clamp(finalColor, vec3f(0.0f), vec3f(1.0f));
-
         // ReSharper disable once CompareOfFloatsByEqualityOperator
-        if (depth == 1.0f && accum.a == 0.0f)
-        {
-            return vec4(0.1f, 0.1f, 0.3f, 1.0f) * (1.0f - checkerValue) + checkerValue;
-        }
-        else
-        {
-            return vec4(finalColor.xyz, 1.0f);
-        }
+        return depth == 1.0f && accum.a == 0.0f
+            ? vec4(0.1f, 0.1f, 0.3f, 1.0f) * (1.0f - checkerValue) + checkerValue
+            : vec4(finalColor.xyz, 1.0f);
     }
 }
