@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 using Client.LayerSystem;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Silk.NET.Input;
 
 namespace Client.Renderer.PbrRenderer;

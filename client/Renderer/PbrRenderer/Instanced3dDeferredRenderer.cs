@@ -7,7 +7,7 @@ using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
 using GlmSharp;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using NativeFileDialogExtendedSharp;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
@@ -71,7 +71,7 @@ public class Instanced3dDeferredRenderer(
             accumFormat: TextureFormat.Rgba32float, // Index 5
             revealFormat: TextureFormat.R8Unorm, // Index 7
             // Depth/Stencil
-            depthStencilFormat: TextureFormat.Depth32float, // Or Depth24PlusStencil8
+            depthStencilFormat: TextureFormat.Depth24Plus, // Or Depth24PlusStencil8
             label: "SceneGBuffer_PBR"
         );
 
@@ -272,9 +272,12 @@ public class Instanced3dDeferredRenderer(
                 _selectedObjectId = pos.ObjectId;
                 _selectedInstanceId = pos.InstanceId;
             }
-
-            _mousePosition = ImGui.GetMousePos() -
-                             (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
+            
+            _mousePosition = ImGui.GetCursorPos();
+            _logger.LogInformation(
+                "Mouse Position: {MousePosition}, Cursor Position: {CursorPosition}, Window Position: {WindowPosition}, DPI Scale: {DpiScale}",
+                _mousePosition, ImGui.GetCursorPos(), ImGui.GetWindowPos(), ImGui.GetWindowDpiScale());
+            // ImGui.GetMousePos() - (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
@@ -345,7 +348,7 @@ public class Instanced3dDeferredRenderer(
 
             //imDrawListPtr.AddImage(color0.GetIntPtr(), new Vector2(0, 0), new Vector2(width, height));
 
-            ImGui.Image(colorOutput.View.GetIntPtr(), new Vector2(width, height));
+            ImGui.Image(colorOutput.ToImTextureRef(), new Vector2(width, height));
             _isSceneViewHovered = ImGui.IsItemHovered();
         }
 
@@ -383,7 +386,7 @@ public class Instanced3dDeferredRenderer(
                 var imageButtonSize = ImGui.GetContentRegionAvail().X;
                 if (selectedBuffer.BaseColorTexture is { } texture)
                 {
-                    if (ImGui.ImageButton("ChooseTextureA", texture.View.GetIntPtr(),
+                    if (ImGui.ImageButton("ChooseTextureA"u8, texture.ToImTextureRef(),
                             new Vector2(imageButtonSize)))
                     {
                         Task.Run(() =>
@@ -404,7 +407,7 @@ public class Instanced3dDeferredRenderer(
 
                 if (selectedBuffer.NormalTexture is { } normalTexture)
                 {
-                    if (ImGui.ImageButton("ChooseTextureN", normalTexture.View.GetIntPtr(),
+                    if (ImGui.ImageButton("ChooseTextureN"u8, normalTexture.ToImTextureRef(),
                             new Vector2(imageButtonSize)))
                     {
                         Task.Run(() =>
@@ -425,7 +428,7 @@ public class Instanced3dDeferredRenderer(
 
                 if (selectedBuffer.EmissiveTexture is { } emission)
                 {
-                    if (ImGui.ImageButton("ChooseTextureE", emission.View.GetIntPtr(),
+                    if (ImGui.ImageButton("ChooseTextureE"u8, emission.ToImTextureRef(),
                             new Vector2(imageButtonSize)))
                     {
                         Task.Run(() =>
@@ -494,9 +497,9 @@ public class Instanced3dDeferredRenderer(
 
         if (ImGui.Begin("DefTexture"))
         {
-            ImGui.Image(_loader.DefaultTexture.View.GetIntPtr(), new Vector2(256, 256));
-            ImGui.Image(_loader.DefaultNormal.View.GetIntPtr(), new Vector2(256, 256));
-            ImGui.Image(_loader.DefaultRoughness.View.GetIntPtr(), new Vector2(256, 256));
+            ImGui.Image(_loader.DefaultTexture.ToImTextureRef(), new Vector2(256, 256));
+            ImGui.Image(_loader.DefaultNormal.ToImTextureRef(), new Vector2(256, 256));
+            ImGui.Image(_loader.DefaultRoughness.ToImTextureRef(), new Vector2(256, 256));
         }
 
         ImGui.End();

@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using Hexa.NET.ImGui;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
@@ -26,7 +27,10 @@ public class VirtualFramebuffer : IDisposable
         public TextureViewPtr? DepthOnlyView = depthOnlyView;
     }
 
-    public record struct ColorTargetView(TexturePtr Tex, TextureViewPtr View);
+    public record struct ColorTargetView(TexturePtr Tex, TextureViewPtr View)
+    {
+        public unsafe ImTextureRef ToImTextureRef() => new(null, View.GetIntPtr());
+    }
 
     public record struct DepthStencilTargetView(TexturePtr Tex, TextureViewPtr View, TextureViewPtr DepthOnlyView);
 
@@ -127,7 +131,7 @@ public class VirtualFramebuffer : IDisposable
         {
             ref var target = ref _colorTargets[i];
             target.Tex?.Release();
-            
+
             target.Tex = _device.CreateTexture(usageFlags, TextureDimension.Dimension2D,
                 new Extent3D(width, height, 1),
                 target.Format, 1, 1, new ReadOnlySpan<TextureFormat>(in target.Format),

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Numerics;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;

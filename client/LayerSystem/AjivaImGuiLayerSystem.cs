@@ -1,10 +1,11 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Reflection;
 using Client.Platform;
+using Client.Platform.ImGuiPlatform;
 using Client.Renderer;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.ImGui;
@@ -30,8 +31,10 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
     private List<IAjivaLayer> Layers { get; } = [];
 
-    public AjivaImGuiLayerSystem(ILogger<AjivaImGuiLayerSystem> logger, RendererApi api,
-        IServiceScopeFactory serviceProvider, PeriodicUpdater periodicUpdater)
+    public AjivaImGuiLayerSystem(ILogger<AjivaImGuiLayerSystem> logger,
+        RendererApi api,
+        IServiceScopeFactory serviceProvider,
+        PeriodicUpdater periodicUpdater)
     {
         _scope = serviceProvider.CreateScope();
 
@@ -45,7 +48,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
                 .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IAjivaLayer).IsAssignableFrom(t))
                 .ToArray();
 #else
-        _layerTypes = [];
+            _layerTypes = [];
 #endif
     }
 
@@ -56,7 +59,9 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         _window = parent;
         var input = parent.Input;
 
-        _imguiController = new ImGuiController(_api.Device, TextureFormat.Bgra8Unorm, parent.Window, input, SetupFonts);
+        var platform = new SilkNetPlatform(_window.Window, input);
+        _imguiController = new ImGuiController(_api, TextureFormat.Bgra8Unorm, platform, null, SetupFonts);
+        platform.SetImGuiController(_imguiController);
 
         var io = ImGui.GetIO();
 
@@ -67,7 +72,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         var style = ImGui.GetStyle();
         style.FrameRounding = 4;
         style.FrameBorderSize = 1;
-        io.FontGlobalScale = 1.25f;
 
         foreach (var layer in Layers)
         {
@@ -82,9 +86,10 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         //_imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
 
         var fontPath = Path.GetFullPath("resources/Quicksand-SemiBold.ttf");
-
-        var nativeConfig = ImGuiNative.ImFontConfig_ImFontConfig();
-        //Add a higher horizontal/vertical sample rate for global scaling.
+        
+        ImGui.GetIO().ConfigFlags |= ImGuiConfigFlags.DockingEnable;
+        ImGui.GetIO().ConfigFlags |= ImGuiConfigFlags.ViewportsEnable;
+        ImFontConfig* nativeConfig = ImGui.ImFontConfig();
         nativeConfig->OversampleH = 8;
         nativeConfig->OversampleV = 8;
         nativeConfig->RasterizerMultiply = 1f;
@@ -182,14 +187,13 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
         var queue = _api.Device.GetQueue();
 
-        ImGui.PushFont(_quicksandFont);
+        ImGui.PushFont(_quicksandFont, 1.8f);
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
 
         foreach (var layer in Layers)
         {
             if (!layer.Enabled) continue;
 
-            // ReSharper disable once ConvertIfStatementToSwitchStatement
             if (layer is IRenderLayer renderLayer)
                 renderLayer.Render(info, new RenderTarget(queue, _imguiController!));
 
@@ -218,7 +222,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
         _imguiController!.Render(pass);
         ImGui.UpdatePlatformWindows();
-        //ImGui.RenderPlatformWindowsDefault();
+        ImGui.RenderPlatformWindowsDefault();
 
         pass.End();
         queue.Submit(cmd.Finish());
@@ -261,7 +265,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
             }
 
             ImGui.Separator();
-            // combobox for adding or removing layers
             if (ImGui.BeginCombo("Add Layer", "Select Layer"))
             {
                 foreach (var layerType in _layerTypes)
@@ -316,7 +319,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
             }
 
             ImGui.Text($"Allocations: {allocations:000 000 000 000}");
-            // Allocation per sec:
             var allocDiff = allocations - allocationsLast;
             ImGui.Text($"Delta {allocDiff:000 000 000 000}");
             allocationsLast = allocations;
@@ -352,7 +354,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         if (_location >= 0)
         {
             var viewport = ImGui.GetMainViewport();
-            var workPos = viewport.WorkPos; // Use work area to avoid menu-bar/task-bar, if any!
+            var workPos = viewport.WorkPos;
             var workSize = viewport.WorkSize;
             Vector2 windowPos, windowPosPivot;
             windowPos.X = (_location & 1) > 0 ? (workPos.X + workSize.X - pad) : (workPos.X + pad);
@@ -364,13 +366,12 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         }
         else if (_location == -2)
         {
-            // Center window
-            ImGui.SetNextWindowPos(ImGui.GetMainViewport().GetCenter(), ImGuiCond.Always, new Vector2(0.5f, 0.5f));
+            ImGui.SetNextWindowPos(ImGui.GetMainViewport().Pos, ImGuiCond.Always, new Vector2(0.5f, 0.5f));
             windowFlags |= ImGuiWindowFlags.NoMove;
         }
 
         var io = ImGui.GetIO();
-        ImGui.SetNextWindowBgAlpha(0.35f); // Transparent background
+        ImGui.SetNextWindowBgAlpha(0.35f);
         if (ImGui.Begin("Metrics overlay", ref _showOverlay, windowFlags))
         {
             ImGui.Text("Simple overlay\n(right-click to change position)");
@@ -392,7 +393,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
                 ImGui.EndPopup();
             }
 
-            // render small graphs with fps
             ImGui.PlotLines("", ref _frameTimes[0], _frameTimes.Length, 0, "Frame Times", 0, 50,
                 new Vector2(300, 80));
         }

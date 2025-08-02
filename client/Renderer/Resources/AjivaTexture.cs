@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using Hexa.NET.ImGui;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 using ImageCopyTexture = Silk.NET.WebGPU.Safe.ImageCopyTexture;
@@ -126,6 +127,7 @@ public class TextureData(
 public class AjivaTexture : IAjivaVersionedObject
 {
     public TextureData Data { get; private set; }
+    public unsafe ImTextureRef ToImTextureRef() => new(null, View.GetIntPtr());
 
     private AjivaTexture(TextureData data)
     {

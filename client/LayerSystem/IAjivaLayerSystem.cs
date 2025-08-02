@@ -1,4 +1,5 @@
 ﻿using Client.Platform;
+using Client.Platform.ImGuiPlatform;
 using Silk.NET.WebGPU.Extensions.ImGui;
 using Silk.NET.WebGPU.Safe;
 
