@@ -8,6 +8,7 @@ namespace Client.Renderer.PbrRenderer;
 public class PbrInstancedMeshBuffer(
     AjivaMesh<PbrGBufferShader.Attributes> mesh,
     PbrGBufferShader.PbrMaterialUniform materialUniform,
+    AjivaBuffer<PbrGBufferShader.PbrMaterialUniform> uniformBuffer,
     params IEnumerable<PbrGBufferShader.Instance> instanceInfos)
     : IInstancedMeshBuffer<PbrGBufferShader.Attributes, PbrGBufferShader.Instance, PbrGBufferShader.PbrMaterialUniform>
 {
@@ -15,8 +16,8 @@ public class PbrInstancedMeshBuffer(
 
     // buffers
     public AjivaBuffer<PbrGBufferShader.Instance>? InstanceBuffer { get; set; }
-    public AjivaBuffer<PbrGBufferShader.PbrMaterialUniform> MaterialUniformBuffer { get; set; }
-    public AjivaBuffer<PbrGBufferShader.PbrMaterialUniform> UniformBuffer => MaterialUniformBuffer;
+    public AjivaBuffer<PbrGBufferShader.PbrMaterialUniform> MaterialUniformBuffer => UniformBuffer;
+    public AjivaBuffer<PbrGBufferShader.PbrMaterialUniform> UniformBuffer { get; set; } = uniformBuffer;
 
     // bind groups
     public BindGroupPtr? TextureBindGroup { get; set; }

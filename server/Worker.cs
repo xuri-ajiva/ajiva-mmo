@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Numerics;
+using Common.Networking;
 using NetworkPackets;
 using Riptide;
+using server;
 using ServiceDefaults;
 
 namespace server;
@@ -13,15 +15,13 @@ public class Worker : IHostedService, IUniversalMessageHandler
 
     private readonly ILogger<Worker> _logger;
     private readonly Riptide.Server _server;
-    private readonly ServerConfiguration _configuration;
-
-    ConcurrentBag<Entitys> _entitys = new();
+    private readonly GameLogic _gameLogic;
 
     public Worker(ILogger<Worker> logger, Server server, ServerConfiguration configuration)
     {
         _logger = logger;
         _server = server;
-        _configuration = configuration;
+        _gameLogic = new GameLogic(_server);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -31,7 +31,7 @@ public class Worker : IHostedService, IUniversalMessageHandler
         _server.ClientConnected += ServerOnClientConnected;
         _server.ClientDisconnected += ServerOnClientDisconnected;
         _server.ConnectionFailed += ServerOnConnectionFailed;
-        _server.Start(_configuration.Port, _configuration.MaxConnections);
+        _server.Start(7777, 10);
         _serverUpdateTask = UpdateAsync(_stoppingCts.Token);
         return _serverUpdateTask.IsCompleted ? _serverUpdateTask : Task.CompletedTask;
     }
@@ -41,13 +41,11 @@ public class Worker : IHostedService, IUniversalMessageHandler
         while (!cancellationToken.IsCancellationRequested)
         {
             _server.Update();
+            // TODO: Implement a proper game loop here.
+            // This loop should:
+            // 1. Update the world state (e.g., move entities).
+            // 2. Send EntityUpdatePacket messages for any entities that have changed.
             await Task.Delay(5, cancellationToken);
-            foreach (var entity in _entitys.ToArray())
-            {
-                _server.SendToAll(
-                    new UpdateEntityPacket(entity.Id, entity.Position.X, entity.Position.Y, entity.Position.Z)
-                        .ToMessage(MessageSendMode.Unreliable));
-            }
         }
     }
 
@@ -64,16 +62,7 @@ public class Worker : IHostedService, IUniversalMessageHandler
     private void ServerOnClientConnected(object? sender, ServerConnectedEventArgs e)
     {
         _logger.LogInformation("Client connected: {@Client}", e.Client);
-        _entitys.Add(new Entitys
-        {
-            Id = e.Client.Id, // todo use a better id system
-            Position = new Vector3(0, 0, 0),
-        });
-        foreach (var entity in _entitys.ToArray())
-        {
-            new NewEntityPacket(entity.Id, 0u, entity.Position.X, entity.Position.Y, entity.Position.Z)
-                .Send(e.Client, MessageSendMode.Reliable);
-        }
+        _gameLogic.SendWorldState(e.Client);
     }
 
     private void ServerOnMessageReceived(object? sender, MessageReceivedEventArgs e)
@@ -101,18 +90,8 @@ public class Worker : IHostedService, IUniversalMessageHandler
 
     public void Handle(UpdateEntityPacket message)
     {
-        var entity = _entitys.FirstOrDefault(e => e.Id == message.Id);
-        if (entity == null)
-            return;
-
-        entity.Position = new Vector3(message.X, message.Y, message.Z);
+        // TODO: Update the entity's position in the world.
     }
-}
-
-internal class Entitys
-{
-    public Vector3 Position { get; set; }
-    public u32 Id { get; set; }
 }
 
 public class ServerConfiguration

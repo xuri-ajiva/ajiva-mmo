@@ -10,7 +10,7 @@ public interface IInstancedMeshBuffer<TAttributes, TInstance, TModelUniform> : I
     public AjivaMesh<TAttributes> Mesh { get; set; }
     public AjivaBuffer<TInstance>? InstanceBuffer { get; set; }
 
-    public AjivaBuffer<TModelUniform> UniformBuffer { get; }
+    public AjivaBuffer<TModelUniform> UniformBuffer { get; set; }
 
     //public BindGroupPtr? ModelBindGroup { get; set; }
     public ref TModelUniform MaterialUniform { get; }

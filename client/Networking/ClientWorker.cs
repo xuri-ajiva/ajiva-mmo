@@ -1,4 +1,8 @@
+using Common.Ecs;
 using System.Numerics;
+using client;
+using Client.Renderer;
+using Common.Networking;
 using NetworkPackets;
 using Riptide;
 using ServiceDefaults;
@@ -9,13 +13,15 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
 {
     private readonly ILogger<ClientWorker> _logger;
     private readonly Riptide.Client _client;
-    private readonly Ecs _ecs;
+    private readonly GameLogic _gameLogic;
+    private readonly ObjectScene _objectScene;
 
-    public ClientWorker(ILogger<ClientWorker> logger, Riptide.Client client, Ecs ecs)
+    public ClientWorker(ILogger<ClientWorker> logger, Riptide.Client client, GameLogic gameLogic, ObjectScene objectScene)
     {
         _logger = logger;
         _client = client;
-        _ecs = ecs;
+        _gameLogic = gameLogic;
+        _objectScene = objectScene;
         _client.MessageReceived += ClientOnMessageReceived;
     }
 
@@ -55,6 +61,7 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
 
             _client.Disconnect();
             _client.Update();
+            _objectScene.UnloadLevel();
         }
         catch (Exception e)
         {
@@ -64,11 +71,23 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
 
     public void Handle(NewEntityPacket message)
     {
-        _ecs.UpdatePlayer(message.Id, new Vector3(message.X, message.Y, message.Z));
+        _gameLogic.GetWorld().AddComponent(new Entity((int)message.Id), new TransformComponent { Position = new Vector3(message.X, message.Y, message.Z) });
     }
 
     public void Handle(UpdateEntityPacket message)
     {
-        _ecs.UpdatePlayer(message.Id, new Vector3(message.X, message.Y, message.Z));
+        ref var transform = ref _gameLogic.GetWorld().GetComponent<TransformComponent>(new Entity((int)message.Id));
+        transform = transform with { Position = new Vector3(message.X, message.Y, message.Z) };
+    }
+
+    public void Handle(BeginWorldStatePacket message)
+    {
+        _logger.LogInformation("Beginning to receive world state for {entityCount} entities.", message.EntityCount);
+    }
+
+    public void Handle(LoadLevelPacket message)
+    {
+        _logger.LogInformation("Loading level: {levelName}", message.LevelName);
+        _objectScene.LoadLevel(message.LevelName);
     }
 }

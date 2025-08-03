@@ -1,4 +1,5 @@
-﻿using Client.LayerSystem;
+﻿using client;
+using Client.LayerSystem;
 using Client.Networking;
 using Client.Platform;
 using Client.Renderer;
@@ -15,7 +16,7 @@ public class ClientRunner
         var services = builder.Services;
 
         services.AddSingleton<PlatformSystem>();
-        services.AddSingleton<Ecs>();
+        services.AddSingleton<GameLogic>();
         services.AddSingleton<ModelHelper>();
         services.AddSingleton<ObjectScene>();
         services.AddSingleton<ICamera, FreeCamera>();

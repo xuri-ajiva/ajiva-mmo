@@ -29,6 +29,12 @@ public class AjivaBuffer<T>(
         Buffer.Release();
     }
 
+    ~AjivaBuffer()
+    {
+        loader.Logger.LogTrace("Finalizing AjivaBuffer {Buffer}", Buffer.GetIntPtr());
+        Dispose();
+    }
+
     public u64 Version { get; private set; } = IAjivaVersionedObject.Sentinel;
 
     public void WriteBuffer(ReadOnlySpan<T> data)

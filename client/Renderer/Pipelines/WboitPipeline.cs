@@ -205,4 +205,22 @@ public class WboitPipeline(
     {
         return shader == other;
     }
+
+    public void DrawMesh(RenderPassEncoderPtr transparentPass, OitInstancedMeshBuffer instances)
+    {
+          RecreateBindGroup(instances);        
+    
+          transparentPass.SetVertexBuffer(0, instances.Mesh.VertexBuffer.Buffer,
+                instances.Mesh.VertexBuffer.OffsetBytes, instances.Mesh.VertexBuffer.Size);
+          transparentPass.SetVertexBuffer(1, instances.InstanceBuffer!.Buffer,
+                instances.InstanceBuffer.OffsetBytes, instances.InstanceBuffer.Size);
+    
+          transparentPass.SetIndexBuffer(instances.Mesh.IndexBuffer.Buffer, IndexFormat.Uint32,
+                instances.Mesh.IndexBuffer.OffsetBytes, instances.Mesh.IndexBuffer.Size);
+    
+          transparentPass.SetBindGroup(1, instances.ModelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
+    
+          transparentPass.DrawIndexed((u32)(instances.Mesh.IndexBuffer.Size / sizeof(u32)),
+                (u32)instances.InstanceInfos.Length, 0, 0, 0);
+    }
 }

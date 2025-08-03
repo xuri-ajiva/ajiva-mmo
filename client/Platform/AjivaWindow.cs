@@ -99,13 +99,14 @@ public class AjivaWindow : IHostedLifecycleService
         }
     }
 
-    public Task StoppingAsync(CancellationToken cancellationToken)
+    public Task StopAsync(CancellationToken cancellationToken)
     {
         _layerSystem.Detach();
+        _isClosing = true;
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StartedAsync(CancellationToken cancellationToken)
     {

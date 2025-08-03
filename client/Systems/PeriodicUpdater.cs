@@ -251,6 +251,7 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
     /// <exception cref="NotImplementedException"></exception>
     public void SleepSignal()
     {
+        if (!Running) return;
         try
         {
             _globalHandle.Wait();

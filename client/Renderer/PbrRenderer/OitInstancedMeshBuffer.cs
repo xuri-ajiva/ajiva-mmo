@@ -7,15 +7,16 @@ namespace Client.Renderer.PbrRenderer;
 public class OitInstancedMeshBuffer(
     AjivaMesh<WboitAccumShader.Attributes> mesh,
     WboitAccumShader.ModelUniform modelUniform,
-    WboitAccumShader.Instance[] instanceInfos)
+    AjivaBuffer<WboitAccumShader.ModelUniform> uniformBuffer,
+    params WboitAccumShader.Instance[] instanceInfos)
     : IInstancedMeshBuffer<WboitAccumShader.Attributes, WboitAccumShader.Instance, WboitAccumShader.ModelUniform>
 {
     public AjivaMesh<WboitAccumShader.Attributes> Mesh { get; set; } = mesh;
 
     // buffers
     public AjivaBuffer<WboitAccumShader.Instance>? InstanceBuffer { get; set; }
-    public AjivaBuffer<WboitAccumShader.ModelUniform> ModelUniformBuffer { get; set; }
-    public AjivaBuffer<WboitAccumShader.ModelUniform> UniformBuffer => ModelUniformBuffer;
+    public AjivaBuffer<WboitAccumShader.ModelUniform> ModelUniformBuffer => UniformBuffer;
+    public AjivaBuffer<WboitAccumShader.ModelUniform> UniformBuffer { get; set; } = uniformBuffer;
 
     // bind groups
     public BindGroupPtr? ModelBindGroup { get; set; }
@@ -28,8 +29,8 @@ public class OitInstancedMeshBuffer(
 
     private WboitAccumShader.Instance[] _instanceInfos = instanceInfos;
     public Span<WboitAccumShader.Instance> InstanceInfos => _instanceInfos.AsSpan();
-    public AjivaTexture AlbedoTexture;
-    public AjivaTexture EmissionTexture;
+    public required AjivaTexture AlbedoTexture;
+    public AjivaTexture? EmissionTexture;
 
     public void Deconstruct(out AjivaBuffer<WboitAccumShader.Attributes> vertexBuffer, out AjivaBuffer<u32> indexBuffer,
         out AjivaBuffer<WboitAccumShader.Instance>? instanceBuffer, out BindGroupPtr? modelBindGroup,
@@ -49,7 +50,7 @@ public class OitInstancedMeshBuffer(
         ModelBindGroup?.Release();
         ModelUniformBuffer.Dispose();
 
-        AlbedoTexture.Dispose();
-        EmissionTexture.Dispose();
+        AlbedoTexture?.Dispose();
+        EmissionTexture?.Dispose();
     }
 }

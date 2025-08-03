@@ -1,4 +1,7 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using Common.Networking;
+using client;
+using Common.Ecs;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Client.LayerSystem;
@@ -18,7 +21,7 @@ public class Instanced3dDeferredRenderer(
     ILogger<Instanced3dDeferredRenderer> logger,
     IShaderManager shaderManager,
     RendererApi api,
-    Ecs ecs,
+    GameLogic gameLogic,
     ResourceLoader loader,
     ICamera camera,
     ObjectScene scene)
@@ -28,11 +31,12 @@ public class Instanced3dDeferredRenderer(
     private readonly IShaderManager _shaderManager = shaderManager;
     private readonly RendererApi _api = api;
     private readonly ResourceLoader _loader = loader;
-    private readonly Ecs _ecs = ecs;
+    private readonly GameLogic _gameLogic = gameLogic;
 
-
-    private PbrInstancedMeshBuffer[] _meshBuffers = [];
-    private OitInstancedMeshBuffer[] _transparentMeshBuffers = [];
+    private readonly RenderableMeshCollection _dynamicMeshes = new();
+    private u64 _transformVersion;
+    private u64 _renderableMeshVersion;
+    private u64 _sceneVersion;
     private ObjectScene _scene = scene;
 
     private GBuffer? _sceneGBuffer;
@@ -79,28 +83,12 @@ public class Instanced3dDeferredRenderer(
             RenderTexture.Create(_api.Device, _sceneGBuffer.BaseColorAlphaFormat, label: "FinalSceneTexture");
 
         _logger.LogDebug("Creating Model Buffers");
-        //_meshBuffers = CreateModelBuffers("resources/Temple/TempleModel.glb", "Temple");
-        //_meshBuffers = _scene.CreateModelBuffers("resources/SponzaAtrium/sponza.obj", "SponzaAtrium");
-        _meshBuffers = _scene.CreateModelBuffers("resources/Sponza/Meshes/Sponza_Modular.FBX", "Sponza_Modular");
-        _transparentMeshBuffers = _scene.CreateTransparentCubes();
 
         _logger.LogDebug("Creating uniform resources");
         {
             using var albedo = _loader.AsyncTextureLoad("resources/Temple/TempleStone_alb.png");
             using var normal = _loader.AsyncTextureLoad("resources/Temple/TempleStone_nrm.png");
             using var emission = _loader.AsyncTextureLoad("resources/Temple/TempleStone_emm.png");
-            foreach (var instancedMeshBuffer in _meshBuffers)
-            {
-                instancedMeshBuffer.BaseColorTexture ??= albedo.Reference();
-                instancedMeshBuffer.NormalTexture ??= normal.Reference();
-                instancedMeshBuffer.EmissiveTexture ??= emission.Reference();
-            }
-
-            // for testing
-            foreach (var instancedMeshBuffer in _transparentMeshBuffers)
-            {
-                instancedMeshBuffer.EmissionTexture = emission.Reference();
-            }
         }
 
         _sceneLights = new SceneLights();
@@ -108,22 +96,6 @@ public class Instanced3dDeferredRenderer(
             "LightBuffer");
 
         CreatePipelines();
-
-        foreach (var instancedMeshBuffer in _meshBuffers)
-        {
-            instancedMeshBuffer.MaterialUniformBuffer = _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
-                BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer");
-
-            _pbrPipeline.RecreateMaterialBindGroup(instancedMeshBuffer);
-        }
-
-        foreach (var instancedMeshBuffer in _transparentMeshBuffers)
-        {
-            instancedMeshBuffer.ModelUniformBuffer = _loader.CreateBuffer<WboitAccumShader.ModelUniform>(
-                BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer");
-
-            _transparentPipeline.RecreateBindGroup(instancedMeshBuffer);
-        }
 
         _logger.LogDebug("Done");
     }
@@ -187,50 +159,85 @@ public class Instanced3dDeferredRenderer(
             Time = info.TotalTime
         });
 
-        var players = _ecs.GetPlayers().ToArray();
-        if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
+        if (_sceneVersion != _scene.Version)
         {
-            _meshBuffers[^1]._instanceInfos.Capacity = players.Length;
-
-            if (_meshBuffers[^1].InstanceInfos.Length > players.Length + 1)
+            _sceneVersion = _scene.Version;
+            foreach (var buffer in _scene.RenderableMeshes.OpaqueMeshes)
             {
-                _meshBuffers[^1]._instanceInfos.RemoveRange(players.Length + 1,
-                    _meshBuffers[^1].InstanceInfos.Length - (players.Length + 1));
+                WriteBuffer(queue, buffer);
+                _pbrPipeline.RecreateMaterialBindGroup(buffer);
             }
 
-            while (_meshBuffers[^1].InstanceInfos.Length < players.Length + 1)
+            foreach (var buffer in _scene.RenderableMeshes.TransparentMeshes)
             {
-                _meshBuffers[^1]._instanceInfos.Add(new PbrGBufferShader.Instance());
+                WriteBuffer(queue, buffer);
+                _transparentPipeline.RecreateBindGroup(buffer);
             }
         }
 
-        var instanceInfo = _meshBuffers[^1].InstanceInfos;
-        instanceInfo[0].SetTransform(Matrix4x4.CreateTranslation(_camera.Position));
-        _ecs.LocalPos = _camera.Position;
-        for (var i = 0; i < players.Length; i++)
+        var transformStore = _gameLogic.GetWorld().GetStore<TransformComponent>();
+        var renderableStore = _gameLogic.GetWorld().GetStore<RenderableMeshComponent>();
+
+        if (_transformVersion != transformStore.Version || _renderableMeshVersion != renderableStore.Version)
         {
-            instanceInfo[i + 1].SetTransform(Matrix4x4.CreateTranslation(players[i].Position));
+            _transformVersion = transformStore.Version;
+            _renderableMeshVersion = renderableStore.Version;
+
+            // Clear the old dynamic meshes
+            foreach (var mesh in _dynamicMeshes.OpaqueMeshes) mesh.Dispose();
+            _dynamicMeshes.OpaqueMeshes.Clear();
+
+            // Group entities by mesh
+            var entitiesByMesh = new Dictionary<u32, List<TransformComponent>>();
+            var renderables = renderableStore.GetAll();
+            for (var i = 0; i < renderables.Length; i++)
+            {
+                var renderable = renderables[i];
+                if (!entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
+                {
+                    list = new List<TransformComponent>();
+                    entitiesByMesh[renderable.MeshId] = list;
+                }
+
+                list.Add(transformStore.Get(new Entity((int)renderable.MeshId)));
+            }
+
+            // Create a mesh buffer for each mesh
+            foreach (var (meshId, transforms) in entitiesByMesh)
+            {
+                if (transforms.Count > 0)
+                {
+                    var dynamicMesh = new PbrInstancedMeshBuffer(_scene.RenderableMeshes.OpaqueMeshes[(int)meshId].Mesh,
+                        ModelHelper.PbrMaterialExamples.WornLeather(),
+                        _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
+                            BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"),
+                        new PbrGBufferShader.Instance[transforms.Count]);
+                    for (var i = 0; i < transforms.Count; i++)
+                    {
+                        dynamicMesh.InstanceInfos[i].SetTransform(Matrix4x4.CreateTranslation(transforms[i].Position));
+                    }
+
+                    _dynamicMeshes.OpaqueMeshes.Add(dynamicMesh);
+                }
+            }
         }
 
-        foreach (var buffer in _meshBuffers)
-        {
-            WriteBuffer(queue, buffer);
-            _pbrPipeline.RecreateMaterialBindGroup(buffer);
-        }
+        //UpdateScene(queue, _scene.StaticMeshes);
 
-        foreach (var buffer in _transparentMeshBuffers)
-        {
-            WriteBuffer(queue, buffer);
-            _transparentPipeline.RecreateBindGroup(buffer);
-        }
+        UpdateScene(queue, _dynamicMeshes);
 
         _lightsBuffer.QueuedWrite(_sceneLights.LightData, queue);
 
         if (_pbrPipeline.BeginGBufferPass() is { } pass)
         {
-            foreach (var meshBuffer in _meshBuffers)
+            foreach (var meshBuffer in _scene.RenderableMeshes.OpaqueMeshes)
             {
                 _pbrPipeline.DrawMesh(pass, meshBuffer);
+            }
+
+            foreach (var meshBuffer1 in _dynamicMeshes.OpaqueMeshes)
+            {
+                _pbrPipeline.DrawMesh(pass, meshBuffer1);
             }
 
             queue.Submit(_pbrPipeline.EndGBufferPass(pass));
@@ -238,22 +245,33 @@ public class Instanced3dDeferredRenderer(
 
         if (_transparentPipeline.BeginRenderPass(sceneViewport) is { } transparentPass)
         {
-            foreach (var (vertexBuffer, indexBuffer, instanceBuffer, modelBindGroup, instances) in
-                     _transparentMeshBuffers)
+            foreach (var instances in _scene.RenderableMeshes.TransparentMeshes)
             {
-                transparentPass.SetVertexBuffer(0, vertexBuffer.Buffer, vertexBuffer.OffsetBytes, vertexBuffer.Size);
-                transparentPass.SetVertexBuffer(1, instanceBuffer!.Buffer, instanceBuffer.OffsetBytes,
-                    instanceBuffer.Size);
+                _transparentPipeline.DrawMesh(transparentPass, instances);
+            }
 
-                transparentPass.SetIndexBuffer(indexBuffer.Buffer, IndexFormat.Uint32, indexBuffer.OffsetBytes,
-                    indexBuffer.Size);
-
-                transparentPass.SetBindGroup(1, modelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
-
-                transparentPass.DrawIndexed((u32)(indexBuffer.Size / sizeof(u32)), (u32)instances.Length, 0, 0, 0);
+            foreach (var instances in _dynamicMeshes.TransparentMeshes)
+            {
+                _transparentPipeline.DrawMesh(transparentPass, instances);
             }
 
             queue.Submit(_transparentPipeline.EndRenderPass(transparentPass));
+        }
+    }
+
+
+    private void UpdateScene(QueuePtr queue, RenderableMeshCollection dynamicMeshes)
+    {
+        foreach (var buffer in dynamicMeshes.OpaqueMeshes)
+        {
+            WriteBuffer(queue, buffer);
+            _pbrPipeline!.RecreateMaterialBindGroup(buffer);
+        }
+
+        foreach (var buffer in dynamicMeshes.TransparentMeshes)
+        {
+            WriteBuffer(queue, buffer);
+            _transparentPipeline!.RecreateBindGroup(buffer);
         }
     }
 
@@ -375,6 +393,16 @@ public class Instanced3dDeferredRenderer(
                 _loader.DoCollection();
             }
 
+            if (ImGui.Button("Load Sponza"))
+            {
+                _scene.LoadLevel("Sponza");
+            }
+
+            if (ImGui.Button("Unlaod Level"))
+            {
+                _scene.UnloadLevel();
+            }
+
             ImGui.Text("Under Mouse Sample:");
             if (_underCursor is { } selected)
             {
@@ -387,9 +415,9 @@ public class Instanced3dDeferredRenderer(
                 ImGui.Text("No object under mouse");
             }
 
-            if (_selectedObjectId != 0 && _selectedObjectId <= _meshBuffers.Length)
+            if (_selectedObjectId != 0 && _selectedObjectId <= _dynamicMeshes.OpaqueMeshes.Count)
             {
-                var selectedBuffer = _meshBuffers[_selectedObjectId - 1];
+                var selectedBuffer = _dynamicMeshes.OpaqueMeshes[(int)_selectedObjectId - 1];
 
                 var y = ImGui.GetCursorPosY();
                 ImGui.Text("Textures");
@@ -486,7 +514,7 @@ public class Instanced3dDeferredRenderer(
 
             ImGui.Columns(1);
             var hi = 0;
-            foreach (var buffer in _meshBuffers)
+            foreach (var buffer in _dynamicMeshes.OpaqueMeshes)
             {
                 for (var i = 0; i < buffer.InstanceInfos.Length; i++)
                 {
@@ -520,15 +548,7 @@ public class Instanced3dDeferredRenderer(
         _sceneGBuffer?.Release();
         _finalSceneTexture?.Release();
 
-        foreach (var buffer in _meshBuffers)
-        {
-            buffer.Dispose();
-        }
-
-        foreach (var buffer in _transparentMeshBuffers)
-        {
-            buffer.Dispose();
-        }
+        _dynamicMeshes.Dispose();
 
         _compositorPipeline?.Dispose();
         _pbrPipeline?.Dispose();
@@ -539,8 +559,7 @@ public class Instanced3dDeferredRenderer(
         _sceneGBuffer = null;
         _finalSceneTexture = null;
 
-        _meshBuffers = [];
-        _transparentMeshBuffers = [];
+        _dynamicMeshes.Dispose();
         _compositorPipeline = null;
         _pbrPipeline = null;
         _lightsBuffer = null!;

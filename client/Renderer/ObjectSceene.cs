@@ -13,6 +13,27 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
     private readonly ResourceLoader _loader = loader;
     private readonly ModelHelper _modelHelper = modelHelper;
 
+    public RenderableMeshCollection RenderableMeshes { get; set; } = new();
+    public u64 Version { get; private set; }
+
+    public void LoadLevel(string levelName)
+    {
+        // For now, we'll just load the Sponza model regardless of the level name.
+        // In the future, we can use a dictionary or other mechanism to map level names to model paths.
+        RenderableMeshes.Dispose();
+        RenderableMeshes.OpaqueMeshes =
+            new List<PbrInstancedMeshBuffer>(CreateModelBuffers("resources/Sponza/Meshes/Sponza_Modular.FBX",
+                "Sponza_Modular"));
+        RenderableMeshes.TransparentMeshes = new List<OitInstancedMeshBuffer>(CreateTransparentCubes());
+        Version++;
+    }
+
+    public void UnloadLevel()
+    {
+        RenderableMeshes.Dispose();
+        Version++;
+    }
+
     private AjivaMesh<T> GenerateCubeMesh<T>(Func<i32, Quaternion<f32>, Vector3, Vector3, T> creator)
         where T : unmanaged
     {
@@ -60,7 +81,7 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
     {
         var (meshDatas, data, root, materials) = _modelHelper.LoadModels(path);
 
-        var buffers = new PbrInstancedMeshBuffer[meshDatas.Count + 2];
+        var buffers = new PbrInstancedMeshBuffer[meshDatas.Count];
 
         for (var iModel = 0; iModel < meshDatas.Count; iModel++)
         {
@@ -88,7 +109,9 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
 
             var pbrInstancedMeshBuffer = new PbrInstancedMeshBuffer(
                 new AjivaMesh<PbrGBufferShader.Attributes>(vertexBuffer, indexBuffer),
-                ModelHelper.MaterialConverter.ConvertToPbrUniform(mat, (u32)iModel + 1, (u32)mdl.MaterialIndex, false)
+                ModelHelper.MaterialConverter.ConvertToPbrUniform(mat, (u32)iModel + 1, (u32)mdl.MaterialIndex, false),
+                _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(BufferUsage.Uniform | BufferUsage.CopyDst, 1,
+                    label: $"{label}::ModelUniformBuffer")
             );
             if (mat is { DiffuseTexture: { } diffuseTexturePath })
                 pbrInstancedMeshBuffer.BaseColorTexture = _loader.AsyncTextureLoad(diffuseTexturePath);
@@ -105,7 +128,7 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
             buffers[iModel] = pbrInstancedMeshBuffer;
         }
 
-        PbrGBufferShader.Instance[] cubes = [new()];
+        /*PbrGBufferShader.Instance[] cubes = [new()];
         PbrGBufferShader.Instance[] floor = [new()];
         floor[0].SetTransform(Matrix4x4.CreateScale(new Vector3(100, 0.1f, 100)) *
                               Matrix4x4.CreateFromYawPitchRoll(0, 0, 0) *
@@ -133,7 +156,7 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
         buffers[^2] =
             new PbrInstancedMeshBuffer(generateCubeMesh, ModelHelper.PbrMaterialExamples.PolishedChrome(), floor);
         buffers[^1] =
-            new PbrInstancedMeshBuffer(generateCubeMesh, ModelHelper.PbrMaterialExamples.WornLeather(), cubes);
+            new PbrInstancedMeshBuffer(generateCubeMesh, ModelHelper.PbrMaterialExamples.WornLeather(), cubes);*/
 
         // populate instances
         var jobs = new Stack<ModelHelper.SceneNode>();
@@ -210,7 +233,9 @@ public class ObjectScene(ResourceLoader loader, ModelHelper modelHelper)
                 {
                     Transform = mat4.Identity, Tex0Color = new vec3(0), ModelId = 0,
                     Tex1Color = new vec3(1, 1, 1)
-                }, instances)
+                },
+                _loader.CreateBuffer<WboitAccumShader.ModelUniform>(BufferUsage.Uniform | BufferUsage.CopyDst, 1,
+                    label: $"CreateTransparentCubes::ModelUniformBuffer"), instances)
             {
                 AlbedoTexture = transparentTexture,
             }

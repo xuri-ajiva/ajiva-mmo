@@ -4,7 +4,7 @@ using ServiceDefaults;
 
 namespace Client.LayerSystem;
 
-public class ClientConnectionLayer(Riptide.Client client, Ecs ecs) : IUiRenderLayer
+public class ClientConnectionLayer(Riptide.Client client) : IUiRenderLayer
 {
     public void Attach() {}
 
@@ -13,8 +13,8 @@ public class ClientConnectionLayer(Riptide.Client client, Ecs ecs) : IUiRenderLa
     {
         if (!client.IsConnected) return;
 
-        new UpdateEntityPacket(client.Id, ecs.LocalPos.X, ecs.LocalPos.Y, ecs.LocalPos.Z).Send(
-            client.Connection!, MessageSendMode.Unreliable);
+        /*new UpdateEntityPacket(client.Id, ecs.LocalPos.X, ecs.LocalPos.Y, ecs.LocalPos.Z).Send(
+            client.Connection!, MessageSendMode.Unreliable);*/
     }
 
     public void Detach() {}
@@ -44,10 +44,10 @@ public class ClientConnectionLayer(Riptide.Client client, Ecs ecs) : IUiRenderLa
             }
         }
 
-        foreach (var player in ecs.GetPlayers())
+        /*foreach (var player in ecs.GetPlayers())
         {
             ImGui.Text($"Player {player.InstanceId}: {player.Position}");
-        }
+        }*/
 
         ImGui.End();
     }
