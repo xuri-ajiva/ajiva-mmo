@@ -1,4 +1,5 @@
-﻿using Client.LayerSystem;
+﻿using Client.Config;
+using Client.LayerSystem;
 using Client.Renderer;
 using Silk.NET.Input;
 using Silk.NET.Maths;
@@ -12,6 +13,8 @@ public class AjivaWindow : IHostedLifecycleService
 {
     private readonly ILogger<AjivaWindow> _logger;
     private readonly RendererApi _api;
+    private readonly WindowConfig _config;
+    private readonly PeriodicUpdater _updater;
     private readonly IAjivaLayerSystem _layerSystem;
     private readonly IHostApplicationLifetime _lifetime;
 
@@ -22,11 +25,13 @@ public class AjivaWindow : IHostedLifecycleService
     public IInputContext Input = null!;
     private bool _isClosing;
 
-    public AjivaWindow(ILogger<AjivaWindow> logger, RendererApi api,
+    public AjivaWindow(ILogger<AjivaWindow> logger, RendererApi api, WindowConfig config, PeriodicUpdater updater,
         IAjivaLayerSystem layerSystem, IHostApplicationLifetime lifetime)
     {
         _logger = logger;
         _api = api;
+        _config = config;
+        _updater = updater;
         _layerSystem = layerSystem;
         _lifetime = lifetime;
     }
@@ -54,9 +59,14 @@ public class AjivaWindow : IHostedLifecycleService
     {
         var options = WindowOptions.Default;
         options.API = GraphicsAPI.None;
-        options.Size = new Vector2D<i32>(1920, 1080);
+        options.Size = new Vector2D<i32>(_config.Width, _config.Height);
+        options.Position = new Vector2D<i32>(_config.X, _config.Y);
+        options.Title = _config.Title;
         options.TransparentFramebuffer = true;
-        options.WindowBorder = WindowBorder.Resizable;
+        options.VSync = _config.VSync;
+        options.WindowBorder = _config.FullscreenBorderless
+            ? WindowBorder.Hidden
+            : _config.Resizable ? WindowBorder.Resizable : WindowBorder.Fixed;
 
         Window = Silk.NET.Windowing.Window.Create(options);
         Window.Load += Load;
@@ -74,6 +84,7 @@ public class AjivaWindow : IHostedLifecycleService
             Window.Run((Action)(() =>
             {
                 Window.DoEvents();
+                _updater.SleepSignal();
                 if (!Window.IsClosing || _isClosing) return;
                 Window.IsClosing = false;
                 _lifetime.StopApplication();

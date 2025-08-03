@@ -1,4 +1,3 @@
-using Riptide;
 using Serilog;
 using server;
 using ServiceDefaults;
@@ -12,15 +11,6 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 
 builder.AddServiceDefaults();
-{
-    var services = builder.Services;
 
-    services.AddSingleton(new ServerConfiguration { Port = 7777, MaxConnections = 100 });
-
-    services.AddHostedService<Worker>();
-    services.AddSingleton<Server>();
-}
-
-var app = builder.Build();
-
-app.Run();
+var server = new ServerRunner(builder, new ServerConfiguration { Port = 7777, MaxConnections = 100 });
+await server.RunAsync(builder.Build());

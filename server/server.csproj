@@ -8,10 +8,13 @@
         <PublishAot>true</PublishAot>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="Composer"/>
+    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="GlmSharp-netstandard" Version="0.9.8.1"/>
-        <PackageReference Include="Mars.Life.Simulations" Version="5.3.0"/>
+        <PackageReference Include="Mars.Life.Simulations" Version="5.3.1" />
     </ItemGroup>
 
     <ItemGroup>

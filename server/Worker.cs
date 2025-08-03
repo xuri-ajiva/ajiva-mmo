@@ -1,9 +1,5 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using System.Numerics;
-using NetTopologySuite.Geometries;
 using NetworkPackets;
 using Riptide;
 using ServiceDefaults;
@@ -16,7 +12,7 @@ public class Worker : IHostedService, IUniversalMessageHandler
     private CancellationTokenSource? _stoppingCts;
 
     private readonly ILogger<Worker> _logger;
-    private readonly Server _server;
+    private readonly Riptide.Server _server;
     private readonly ServerConfiguration _configuration;
 
     ConcurrentBag<Entitys> _entitys = new();
