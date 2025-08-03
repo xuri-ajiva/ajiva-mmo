@@ -42,7 +42,7 @@ public enum UpdateCycle
     Blocking,
 }
 
-public class PeriodicUpdater(IConfiguration configuration) : IHostedLifecycleService
+public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdater> logger) : IHostedLifecycleService
 {
     public delegate void UpdateRunnerDelegate(UpdateInfo info);
 
@@ -116,6 +116,7 @@ public class PeriodicUpdater(IConfiguration configuration) : IHostedLifecycleSer
     private Thread? _updateCycle;
     private Thread? _renderCycle;
     private readonly AutoResetEvent _resetEvent = new(false);
+    private readonly SemaphoreSlim _globalHandle = new(0, 9999);
 
     private Task InitRunners()
     {
@@ -162,15 +163,18 @@ public class PeriodicUpdater(IConfiguration configuration) : IHostedLifecycleSer
         while (Running)
         {
             _resetEvent.WaitOne();
+            ReleaseAllWaiting();
             updateRunner.RunOnce();
         }
     }
+
 
     private void RenderUpdate(UpdateRunner updateRunner)
     {
         while (Running)
         {
             _resetEvent.Set();
+            ReleaseAllWaiting();
             updateRunner.RunOnce();
         }
     }
@@ -190,7 +194,6 @@ public class PeriodicUpdater(IConfiguration configuration) : IHostedLifecycleSer
             _ => TimeSpan.FromMilliseconds(10),
         };
     }
-
 
     public void RegisterUpdate(UpdateCycle cycle, UpdateRunnerDelegate update)
     {
@@ -213,6 +216,8 @@ public class PeriodicUpdater(IConfiguration configuration) : IHostedLifecycleSer
         if (!Running)
             return Task.CompletedTask;
         Running = false;
+        _globalHandle.Release(999);
+        _globalHandle.Dispose();
         _resetEvent.Set();
 
         foreach (var runner in _updateData.Values)
@@ -221,10 +226,44 @@ public class PeriodicUpdater(IConfiguration configuration) : IHostedLifecycleSer
         }
 
         _resetEvent.Set();
-        _updateCycle?.Join();
-        _renderCycle?.Join();
-
+        DisposeFor(_updateCycle);
+        DisposeFor(_renderCycle);
         return Task.CompletedTask;
+    }
+
+    private void DisposeFor(Thread? thread)
+    {
+        if (thread is null) return;
+        thread.Join(100);
+        thread.Interrupt();
+        thread.Join(100);
+        thread.Interrupt();
+        if (thread.IsAlive)
+        {
+            logger.LogCritical("PeriodicUpdater thread {ThreadName} did not stop gracefully, handle will be lost!",
+                thread.Name);
+        }
+    }
+
+    /// <summary>
+    /// Sleeps until any next update cycle is triggered.
+    /// </summary>
+    /// <exception cref="NotImplementedException"></exception>
+    public void SleepSignal()
+    {
+        try
+        {
+            _globalHandle.Wait();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private void ReleaseAllWaiting()
+    {
+        if (_globalHandle.CurrentCount == 0)
+            _globalHandle.Release(10);
     }
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;

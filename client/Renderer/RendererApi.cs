@@ -61,7 +61,7 @@ public class RendererApi(ILogger<RendererApi> logger)
                     break;
                 case ErrorType.Validation:
                     logger.LogWarning("Validation error with message: {Message}", message);
-                    break;
+                    return;
                 case ErrorType.OutOfMemory:
                     logger.LogCritical("Out of memory error with message: {Message}", message);
                     break;

@@ -423,8 +423,10 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
         static void AssertType(PropertyTypeInfo type, PropertyTypeInfo expected)
         {
             if (type != expected)
-                Console.WriteLine("Invalid property type: {0} != {1}", type, expected);
-            //throw new Exception($"Invalid property type: {type} != {expected}");
+            {
+                //Console.WriteLine("Invalid property type: {0} != {1}", type, expected);
+                //throw new Exception($"Invalid property type: {type} != {expected}");
+            }
         }
 
         static string ParseString(ReadOnlySpan<u8> span)
@@ -513,8 +515,7 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
             if (sourceMaterial == null)
             {
                 // Return a default fallback material uniform
-                Console.WriteLine(
-                    "Warning: Null source material provided to converter. Returning default PBR uniform.");
+                // Console.WriteLine("Warning: Null source material provided to converter. Returning default PBR uniform.");
                 return new PbrGBufferShader.PbrMaterialUniform(
                     baseColorFactor: new vec4(0.8f, 0.8f, 0.8f, 1.0f), // Default grey
                     metallicFactor: 0.0f,
@@ -607,8 +608,7 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
                 // Has a bump map, but needs conversion to normal map offline.
                 // We don't set the TEX_NORMAL flag here, but could set a custom flag
                 // or log a warning. The pipeline needs to know not to bind a normal map yet.
-                Console.WriteLine(
-                    $"Warning: Material '{sourceMaterial.Name}' uses bump map '{sourceMaterial.BumpMapTexture}'. Convert to Normal Map.");
+                // Console.WriteLine($"Warning: Material '{sourceMaterial.Name}' uses bump map '{sourceMaterial.BumpMapTexture}'. Convert to Normal Map.");
                 // Option: Provide the path if PbrMaterialUniform stored it, assuming offline conversion
                 // pbr.NormalTexturePath = "CONVERTED_" + sourceMaterial.BumpMapTexture;
             }
@@ -632,8 +632,7 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
             {
                 // Heuristic: If we're told to assume packing, and map_Ks/map_Ns exist, treat them as one MRA map.
                 // This is a big assumption! The actual packing order (MRA/ARM/etc.) isn't known.
-                Console.WriteLine(
-                    $"Warning: Assuming packed Metallic/Roughness(/AO?) texture for Material '{sourceMaterial.Name}' based on map_Ks/map_Ns presence.");
+                // Console.WriteLine($"Warning: Assuming packed Metallic/Roughness(/AO?) texture for Material '{sourceMaterial.Name}' based on map_Ks/map_Ns presence.");
                 pbr.TextureFlags |= TEX_MRA;
                 // If map_Ka also exists, decide if it's separate or part of the pack. Let's assume separate for now if MRA is just inferred.
                 if (!string.IsNullOrEmpty(sourceMaterial.AmbientTexture))
@@ -647,8 +646,7 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
                 // No explicit or assumed MRA map. Check for separate AO map (map_Ka).
                 if (!string.IsNullOrEmpty(sourceMaterial.AmbientTexture))
                 {
-                    Console.WriteLine(
-                        $"Info: Using AmbientTexture (map_Ka) as Occlusion texture for Material '{sourceMaterial.Name}'.");
+                    // Console.WriteLine($"Info: Using AmbientTexture (map_Ka) as Occlusion texture for Material '{sourceMaterial.Name}'.");
                     pbr.TextureFlags |= TEX_OCCLUSION; // Use separate AO flag
                     pbr.OcclusionStrength = 1.0f; // Enable usage of the AO texture
                     // Our shader setup uses MRA texture slot, need to ensure AO sampling works correctly

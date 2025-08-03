@@ -114,7 +114,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             }
             catch (Exception e)
             {
-                Logger.LogCritical(e, "Failed to load texture {Path}", path);
+                //TODO eneable for production Logger.LogCritical(e, "Failed to load texture {Path}", path);
             }
             finally
             {
@@ -325,7 +325,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             aspect, baseMipLevel: 0, mipLevelCount: 1, baseArrayLayer: 0, arrayLayerCount: 1,
             label: $"{label} - View");
 
-        Logger.LogInformation("Created texture {Label}", label);
+        Logger.LogDebug("Created texture {Label}", label);
         return new TextureData(this, label, texture, textureView, extent3D, aspect, mipLevels);
     }
 
