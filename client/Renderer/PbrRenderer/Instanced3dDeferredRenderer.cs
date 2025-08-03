@@ -189,7 +189,20 @@ public class Instanced3dDeferredRenderer(
 
         var players = _ecs.GetPlayers().ToArray();
         if (_meshBuffers[^1].InstanceInfos.Length != players.Length + 1)
-            _meshBuffers[^1]._instanceInfos.Capacity = players.Length + 1;
+        {
+            _meshBuffers[^1]._instanceInfos.Capacity = players.Length;
+
+            if (_meshBuffers[^1].InstanceInfos.Length > players.Length + 1)
+            {
+                _meshBuffers[^1]._instanceInfos.RemoveRange(players.Length + 1,
+                    _meshBuffers[^1].InstanceInfos.Length - (players.Length + 1));
+            }
+
+            while (_meshBuffers[^1].InstanceInfos.Length < players.Length + 1)
+            {
+                _meshBuffers[^1]._instanceInfos.Add(new PbrGBufferShader.Instance());
+            }
+        }
 
         var instanceInfo = _meshBuffers[^1].InstanceInfos;
         instanceInfo[0].SetTransform(Matrix4x4.CreateTranslation(_camera.Position));
