@@ -6,7 +6,7 @@ using Silk.NET.WebGPU.Safe;
 namespace Client.Renderer.Resources;
 
 public class AjivaBuffer<T>(
-    ResourceLoader loader,
+    ResourceManager loader,
     string? label,
     BufferPtr buffer,
     BufferUsage usage,

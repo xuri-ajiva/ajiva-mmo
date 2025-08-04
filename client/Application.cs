@@ -1,4 +1,4 @@
-﻿using Client.LayerSystem;
+using Client.LayerSystem;
 using Client.Renderer.PbrRenderer;
 
 namespace Client;

@@ -1,9 +1,6 @@
 using Common.Ecs;
-using Common.Networking;
-using Riptide;
-using Riptide.Transports;
 
-namespace client;
+namespace Client;
 
 public class GameLogic
 {

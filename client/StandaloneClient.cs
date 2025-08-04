@@ -29,7 +29,7 @@ Log.Logger = new LoggerConfiguration()
             typeof(SerilogExpression).Assembly))
     .Enrich.FromLogContext()
     .WriteTo.Sink(logWidget)
-    .MinimumLevel.Verbose()
+//    .MinimumLevel.Verbose()
     .CreateLogger();
 
 builder.AddServiceDefaults();

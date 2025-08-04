@@ -60,5 +60,10 @@ namespace Common.Ecs
         }
 
         public ReadOnlySpan<T> GetAll() => new ReadOnlySpan<T>(_dense, 0, _count);
+
+        public int GetEntityIdFromDenseIndex(int denseIndex)
+        {
+            return _map[denseIndex];
+        }
     }
 }

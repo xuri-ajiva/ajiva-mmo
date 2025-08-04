@@ -1,8 +1,10 @@
-﻿using SixLabors.ImageSharp.PixelFormats;
+﻿using System.Numerics;
+using Silk.NET.Maths;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace Client.Renderer.Resources;
 
-internal static class CoolTextureGenerator
+internal static class ResourceGenerator
 {
     private static readonly Rgba32 Black = new Rgba32(20, 20, 20, 255);
     private static readonly Rgba32 Orange = new Rgba32(255, 140, 0, 255);
@@ -264,6 +266,44 @@ internal static class CoolTextureGenerator
             {
                 data[y * width + x] = metallicRoughnessColor;
             }
+        }
+    }
+
+    // This method is now private and only used internally for generating simple meshes
+    public static void GenerateCubeMesh<T>(
+        Span<T> cubeVertices, Span<u32> indices,
+        Func<i32, Quaternion<f32>, Vector3, Vector3, T> creator)
+        where T : unmanaged
+    {
+        Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0);
+
+        var vIndex = 0;
+        var iIndex = 0;
+        ReadOnlySpan<Quaternion<f32>> rotations =
+        [
+            Quaternion<f32>.CreateFromYawPitchRoll(0, 0, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 0.5f, 0, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 1.0f, 0, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(MathF.PI * 1.5f, 0, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(0, MathF.PI / 2, 0),
+            Quaternion<f32>.CreateFromYawPitchRoll(0, -MathF.PI / 2, 0),
+        ];
+        foreach (var rot in rotations)
+        {
+            var normal = Vector3D.Transform(new Vector3D<f32>(0, 0, 1), rot).ToSystem();
+            var tangent = Vector3D.Transform(new Vector3D<f32>(1, 0, 0), rot).ToSystem();
+
+            cubeVertices[vIndex++] = creator(0, rot, normal, tangent);
+            cubeVertices[vIndex++] = creator(1, rot, normal, tangent);
+            cubeVertices[vIndex++] = creator(2, rot, normal, tangent);
+            cubeVertices[vIndex++] = creator(3, rot, normal, tangent);
+
+            indices[iIndex++] = (u32)(vIndex - 4);
+            indices[iIndex++] = (u32)(vIndex - 2);
+            indices[iIndex++] = (u32)(vIndex - 3);
+            indices[iIndex++] = (u32)(vIndex - 2);
+            indices[iIndex++] = (u32)(vIndex - 1);
+            indices[iIndex++] = (u32)(vIndex - 3);
         }
     }
 }

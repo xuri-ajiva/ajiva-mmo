@@ -17,7 +17,7 @@ using static WboitAccumShader;
 
 public class WboitPipeline(
     RendererApi api,
-    ResourceLoader loader,
+    ResourceManager loader,
     RenderPipelinePtr pipeline,
     SamplerPtr defaultSampler,
     AjivaBuffer<SceneUniform> sceneUniformBuffer,
@@ -27,10 +27,10 @@ public class WboitPipeline(
     GBuffer gbuffer) : IDisposable
 {
     private readonly RendererApi _api = api;
-    private readonly ResourceLoader _loader = loader;
+    private readonly ResourceManager _loader = loader;
 
 
-    public static WboitPipeline Create(RendererApi api, ResourceLoader loader, IWboitAccumShader shader,
+    public static WboitPipeline Create(RendererApi api, ResourceManager loader, IWboitAccumShader shader,
         GBuffer gbuffer)
     {
         var device = api.Device;

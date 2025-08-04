@@ -1,7 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
 using System.Text;
-using Client.Renderer.PbrRenderer;
 using Client.Wgsl;
 using GlmSharp;
 using Silk.NET.Assimp;
@@ -47,6 +46,7 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
         public ReadWriteRange<Vector2> TexCoords0;
         public ReadWriteRange<Vector2> TexCoords1;
         public required i32 MaterialIndex;
+        public string ? Name;
     }
 
     public class SceneNode
@@ -108,7 +108,7 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
     }
 
 
-    private ResolvedScene LoadModels(Scene* scene)
+    private ResolvedScene LoadModels(Silk.NET.Assimp.Scene* scene)
     {
         u64 gIndices = 0;
         u64 gVertices = 0;
@@ -210,6 +210,7 @@ public unsafe class ModelHelper(ILogger<ModelHelper> logger)
                 Tangents = tangentsRef,
                 TexCoords0 = texCoords0Ref,
                 TexCoords1 = texCoords1Ref,
+                Name = mesh->MName
             });
         }
 

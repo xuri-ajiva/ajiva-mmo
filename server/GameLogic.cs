@@ -21,6 +21,7 @@ public class GameLogic
             {
                 Position = new System.Numerics.Vector3(i * 2, 0, 0)
             });
+            _world.AddComponent(entity, new EntityTypeComponent { TypeId = 0 });
         }
     }
 
@@ -28,18 +29,18 @@ public class GameLogic
     {
         new LoadLevelPacket("Sponza").Send(connection, MessageSendMode.Reliable);
 
-        var store = _world.GetStore<TransformComponent>();
-        var transforms = store.GetAll();
+        var transformStore = _world.GetStore<TransformComponent>();
+        var entityTypeStore = _world.GetStore<EntityTypeComponent>();
+        var transforms = transformStore.GetAll();
         new BeginWorldStatePacket(transforms.Length)
             .Send(connection, MessageSendMode.Reliable);
 
         for (var i = 0; i < transforms.Length; i++)
         {
-            // This is not quite right, we need a way to get the entity ID from the dense index.
-            // We will fix this in a later step.
-            var entityId = i; // Placeholder
+            var entityId = transformStore.GetEntityIdFromDenseIndex(i);
             var transform = transforms[i];
-            new EntityCreatedPacket(entityId, transform)
+            var entityType = entityTypeStore.Get(_world.GetEntity(entityId));
+            new EntityCreatedPacket(entityId, transform, entityType.TypeId)
                 .Send(connection, MessageSendMode.Reliable);
         }
     }

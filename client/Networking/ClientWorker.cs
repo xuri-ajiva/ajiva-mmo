@@ -1,6 +1,5 @@
 using Common.Ecs;
 using System.Numerics;
-using client;
 using Client.Renderer;
 using Common.Networking;
 using NetworkPackets;
@@ -14,14 +13,14 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
     private readonly ILogger<ClientWorker> _logger;
     private readonly Riptide.Client _client;
     private readonly GameLogic _gameLogic;
-    private readonly ObjectScene _objectScene;
+    private readonly Scene _scene;
 
-    public ClientWorker(ILogger<ClientWorker> logger, Riptide.Client client, GameLogic gameLogic, ObjectScene objectScene)
+    public ClientWorker(ILogger<ClientWorker> logger, Riptide.Client client, GameLogic gameLogic, Scene scene)
     {
         _logger = logger;
         _client = client;
         _gameLogic = gameLogic;
-        _objectScene = objectScene;
+        _scene = scene;
         _client.MessageReceived += ClientOnMessageReceived;
     }
 
@@ -61,7 +60,7 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
 
             _client.Disconnect();
             _client.Update();
-            _objectScene.UnloadLevel();
+            _scene.UnloadLevel();
         }
         catch (Exception e)
         {
@@ -71,7 +70,10 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
 
     public void Handle(NewEntityPacket message)
     {
-        _gameLogic.GetWorld().AddComponent(new Entity((int)message.Id), new TransformComponent { Position = new Vector3(message.X, message.Y, message.Z) });
+        var entity = new Entity((int)message.Id);
+        _gameLogic.GetWorld().AddComponent(entity, new TransformComponent { Position = new Vector3(message.X, message.Y, message.Z) });
+        // For now, we'll hardcode TypeId 0 to MeshId 0 (first mesh in Sponza)
+        _gameLogic.GetWorld().AddComponent(entity, new RenderableMeshComponent { MeshId = message.TypeId });
     }
 
     public void Handle(UpdateEntityPacket message)
@@ -88,6 +90,6 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
     public void Handle(LoadLevelPacket message)
     {
         _logger.LogInformation("Loading level: {levelName}", message.LevelName);
-        _objectScene.LoadLevel(message.LevelName);
+        _scene.LoadLevel(message.LevelName);
     }
 }

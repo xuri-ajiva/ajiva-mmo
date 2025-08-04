@@ -1,5 +1,4 @@
 ﻿using Common.Networking;
-using client;
 using Common.Ecs;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
@@ -22,22 +21,21 @@ public class Instanced3dDeferredRenderer(
     IShaderManager shaderManager,
     RendererApi api,
     GameLogic gameLogic,
-    ResourceLoader loader,
+    ResourceManager loader,
     ICamera camera,
-    ObjectScene scene)
-    : IRenderLayer, IUiRenderLayer
+    Scene scene) : IRenderLayer, IUiRenderLayer, IAjivaLayer
 {
     private readonly ILogger<Instanced3dDeferredRenderer> _logger = logger;
     private readonly IShaderManager _shaderManager = shaderManager;
     private readonly RendererApi _api = api;
-    private readonly ResourceLoader _loader = loader;
+    private readonly ResourceManager _loader = loader;
     private readonly GameLogic _gameLogic = gameLogic;
 
     private readonly RenderableMeshCollection _dynamicMeshes = new();
     private u64 _transformVersion;
     private u64 _renderableMeshVersion;
     private u64 _sceneVersion;
-    private ObjectScene _scene = scene;
+    private Scene _scene = scene;
 
     private GBuffer? _sceneGBuffer;
     private RenderTexture? _finalSceneTexture;
@@ -199,7 +197,7 @@ public class Instanced3dDeferredRenderer(
                     entitiesByMesh[renderable.MeshId] = list;
                 }
 
-                list.Add(transformStore.Get(new Entity((int)renderable.MeshId)));
+                list.Add(transformStore.Get(new Entity((i32)renderable.MeshId)));
             }
 
             // Create a mesh buffer for each mesh
@@ -207,7 +205,7 @@ public class Instanced3dDeferredRenderer(
             {
                 if (transforms.Count > 0)
                 {
-                    var dynamicMesh = new PbrInstancedMeshBuffer(_scene.RenderableMeshes.OpaqueMeshes[(int)meshId].Mesh,
+                    var dynamicMesh = new PbrInstancedMeshBuffer(_scene.RenderableMeshes.OpaqueMeshes[(i32)meshId].Mesh,
                         ModelHelper.PbrMaterialExamples.WornLeather(),
                         _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
                             BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"),
@@ -384,6 +382,8 @@ public class Instanced3dDeferredRenderer(
         ImGui.PopStyleVar();
     }
 
+    f32 textureSize = 128f;
+
     public void RenderUi(UpdateInfo info)
     {
         if (ImGui.Begin("Controls"))
@@ -417,7 +417,7 @@ public class Instanced3dDeferredRenderer(
 
             if (_selectedObjectId != 0 && _selectedObjectId <= _dynamicMeshes.OpaqueMeshes.Count)
             {
-                var selectedBuffer = _dynamicMeshes.OpaqueMeshes[(int)_selectedObjectId - 1];
+                var selectedBuffer = _dynamicMeshes.OpaqueMeshes[(i32)_selectedObjectId - 1];
 
                 var y = ImGui.GetCursorPosY();
                 ImGui.Text("Textures");
@@ -533,11 +533,62 @@ public class Instanced3dDeferredRenderer(
 
         ImGui.End();
 
-        if (ImGui.Begin("DefTexture"))
+        if (ImGui.Begin("ResourceLoader"))
         {
-            ImGui.Image(_loader.DefaultTexture.View.GetIntPtr(), new Vector2(256, 256));
-            ImGui.Image(_loader.DefaultNormal.View.GetIntPtr(), new Vector2(256, 256));
-            ImGui.Image(_loader.DefaultRoughness.View.GetIntPtr(), new Vector2(256, 256));
+            if (ImGui.CollapsingHeader("Textures"))
+            {
+                ImGui.SliderFloat("Size", ref textureSize, 16, 1024);
+                const f32 padding = 10f;
+                var avail = ImGui.GetContentRegionAvail();
+                var imagesPerRow = Math.Max(1, (i32)(avail.X / (textureSize + padding)));
+                var imageCount = 0;
+
+                ImGui.Text("Default Textures");
+
+                void RenderTexture(IntPtr texture)
+                {
+                    ImGui.Image(texture, new Vector2(textureSize, textureSize));
+                    imageCount++;
+                    if (imageCount % imagesPerRow != 0)
+                    {
+                        ImGui.SameLine();
+                    }
+                }
+
+                // Show default textures
+                RenderTexture(_loader.DefaultTexture.View.GetIntPtr());
+                RenderTexture(_loader.DefaultNormal.View.GetIntPtr());
+                RenderTexture(_loader.DefaultRoughness.View.GetIntPtr());
+
+                ImGui.Separator();
+                imageCount = 0;
+
+                // Show other textures
+                foreach (var ajivaTexture in _loader.GetAllTextures())
+                {
+                    RenderTexture(ajivaTexture.View.GetIntPtr());
+                }
+            }
+
+            ImGui.NewLine();
+
+            if (ImGui.CollapsingHeader("Meshes"))
+            {
+                // meshes
+                ImGui.Separator();
+                ImGui.Text("Default Meshes");
+                ImGui.Text(
+                    $"Cube: VB: {_loader.DefaultPbrCubeMesh.VertexBuffer.Size} IB: {_loader.DefaultPbrCubeMesh.IndexBuffer.Size}");
+                ImGui.Text(
+                    $"TransparentCube: VB: {_loader.DefaultTransparentCubeMesh.VertexBuffer.Size} IB: {_loader.DefaultTransparentCubeMesh.IndexBuffer.Size}");
+
+                ImGui.Separator();
+                foreach (var mesh in _loader.GetAllMeshes())
+                {
+                    ImGui.Text($"{mesh.Name}");
+                    ImGui.Text($"VB: {mesh.VertexBuffer.Size} IB: {mesh.IndexBuffer.Size}");
+                }
+            }
         }
 
         ImGui.End();

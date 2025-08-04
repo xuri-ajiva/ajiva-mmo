@@ -44,5 +44,10 @@ namespace Common.Ecs
             _componentStores.TryAdd(typeof(T), newStore);
             return newStore;
         }
+
+        public Entity GetEntity(int entityId)
+        {
+            return new Entity(entityId);
+        }
     }
 }

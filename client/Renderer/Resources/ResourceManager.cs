@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Client.Renderer.PbrRenderer;
@@ -7,23 +7,29 @@ using Silk.NET.WebGPU.Safe;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using Client.Wgsl;
+using System.Numerics;
+using Silk.NET.Maths;
 
 namespace Client.Renderer.Resources;
 
 using System;
 
-public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : IHostedLifecycleService
+public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, ModelHelper modelHelper)
+    : IHostedLifecycleService
 {
-    public readonly ILogger<ResourceLoader> Logger = logger;
+    public readonly ILogger<ResourceManager> Logger = logger;
 
     #region Textures
 
-    private List<AjivaTexture> _internal = [];
+    private List<IAjivaVersionedObject> _internal = [];
     internal AjivaTexture DefaultTexture = null!;
     internal AjivaTexture DefaultNormal = null!;
     internal AjivaTexture DefaultRoughness = null!;
     internal AjivaTexture DefaultMetallicRoughnessAo = null!;
     internal AjivaTexture DefaultEmissive = null!;
+    internal AjivaMesh<PbrGBufferShader.Attributes> DefaultPbrCubeMesh = null!;
+    internal AjivaMesh<WboitAccumShader.Attributes> DefaultTransparentCubeMesh = null!;
 
     private Task InitDefaultResources()
     {
@@ -34,35 +40,74 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         Span<Rgba32> data = stackalloc Rgba32[(i32)(extent3D.Width * extent3D.Height)];
 
         //CoolTextureGenerator.GenerateCoolPattern(data, (i32)extent3D.Width, (i32)extent3D.Height);
-        CoolTextureGenerator.GenerateMissingTexture(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        ResourceGenerator.GenerateMissingTexture(data, (i32)extent3D.Width, (i32)extent3D.Height);
 
         tex.WriteTexture<Rgba32>(data, extent3D);
         var defaultTexture = AjivaTexture.FromData(tex);
 
         var normalTex = CreateTexture(TextureUsage.TextureBinding, "DefaultNormal", 1, extent3D,
             TextureFormat.Rgba8Unorm, TextureAspect.All);
-        CoolTextureGenerator.GenerateNormalMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        ResourceGenerator.GenerateNormalMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
         normalTex.WriteTexture<Rgba32>(data, extent3D);
         var defaultNormal = AjivaTexture.FromData(normalTex);
 
         var roughnessTex = CreateTexture(TextureUsage.TextureBinding, "DefaultRoughness", 1, extent3D,
             TextureFormat.Rgba8Unorm, TextureAspect.All);
-        CoolTextureGenerator.GenerateRoughnessMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        ResourceGenerator.GenerateRoughnessMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
         roughnessTex.WriteTexture<Rgba32>(data, extent3D);
         var defaultRoughness = AjivaTexture.FromData(roughnessTex);
 
         var emissiveTex = CreateTexture(TextureUsage.TextureBinding, "DefaultEmissive", 1, extent3D,
             TextureFormat.Rgba8Unorm, TextureAspect.All);
-        CoolTextureGenerator.GenerateEmissiveMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        ResourceGenerator.GenerateEmissiveMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
         emissiveTex.WriteTexture<Rgba32>(data, extent3D);
         var defaultEmissive = AjivaTexture.FromData(emissiveTex);
 
         var metallicRoughnessTex = CreateTexture(TextureUsage.TextureBinding, "DefaultMetallicRoughnessAO", 1,
             extent3D,
             TextureFormat.Rgba8Unorm, TextureAspect.All);
-        CoolTextureGenerator.GenerateMetallicRoughnessAoMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
+        ResourceGenerator.GenerateMetallicRoughnessAoMap(data, (i32)extent3D.Width, (i32)extent3D.Height);
         metallicRoughnessTex.WriteTexture<Rgba32>(data, extent3D);
         var defaultMetallicRoughnessAo = AjivaTexture.FromData(metallicRoughnessTex);
+
+        Span<PbrGBufferShader.Attributes> cubeVerticesPbr = stackalloc PbrGBufferShader.Attributes[6 * 4];
+        Span<u32> indices = stackalloc u32[6 * 6];
+        const f32 tex1Scale = 0;
+        ResourceGenerator.GenerateCubeMesh(cubeVerticesPbr, indices, (u, rot, normal, tangent) =>
+        {
+            ReadOnlySpan<Vector3D<f32>> positions = [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];
+            ReadOnlySpan<Vector2> tex0Coords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
+            ReadOnlySpan<Vector2> tex1Coords =
+            [
+                new(tex1Scale, tex1Scale), new(1 - tex1Scale, tex1Scale), new(tex1Scale, 1 - tex1Scale),
+                new(1 - tex1Scale, 1 - tex1Scale)
+            ];
+            return new PbrGBufferShader.Attributes
+            {
+                PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
+                Tex0CoordRef = tex0Coords[u],
+                Tex1CoordRef = tex1Coords[u],
+                NormalRef = normal,
+                TangentRef = new Vector4(tangent, 1)
+            };
+        });
+        var defaultPbrCubeMesh = new AjivaMesh<PbrGBufferShader.Attributes>(
+            CreateMesh<PbrGBufferShader.Attributes>(nameof(DefaultPbrCubeMesh), cubeVerticesPbr, indices));
+
+        Span<WboitAccumShader.Attributes> cubeVerticesWboit = stackalloc WboitAccumShader.Attributes[6 * 4];
+        ResourceGenerator.GenerateCubeMesh(cubeVerticesWboit, indices, (u, rot, _, _) =>
+        {
+            ReadOnlySpan<Vector3D<f32>> positions =
+                [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];
+            ReadOnlySpan<Vector2> tex0Coords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
+            return new WboitAccumShader.Attributes
+            {
+                PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
+                Tex0CoordRef = tex0Coords[u],
+            };
+        });
+        var defaultTransparentCubeMesh = new AjivaMesh<WboitAccumShader.Attributes>(
+            CreateMesh<WboitAccumShader.Attributes>(nameof(DefaultTransparentCubeMesh), cubeVerticesWboit, indices));
 
         _internal =
         [
@@ -71,12 +116,17 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
             defaultRoughness,
             defaultMetallicRoughnessAo,
             defaultEmissive,
+            defaultTransparentCubeMesh,
+            defaultPbrCubeMesh
         ];
         DefaultTexture = defaultTexture.Clone("defensive_copy");
         DefaultNormal = defaultNormal.Clone("defensive_copy");
         DefaultRoughness = defaultRoughness.Clone("defensive_copy");
         DefaultEmissive = defaultEmissive.Clone("defensive_copy");
         DefaultMetallicRoughnessAo = defaultMetallicRoughnessAo.Clone("defensive_copy");
+        DefaultPbrCubeMesh = defaultPbrCubeMesh.Clone("defensive_copy");
+        DefaultTransparentCubeMesh = defaultTransparentCubeMesh.Clone("defensive_copy");
+
 
         return Task.CompletedTask;
     }
@@ -85,7 +135,42 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
     private readonly SemaphoreSlim _loadSem = new(1, 1);
     private readonly SemaphoreSlim _writeSem = new(1, 1);
     private readonly ConcurrentDictionary<string, AjivaTexture> _loadedTextures = new();
+    private readonly ConcurrentDictionary<string, AjivaMesh<PbrGBufferShader.Attributes>> _loadedMeshes = new();
 
+    public List<AjivaTexture> GetAllTextures()
+    {
+        var res = new List<AjivaTexture>(_loadedTextures.Count);
+        foreach (var (key, texture) in _loadedTextures.ToArray())
+        {
+            if (!texture.IsDisposed)
+            {
+                res.Add(texture);
+            }
+            else
+            {
+                _loadedTextures.TryRemove(key, out _);
+            }
+        }
+        return res;
+    }
+    
+    public AjivaMesh<PbrGBufferShader.Attributes>[] GetAllMeshes()
+    {
+        var res = new List<AjivaMesh<PbrGBufferShader.Attributes>>(_loadedMeshes.Count);
+        foreach (var (key, mesh) in _loadedMeshes.ToArray())
+        {
+            if (!mesh.IsDisposed)
+            {
+                res.Add(mesh);
+            }
+            else
+            {
+                _loadedMeshes.TryRemove(key, out _);
+            }
+        }
+        return res.ToArray();
+    }
+    
     public void AsyncTextureLoad(string path, AjivaTexture target,
         TextureUsage usage = TextureUsage.TextureBinding, string? label = null, u32 mipLevels = 8,
         TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
@@ -100,7 +185,7 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
                 goto start;
             }
 
-            target.Assign(val.Data);
+            target.Assign(val);
             return;
         }
 
@@ -368,6 +453,75 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
 
     #region Mesh
 
+    public AjivaMesh<PbrGBufferShader.Attributes> AsyncMeshLoad(string path, ModelHelper.MeshData mdl,
+        string? label = null)
+    {
+        var result = DefaultPbrCubeMesh.Clone(label ?? Path.GetFileNameWithoutExtension(path));
+        AsyncMeshLoad(path, mdl, result, label);
+        return result;
+    }
+
+    private void AsyncMeshLoad(string path, ModelHelper.MeshData mdl, AjivaMesh<PbrGBufferShader.Attributes> target,
+        string? label = null)
+    {
+        var key = $"{path}_{label}_{mdl.Name}";
+        start:
+        if (!_loadedMeshes.TryAdd(key, target))
+        {
+            var val = _loadedMeshes[key];
+            if (val.IsDisposed)
+            {
+                _loadedMeshes.TryRemove(key, out _);
+                goto start;
+            }
+
+            target.Assign(val);
+            return;
+        }
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                await _loadSem.WaitAsync();
+                // todo array pool?
+                var modelVertices = new PbrGBufferShader.Attributes[mdl.Vertices.Length];
+
+                for (var iVertex = 0u; iVertex < mdl.Vertices.Length; iVertex++)
+                {
+                    modelVertices[iVertex].PositionRef = mdl.Vertices[iVertex];
+                    modelVertices[iVertex].Tex0CoordRef = mdl.TexCoords0[iVertex];
+                    modelVertices[iVertex].Tex1CoordRef = mdl.TexCoords1[iVertex];
+                    modelVertices[iVertex].NormalRef = mdl.Normals[iVertex];
+                    modelVertices[iVertex].TangentRef = new Vector4(mdl.Tangents[iVertex], 1.0f);
+                }
+
+                target.Assign(CreateMesh<PbrGBufferShader.Attributes>($"{label ?? Path.GetFileNameWithoutExtension(path)}::{mdl.Name}",
+                    modelVertices, mdl.Indices));
+                Logger.LogDebug("Loaded mesh {Label} with {VertexCount} vertices and {IndexCount} indices",
+                    label ?? Path.GetFileNameWithoutExtension(path), mdl.Vertices.Length, mdl.Indices.Length);
+            }
+            catch (Exception e)
+            {
+                //TODO eneable for production Logger.LogCritical(e, "Failed to load texture {Path}", path);
+            }
+            finally
+            {
+                _loadSem.Release();
+            }
+        });
+    }
+
+    public MeshData<T> CreateMesh<T>(string label, ReadOnlySpan<T> modelVertices, ReadOnlySpan<u32> indices)
+        where T : unmanaged
+    {
+        var vertexBuffer =
+            CreateBuffer(BufferUsage.Vertex | BufferUsage.CopyDst, modelVertices, $"{label}::VertexBuffer");
+        var indexBuffer = CreateBuffer(BufferUsage.Index | BufferUsage.CopyDst, indices, $"{label}::IndexBuffer");
+
+        return new MeshData<T>(this, label, vertexBuffer, indexBuffer);
+    }
+
     #endregion
 
     public void DisposeLater(IDisposable? disposable)
@@ -414,8 +568,9 @@ public class ResourceLoader(RendererApi api, ILogger<ResourceLoader> logger) : I
         _writeSem.Dispose();
 
         // Do not dispose, as textures in cache, as the cache doesn't ref them
-        // foreach (var key in _loadedTextures.Keys.ToArray()) if (_loadedTextures.TryRemove(key, out var value)) value.Dispose();
+        // foreach (var key in _loadedTextures.Keys.ToArray()) if (_loadedMeshes.TryRemove(key, out var value)) value.Dispose();
         _loadedTextures.Clear();
+        _loadedMeshes.Clear();
 
         return Task.CompletedTask;
     }

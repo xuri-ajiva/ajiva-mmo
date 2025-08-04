@@ -1,5 +1,4 @@
-﻿using client;
-using Client.LayerSystem;
+﻿using Client.LayerSystem;
 using Client.Networking;
 using Client.Platform;
 using Client.Renderer;
@@ -18,7 +17,7 @@ public class ClientRunner
         services.AddSingleton<PlatformSystem>();
         services.AddSingleton<GameLogic>();
         services.AddSingleton<ModelHelper>();
-        services.AddSingleton<ObjectScene>();
+        services.AddSingleton<Scene>();
         services.AddSingleton<ICamera, FreeCamera>();
 
 
@@ -29,7 +28,7 @@ public class ClientRunner
         services.AddService<AjivaWindow>();
 
         services.AddService<RendererApi>();
-        services.AddService<ResourceLoader>();
+        services.AddService<ResourceManager>();
         services.AddService<PeriodicUpdater>();
 
         services.AddService<ShaderReloadManager, IShaderManager>();

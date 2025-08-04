@@ -14,7 +14,7 @@ namespace Client.Renderer.Pipelines;
 public class PbrPipeline : IDisposable
 {
     private readonly RendererApi _api;
-    private readonly ResourceLoader _loader;
+    private readonly ResourceManager _loader;
     private readonly GBuffer _gBuffer;
     private readonly IPbrGBufferShader _gBufferShader;
     private readonly IPbrDeferredLightingShader _deferredShader;
@@ -37,7 +37,7 @@ public class PbrPipeline : IDisposable
 
 
     private PbrPipeline(
-        RendererApi api, ResourceLoader loader, GBuffer gBuffer, IPbrGBufferShader gBufferShader,
+        RendererApi api, ResourceManager loader, GBuffer gBuffer, IPbrGBufferShader gBufferShader,
         IPbrDeferredLightingShader deferredShader, RenderPipelinePtr gBufferPipeline,
         RenderPipelinePtr deferredLightingPipeline, BindGroupLayoutPtr gBufferSceneLayout,
         BindGroupLayoutPtr gBufferMaterialLayout, BindGroupLayoutPtr gBufferTextureLayout,
@@ -64,7 +64,7 @@ public class PbrPipeline : IDisposable
         _gBufferSceneBindGroup = gBufferSceneBindGroup;
     }
 
-    public static PbrPipeline Create(RendererApi api, ResourceLoader loader, IPbrGBufferShader gBufferShader,
+    public static PbrPipeline Create(RendererApi api, ResourceManager loader, IPbrGBufferShader gBufferShader,
         IPbrDeferredLightingShader deferredShader, GBuffer gBuffer)
     {
         var device = api.Device;

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Client.Renderer.PbrRenderer;
 
 namespace Client.Renderer
