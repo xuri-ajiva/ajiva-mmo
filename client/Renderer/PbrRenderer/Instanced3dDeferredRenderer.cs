@@ -383,6 +383,7 @@ public class Instanced3dDeferredRenderer(
     }
 
     f32 textureSize = 128f;
+    private i32 maxConcurrentLoads = 1;
 
     public void RenderUi(UpdateInfo info)
     {
@@ -535,6 +536,11 @@ public class Instanced3dDeferredRenderer(
 
         if (ImGui.Begin("ResourceLoader"))
         {
+            var current = maxConcurrentLoads;
+            ImGui.SliderInt("Max Concurrent Loads", ref maxConcurrentLoads, 1, 64);
+            if (current != maxConcurrentLoads)
+                _loader.UpdateMaxConcurrentLoads(maxConcurrentLoads);
+
             if (ImGui.CollapsingHeader("Textures"))
             {
                 ImGui.SliderFloat("Size", ref textureSize, 16, 1024);

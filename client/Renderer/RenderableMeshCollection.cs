@@ -9,10 +9,15 @@ namespace Client.Renderer
 
         public void Clear()
         {
-            foreach (var mesh in OpaqueMeshes) mesh.Dispose();
-            OpaqueMeshes.Clear();
-            foreach (var mesh in TransparentMeshes) mesh.Dispose();
-            TransparentMeshes.Clear();
+            var oldOpaque = OpaqueMeshes;
+            var oldTransparent = TransparentMeshes;
+            OpaqueMeshes = [];
+            TransparentMeshes = [];
+            
+            foreach (var mesh in oldOpaque) mesh.Dispose();
+            oldOpaque.Clear();
+            foreach (var mesh in oldTransparent) mesh.Dispose();
+            oldTransparent.Clear();
         }
 
         public void Dispose()

@@ -51,8 +51,14 @@ public class AjivaBuffer<T>(
             loader.Logger.LogTrace("Queued Writing Buffer {Buffer} with {Size} new values", Buffer.GetIntPtr(),
                 data.Length);
         if (queue == default)
-            queue = loader.Queue;
-        queue.WriteBuffer(Buffer, OffsetBytes, data);
+        {
+            using var guard = loader.Api.EnterQueue();
+            queue.WriteBuffer(Buffer, OffsetBytes, data);
+        }
+        else
+        {
+            queue.WriteBuffer(Buffer, OffsetBytes, data);
+        }
     }
 
     public void ResizeWithoutDataPreserve(u64 newCount)

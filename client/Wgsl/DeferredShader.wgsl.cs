@@ -4,7 +4,6 @@ using GlmSharp;
 namespace Client.Wgsl;
 
 using static BuiltIn;
-using static glm;
 
 // ReSharper disable UnusedMember.Global
 // ReSharper disable InconsistentNaming

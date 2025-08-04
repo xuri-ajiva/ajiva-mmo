@@ -1,6 +1,4 @@
 ﻿using ImGuiNET;
-using Riptide;
-using ServiceDefaults;
 
 namespace Client.LayerSystem;
 

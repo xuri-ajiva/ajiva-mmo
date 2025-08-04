@@ -180,48 +180,48 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
             baseMipLevel: 0, mipLevelCount: 1,
             baseArrayLayer: 0, arrayLayerCount: 1, label: "SwapchainView");
 
-        var queue = _api.Device.GetQueue();
-
         ImGui.PushFont(_quicksandFont);
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
-
-        foreach (var layer in Layers)
+        using (var guard = _api.EnterQueue())
         {
-            if (!layer.Enabled) continue;
+            foreach (var layer in Layers)
+            {
+                if (!layer.Enabled) continue;
 
-            // ReSharper disable once ConvertIfStatementToSwitchStatement
-            if (layer is IRenderLayer renderLayer)
-                renderLayer.Render(info, new RenderTarget(queue, _imguiController!));
+                // ReSharper disable once ConvertIfStatementToSwitchStatement
+                if (layer is IRenderLayer renderLayer)
+                    renderLayer.Render(info, new RenderTarget(guard.Queue, _imguiController!));
 
-            if (layer is IUiRenderLayer uiRenderLayer)
-                uiRenderLayer.RenderUi(info);
+                if (layer is IUiRenderLayer uiRenderLayer)
+                    uiRenderLayer.RenderUi(info);
+            }
+
+            if (_showOverlay)
+                RenderMetrics(info);
+            if (_demoWindow)
+                ImGui.ShowDemoWindow();
+
+            RenderLayerControls();
+
+            ImGui.PopFont();
+
+            if (ImGui.GetFrameCount() == 4) //seems to be the magic number for loading dock layouts
+                ImGui.LoadIniSettingsFromDisk("imgui.ini");
+
+            var cmd = _api.Device.CreateCommandEncoder(label: "ImGui Composite");
+            var pass = cmd.BeginRenderPass([
+                    new RenderPassColorAttachment(_swapchainView.Value, resolveTarget: null,
+                        LoadOp.Clear, StoreOp.Store, default)
+                ], null, null,
+                null);
+
+            _imguiController!.Render(pass);
+            ImGui.UpdatePlatformWindows();
+            //ImGui.RenderPlatformWindowsDefault();
+
+            pass.End();
+            guard.Queue.Submit(cmd.Finish());
         }
-
-        if (_showOverlay)
-            RenderMetrics(info);
-        if (_demoWindow)
-            ImGui.ShowDemoWindow();
-
-        RenderLayerControls();
-
-        ImGui.PopFont();
-
-        if (ImGui.GetFrameCount() == 4) //seems to be the magic number for loading dock layouts
-            ImGui.LoadIniSettingsFromDisk("imgui.ini");
-
-        var cmd = _api.Device.CreateCommandEncoder(label: "ImGui Composite");
-        var pass = cmd.BeginRenderPass([
-                new RenderPassColorAttachment(_swapchainView.Value, resolveTarget: null,
-                    LoadOp.Clear, StoreOp.Store, default)
-            ], null, null,
-            null);
-
-        _imguiController!.Render(pass);
-        ImGui.UpdatePlatformWindows();
-        //ImGui.RenderPlatformWindowsDefault();
-
-        pass.End();
-        queue.Submit(cmd.Finish());
 
         surface.Present();
     }
@@ -297,7 +297,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
                                     var array = new object[1000];
                                     for (var index = 0; index < array.Length; index++)
                                     {
-                                        array[index] = (object[]) [i, index];
+                                        array[index] = (object[])[i, index];
                                     }
 
                                     Interlocked.Add(ref allocations, (u64)array.LongLength * 4);

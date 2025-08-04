@@ -3,12 +3,12 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Client.Renderer.PbrRenderer;
 using Silk.NET.WebGPU;
-using Silk.NET.WebGPU.Safe;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Client.Wgsl;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Silk.NET.Maths;
 
 namespace Client.Renderer.Resources;
@@ -19,6 +19,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
     : IHostedLifecycleService
 {
     public readonly ILogger<ResourceManager> Logger = logger;
+    public readonly RendererApi Api = api;
 
     #region Textures
 
@@ -131,11 +132,40 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
         return Task.CompletedTask;
     }
 
-    public QueuePtr Queue => api.Device.GetQueue();
-    private readonly SemaphoreSlim _loadSem = new(1, 1);
-    private readonly SemaphoreSlim _writeSem = new(1, 1);
+    private readonly SemaphoreSlim _loadSem = new(1, 100);
     private readonly ConcurrentDictionary<string, AjivaTexture> _loadedTextures = new();
     private readonly ConcurrentDictionary<string, AjivaMesh<PbrGBufferShader.Attributes>> _loadedMeshes = new();
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "m_currentCount")]
+    static extern ref i32 SemaphoreSlim_currentCount(SemaphoreSlim semaphore);
+
+    public void UpdateMaxConcurrentLoads(i32 maxConcurrentLoads)
+    {
+        if(maxConcurrentLoads > 100)
+        {
+            Logger.LogWarning("Max concurrent loads set to {MaxConcurrentLoads}, which is higher than the default of 100. This may lead to performance issues.", maxConcurrentLoads);
+            maxConcurrentLoads = 100;
+        }
+        ref var max = ref SemaphoreSlim_currentCount(_loadSem);
+        var diff = maxConcurrentLoads - max;
+        if (diff > 0)
+        {
+            _loadSem.Release(diff);
+            Logger.LogInformation("Increased max concurrent loads to {MaxConcurrentLoads}", maxConcurrentLoads);
+        }
+        else if (diff < 0)
+        {
+            for (var i = 0; i < -diff; i++)
+            {
+                _loadSem.Wait();
+            }
+            Logger.LogInformation("Decreased max concurrent loads to {MaxConcurrentLoads}", maxConcurrentLoads);
+        }
+        else
+        {
+            Logger.LogInformation("Max concurrent loads already set to {MaxConcurrentLoads}", maxConcurrentLoads);
+        }
+    }
 
     public List<AjivaTexture> GetAllTextures()
     {
@@ -151,9 +181,10 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
                 _loadedTextures.TryRemove(key, out _);
             }
         }
+
         return res;
     }
-    
+
     public AjivaMesh<PbrGBufferShader.Attributes>[] GetAllMeshes()
     {
         var res = new List<AjivaMesh<PbrGBufferShader.Attributes>>(_loadedMeshes.Count);
@@ -168,9 +199,10 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
                 _loadedMeshes.TryRemove(key, out _);
             }
         }
+
         return res.ToArray();
     }
-    
+
     public void AsyncTextureLoad(string path, AjivaTexture target,
         TextureUsage usage = TextureUsage.TextureBinding, string? label = null, u32 mipLevels = 8,
         TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
@@ -267,17 +299,8 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
                 try
                 {
                     imageToUpload.CopyPixelDataTo(rent.AsSpan(0, sizePixels));
-                    await _writeSem.WaitAsync();
-                    try
-                    {
-                        target.WriteTexture<Rgba32>(rent.AsSpan(0, sizePixels),
-                            new Extent3D((u32)imageToUpload.Width, (u32)imageToUpload.Height, 1), mipLevel: mipLevel);
-                    }
-                    finally
-                    {
-                        _writeSem.Release();
-                    }
-
+                    target.WriteTexture<Rgba32>(rent.AsSpan(0, sizePixels),
+                        new Extent3D((u32)imageToUpload.Width, (u32)imageToUpload.Height, 1), mipLevel: mipLevel);
                     Logger.LogTrace("Uploaded mip level {MipLevel} ({MipWidth}x{MipHeight}) for '{Label}'.", mipLevel,
                         imageToUpload.Width, imageToUpload.Height, label ?? path);
                 }
@@ -396,7 +419,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
     private TextureData CreateTexture(TextureUsage usage, string label, u32 mipLevels, Extent3D extent3D,
         TextureFormat format, TextureAspect aspect)
     {
-        var texture = api.Device.CreateTexture(
+        var texture = Api.Device.CreateTexture(
             usage | TextureUsage.CopyDst,
             TextureDimension.Dimension2D,
             extent3D,
@@ -437,14 +460,17 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
         // Do not use queue here, as it is not guaranteed that the span is available after this method
         // Accutualy Unmap dose issue a queue submit, so this is not needed
         // w.r.t. that the map dose copy the data to a memory location that is guaranteed to be available
-        result.QueuedWrite(data, Queue);
+        using (var guard = Api.EnterQueue())
+        {
+            result.QueuedWrite(data, guard.Queue);
+        }
 
         Logger.LogDebug("Created buffer {Label} with {Count} items ({Type}).", label, data.Length, typeof(T).Name);
         return result;
     }
 
     public BufferRange CreateBufferRaw(BufferUsage usage, u64 sizeInBytes, string? label) =>
-        new(api.Device.CreateBuffer(usage, sizeInBytes, mappedAtCreation: false, label), 0, sizeInBytes);
+        new(Api.Device.CreateBuffer(usage, sizeInBytes, mappedAtCreation: false, label), 0, sizeInBytes);
 
     private readonly Channel<IDisposable> _disposables =
         Channel.CreateUnbounded<IDisposable>(new UnboundedChannelOptions { SingleReader = true });
@@ -496,7 +522,8 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
                     modelVertices[iVertex].TangentRef = new Vector4(mdl.Tangents[iVertex], 1.0f);
                 }
 
-                target.Assign(CreateMesh<PbrGBufferShader.Attributes>($"{label ?? Path.GetFileNameWithoutExtension(path)}::{mdl.Name}",
+                target.Assign(CreateMesh<PbrGBufferShader.Attributes>(
+                    $"{label ?? Path.GetFileNameWithoutExtension(path)}::{mdl.Name}",
                     modelVertices, mdl.Indices));
                 Logger.LogDebug("Loaded mesh {Label} with {VertexCount} vertices and {IndexCount} indices",
                     label ?? Path.GetFileNameWithoutExtension(path), mdl.Vertices.Length, mdl.Indices.Length);
@@ -565,8 +592,6 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
         }
 
         _loadSem.Dispose();
-        _writeSem.Dispose();
-
         // Do not dispose, as textures in cache, as the cache doesn't ref them
         // foreach (var key in _loadedTextures.Keys.ToArray()) if (_loadedMeshes.TryRemove(key, out var value)) value.Dispose();
         _loadedTextures.Clear();

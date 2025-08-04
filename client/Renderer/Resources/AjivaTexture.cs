@@ -49,7 +49,9 @@ public class TextureData(
             writeSize.Height = Size.Height >> iMipLevel;
         }
 
-        Loader.Queue.WriteTexture(
+        using var guard = loader.Api.EnterQueue();
+
+        guard.Queue.WriteTexture(
             new ImageCopyTexture
             {
                 Texture = Texture,

@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.WGPU;
 using Silk.NET.WebGPU.Safe;
@@ -14,9 +15,14 @@ public class RendererApi(ILogger<RendererApi> logger)
 
     public DevicePtr Device;
     public AdapterPtr Adapter;
+    private QueuePtr Queue;
     public WebGPU Wgpu = null!;
     public InstancePtr Instance;
     private static Wgpu _wgpuExtension = null!;
+    private readonly SemaphoreSlim _frameQueueAccessWaitQueue = new(1, 1);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "m_waitCount")]
+    public static extern i32 SemaphoreSlimWaitCount(SemaphoreSlim semaphoreSlim);
 
     private async Task Initialize()
     {
@@ -44,12 +50,6 @@ public class RendererApi(ILogger<RendererApi> logger)
                 logger.LogCritical("Device lost with reason: {Reason} and message: {Message}", r, message);
             },
             defaultQueueLabel: "DefaultQueue", label: "MainDevice");
-
-        if (!Device.TryGetExtension(out _wgpuExtension))
-        {
-            logger.LogCritical("Wgpu (wgpu-rs) extension is not supported");
-            throw new Exception("Wgpu (wgpu-rs) extension is not supported");
-        }
 
         Device.SetUncapturedErrorCallback((type, m) =>
         {
@@ -83,6 +83,14 @@ public class RendererApi(ILogger<RendererApi> logger)
                 Debugger.Break();
             }
         });
+        
+        if (!Device.TryGetExtension(out _wgpuExtension))
+        {
+            logger.LogCritical("Wgpu (wgpu-rs) extension is not supported");
+            throw new Exception("Wgpu (wgpu-rs) extension is not supported");
+        }
+
+        Queue = Device.GetQueue();
     }
 
     public ShaderModulePtr CreateShaderModuleFromFile(string fileName,
@@ -116,6 +124,25 @@ public class RendererApi(ILogger<RendererApi> logger)
         Device.GetExtension(_wgpuExtension)
             .Poll(true, null);
     }
+
+    public readonly ref struct QueueGuard : IDisposable
+    {
+        private readonly RendererApi _api;
+        public QueuePtr Queue => _api.Queue;
+
+        public QueueGuard(RendererApi api)
+        {
+            _api = api;
+            _api._frameQueueAccessWaitQueue.Wait();
+        }
+
+        public void Dispose()
+        {
+            _api._frameQueueAccessWaitQueue.Release();
+        }
+    }
+
+    public QueueGuard EnterQueue() => new(this);
 
     public async Task StartingAsync(CancellationToken cancellationToken) => await Initialize();
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
