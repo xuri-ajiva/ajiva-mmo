@@ -19,10 +19,13 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
     {
         // For now, we'll just load the Sponza model regardless of the level name.
         // In the future, we can use a dictionary or other mechanism to map level names to model paths.
-        RenderableMeshes.Clear();
-        RenderableMeshes.OpaqueMeshes.AddRange(CreateModelBuffers("resources/Sponza/Meshes/Sponza_Modular.FBX",
+        var oldCollection = RenderableMeshes;
+        var newCollection = new RenderableMeshCollection();
+        newCollection.OpaqueMeshes.AddRange(CreateModelBuffers("resources/Sponza/Meshes/Sponza_Modular.FBX",
             "Sponza_Modular"));
-        RenderableMeshes.TransparentMeshes.AddRange(CreateTransparentCubes());
+        newCollection.TransparentMeshes.AddRange(CreateTransparentCubes());
+        RenderableMeshes = newCollection;
+        oldCollection.Dispose();
         Version++;
     }
 

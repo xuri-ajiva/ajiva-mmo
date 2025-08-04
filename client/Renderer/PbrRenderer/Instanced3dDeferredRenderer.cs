@@ -35,6 +35,7 @@ public class Instanced3dDeferredRenderer(
     private u64 _transformVersion;
     private u64 _renderableMeshVersion;
     private u64 _sceneVersion;
+    private RenderableMeshCollection? _sceneRenderCollection = null;
     private Scene _scene = scene;
 
     private GBuffer? _sceneGBuffer;
@@ -157,9 +158,9 @@ public class Instanced3dDeferredRenderer(
             Time = info.TotalTime
         });
 
-        if (_sceneVersion != _scene.Version)
+        if (_sceneRenderCollection != _scene.RenderableMeshes || _sceneRenderCollection == null)
         {
-            _sceneVersion = _scene.Version;
+            _sceneRenderCollection = _scene.RenderableMeshes;
             foreach (var buffer in _scene.RenderableMeshes.OpaqueMeshes)
             {
                 WriteBuffer(queue, buffer);
@@ -205,7 +206,7 @@ public class Instanced3dDeferredRenderer(
             {
                 if (transforms.Count > 0)
                 {
-                    var dynamicMesh = new PbrInstancedMeshBuffer(_scene.RenderableMeshes.OpaqueMeshes[(i32)meshId].Mesh,
+                    var dynamicMesh = new PbrInstancedMeshBuffer(_sceneRenderCollection.OpaqueMeshes[(i32)meshId].Mesh,
                         ModelHelper.PbrMaterialExamples.WornLeather(),
                         _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
                             BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"),
@@ -220,7 +221,7 @@ public class Instanced3dDeferredRenderer(
             }
         }
 
-        //UpdateScene(queue, _scene.StaticMeshes);
+        //UpdateScene(queue, _sceneRenderCollection.StaticMeshes);
 
         UpdateScene(queue, _dynamicMeshes);
 
@@ -228,7 +229,7 @@ public class Instanced3dDeferredRenderer(
 
         if (_pbrPipeline.BeginGBufferPass() is { } pass)
         {
-            foreach (var meshBuffer in _scene.RenderableMeshes.OpaqueMeshes)
+            foreach (var meshBuffer in _sceneRenderCollection.OpaqueMeshes)
             {
                 _pbrPipeline.DrawMesh(pass, meshBuffer);
             }
@@ -243,7 +244,7 @@ public class Instanced3dDeferredRenderer(
 
         if (_transparentPipeline.BeginRenderPass(sceneViewport) is { } transparentPass)
         {
-            foreach (var instances in _scene.RenderableMeshes.TransparentMeshes)
+            foreach (var instances in _sceneRenderCollection.TransparentMeshes)
             {
                 _transparentPipeline.DrawMesh(transparentPass, instances);
             }
