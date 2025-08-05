@@ -3,6 +3,7 @@
 // For additional information please see the included LICENSE.md file or view it on GitHub:
 // https://github.com/RiptideNetworking/Riptide/blob/main/LICENSE.md
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Riptide.Transports;
 using Riptide.Utils;
@@ -107,7 +108,9 @@ namespace Riptide
         public static byte InstancesPerPeer { get; set; } = 4;
 
         /// <summary>A pool of reusable message instances.</summary>
-        private static readonly List<Message> Pool = new List<Message>(InstancesPerPeer * 2);
+        private static readonly ConcurrentBag<Message> Pool = [];
+
+        private static int _poolTargetCapacity = InstancesPerPeer * 2;
 
         static Message()
         {
@@ -197,9 +200,7 @@ namespace Riptide
             {
                 // No Servers or Clients are running, empty the list and reset the capacity
                 Pool.Clear();
-                Pool.Capacity =
-                    InstancesPerPeer *
-                    2; // x2 so there's some buffer room for extra Message instances in the event that more are needed
+                _poolTargetCapacity = InstancesPerPeer * 2;
             }
             else
             {
@@ -207,8 +208,15 @@ namespace Riptide
                 int idealInstanceAmount = Peer.ActiveCount * InstancesPerPeer;
                 if (Pool.Count > idealInstanceAmount)
                 {
-                    Pool.RemoveRange(Peer.ActiveCount * InstancesPerPeer, Pool.Count - idealInstanceAmount);
-                    Pool.Capacity = idealInstanceAmount * 2;
+                    while (Pool.Count > idealInstanceAmount)
+                    {
+                        if (!Pool.TryTake(out _))
+                        {
+                            break;
+                        }
+                    }
+
+                    _poolTargetCapacity = idealInstanceAmount * 2;
                 }
             }
         }
@@ -217,14 +225,11 @@ namespace Riptide
         /// <returns>A message instance ready to be used for sending or handling.</returns>
         private static Message RetrieveFromPool()
         {
-            Message message;
-            if (Pool.Count > 0)
+            if (!Pool.TryTake(out var message))
             {
-                message = Pool[0];
-                Pool.RemoveAt(0);
-            }
-            else
                 message = new Message();
+                _poolTargetCapacity++;
+            }
 
             return message;
         }
@@ -232,7 +237,7 @@ namespace Riptide
         /// <summary>Returns the message instance to the internal pool so it can be reused.</summary>
         public void Release()
         {
-            if (Pool.Count < Pool.Capacity)
+            if (Pool.Count < _poolTargetCapacity)
             {
                 // Pool exists and there's room
                 if (!Pool.Contains(this))
