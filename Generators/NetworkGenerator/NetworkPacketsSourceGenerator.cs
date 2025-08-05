@@ -127,14 +127,14 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
             if (ModelExtensions.GetDeclaredSymbol(semanticModel, declarationSyntax) is not INamedTypeSymbol
                 symbol)
                 continue;
-            
+
             if (symbol.TypeKind != TypeKind.Struct)
             {
                 context.ReportDiagnostic(Diagnostic.Create(NetworkGeneratorRules.MustBeStructRule,
                     declarationSyntax.GetLocation(), symbol.ToDisplayString()));
                 continue;
             }
-            
+
             var namespaceName = symbol.ContainingNamespace.ToDisplayString();
             var className = declarationSyntax.Identifier.Text;
 
@@ -233,11 +233,11 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                     Parameter(Identifier("message"))
                         .WithType(IdentifierName(fullNameOfClass))
                 )))
-                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(
-                        SyntaxKind.SimpleMemberAccessExpression,
-                        IdentifierName("global::System.Threading.Tasks.Task"),
-                        IdentifierName("CompletedTask")
-                    )
+                .WithExpressionBody(ArrowExpressionClause(
+                    InvocationExpression(IdentifierName("MessageNotHandled"),
+                        ArgumentList(SingletonSeparatedList(
+                            Argument(ParseExpression($"\"{fullNameOfClass}\""))
+                        )))
                 )).WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
             );
 
@@ -247,9 +247,39 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                     Parameter(Identifier("message"))
                         .WithType(IdentifierName(fullNameOfClass))
                 )))
-                .WithBody(Block())
+                .WithExpressionBody(
+                    ArrowExpressionClause(
+                        InvocationExpression(IdentifierName("MessageNotHandled"),
+                            ArgumentList(SingletonSeparatedList(
+                                Argument(ParseExpression($"\"{fullNameOfClass}\""))
+                            )))
+                    )).WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
             );
         }
+
+        handlerMembers.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), "MessageNotHandled")
+            .AddModifiers(Token(SyntaxKind.PublicKeyword))
+            .WithParameterList(ParameterList(SingletonSeparatedList(
+                Parameter(Identifier("messageType"))
+                    .WithType(IdentifierName("string"))
+            )))
+            .WithBody(Block())
+        );
+
+        asyncHandlerMembers.Add(
+            MethodDeclaration(IdentifierName("global::System.Threading.Tasks.Task"), "MessageNotHandled")
+                .AddModifiers(Token(SyntaxKind.PublicKeyword))
+                .WithParameterList(ParameterList(SingletonSeparatedList(
+                    Parameter(Identifier("messageType"))
+                        .WithType(IdentifierName("string"))
+                )))
+                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        IdentifierName("global::System.Threading.Tasks.Task"),
+                        IdentifierName("CompletedTask")
+                    ))
+                ).WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+        );
 
         var unit = CompilationUnit()
             .AddMembers(FileScopedNamespaceDeclaration(IdentifierName(Namespace)))
@@ -616,6 +646,33 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                             SyntaxKind.SimpleMemberAccessExpression,
                             IdentifierName("connection"),
                             IdentifierName("Send")
+                        ))
+                    .WithArgumentList(ArgumentList(SingletonSeparatedList(
+                        Argument(InvocationExpression(MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                ThisExpression(),
+                                IdentifierName("ToMessage")
+                            ))
+                            .WithArgumentList(ArgumentList(
+                                SingletonSeparatedList(
+                                    Argument(IdentifierName("sendMode"))
+                                ))
+                            ))
+                    ))))
+                )),
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), "SendToAll")
+                .AddModifiers(Token(SyntaxKind.PublicKeyword))
+                .AddParameterListParameters(
+                    Parameter(Identifier("server"))
+                        .WithType(IdentifierName("global::Riptide.Server")),
+                    Parameter(Identifier("sendMode"))
+                        .WithType(IdentifierName("global::Riptide.MessageSendMode"))
+                )
+                .WithBody(Block(ExpressionStatement(InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName("server"),
+                            IdentifierName("SendToAll")
                         ))
                     .WithArgumentList(ArgumentList(SingletonSeparatedList(
                         Argument(InvocationExpression(MemberAccessExpression(
