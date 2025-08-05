@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Win32.SafeHandles;
 
 namespace Common.Ecs
 {
@@ -18,13 +19,21 @@ namespace Common.Ecs
             {
                 store.Remove(entity);
             }
+
             _entityManager.Destroy(entity);
         }
 
         public void AddComponent<T>(Entity entity, T component) where T : struct, IComponentData
         {
             var store = GetStore<T>();
-            store.Add(entity, component);
+            if (!store.Has(entity))
+            {
+                store.Add(entity, component);
+            }
+            else
+            {
+                store.Get(entity) = component;
+            }
         }
 
         public ref T GetComponent<T>(Entity entity) where T : struct, IComponentData
@@ -45,9 +54,29 @@ namespace Common.Ecs
             return newStore;
         }
 
-        public Entity GetEntity(int entityId)
+        public Entity GetEntity(u32 entityId)
         {
             return new Entity(entityId);
+        }
+
+        public void Clear()
+        {
+            foreach (var store in _componentStores.Values)
+            {
+                store.Clear();
+            }
+
+            _entityManager.Clear();
+        }
+
+        public bool HasComponent<T>(Entity entity) where T : struct, IComponentData
+        {
+            if (_componentStores.TryGetValue(typeof(T), out var store))
+            {
+                return store.Has(entity);
+            }
+
+            return false;
         }
     }
 }

@@ -4,11 +4,11 @@ using Riptide;
 
 namespace Common.Ecs;
 
-public readonly record struct TransformComponent : IComponentData, IMessageSerializable
+public record struct TransformComponent() : IComponentData, IMessageSerializable
 {
-    public Vector3 Position { get; init; }
-    public Quaternion Rotation { get; init; }
-    public Vector3 Scale { get; init; }
+    public Vector3 Position { get; set; } = Vector3.Zero;
+    public Quaternion Rotation { get; set; } = Quaternion.Identity;
+    public Vector3 Scale { get; set; } = Vector3.One;
 
     public void Serialize(Message message)
     {
@@ -19,16 +19,8 @@ public readonly record struct TransformComponent : IComponentData, IMessageSeria
 
     public void Deserialize(Message message)
     {
-        // This is intentionally left empty. We will use the static method below.
-    }
-
-    public static TransformComponent FromMessage(Message message)
-    {
-        return new TransformComponent
-        {
-            Position = message.GetVector3(),
-            Rotation = message.GetQuaternion(),
-            Scale = message.GetVector3()
-        };
+        Position = message.GetVector3();
+        Rotation = message.GetQuaternion();
+        Scale = message.GetVector3();
     }
 }

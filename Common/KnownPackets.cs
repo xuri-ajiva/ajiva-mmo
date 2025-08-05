@@ -15,11 +15,4 @@ public partial struct ConnectAckPacket(u32 protocolVersion);
 [NetworkPacket(102)]
 public partial struct DisconnectPacket(string reason);
 
-[NetworkPacket(200)]
-public partial struct NewEntityPacket(u32 id, u32 type, f32 x, f32 y, f32 z);
-[NetworkPacket(201)]
-public partial struct UpdateEntityPacket(u32 id, f32 x, f32 y, f32 z);
-[NetworkPacket(202)]
-public partial struct DeleteEntityPacket(u32 id);
-
 

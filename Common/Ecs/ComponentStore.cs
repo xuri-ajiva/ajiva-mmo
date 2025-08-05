@@ -6,9 +6,9 @@ namespace Common.Ecs
     public class ComponentStore<T> : IComponentStore where T : struct, IComponentData
     {
         private T[] _dense = new T[1024];
-        private int[] _sparse = new int[1024];
-        private int[] _map = new int[1024];
-        private int _count;
+        private u32[] _sparse = new u32[1024];
+        private u32[] _map = new u32[1024];
+        private u32 _count;
 
         public u64 Version { get; private set; }
 
@@ -17,14 +17,14 @@ namespace Common.Ecs
             if (entity.Id >= _sparse.Length)
             {
                 var newSize = entity.Id * 2;
-                Array.Resize(ref _sparse, newSize);
+                Array.Resize(ref _sparse, (i32)newSize);
             }
 
             if (_count >= _dense.Length)
             {
                 var newSize = _count * 2;
-                Array.Resize(ref _dense, newSize);
-                Array.Resize(ref _map, newSize);
+                Array.Resize(ref _dense, (i32)newSize);
+                Array.Resize(ref _map, (i32)newSize);
             }
 
             _sparse[entity.Id] = _count;
@@ -59,11 +59,17 @@ namespace Common.Ecs
             Version++;
         }
 
-        public ReadOnlySpan<T> GetAll() => new ReadOnlySpan<T>(_dense, 0, _count);
+        public ReadOnlySpan<T> GetAll() => new ReadOnlySpan<T>(_dense, 0, (i32)_count);
 
-        public int GetEntityIdFromDenseIndex(int denseIndex)
+        public u32 GetEntityIdFromDenseIndex(u32 denseIndex)
         {
             return _map[denseIndex];
+        }
+
+        public void Clear()
+        {
+            _count = 0;
+            Version++;
         }
     }
 }

@@ -1,21 +1,51 @@
-﻿using ImGuiNET;
+﻿using System.Numerics;
+using Client.Renderer.PbrRenderer;
+using Common.Ecs;
+using Common.Networking;
+using ImGuiNET;
+using Riptide;
+using Silk.NET.Maths;
 
 namespace Client.LayerSystem;
 
-public class ClientConnectionLayer(Riptide.Client client) : IUiRenderLayer
+public class ClientConnectionLayer(Riptide.Client client, World world, GameLogic gameLogic, ICamera camera)
+    : IUiRenderLayer
 {
-    public void Attach() {}
+    private readonly World _world = world;
+    private readonly GameLogic _gameLogic = gameLogic;
+    private readonly ICamera _camera = camera;
+
+    public void Attach()
+    {
+    }
 
 
     public void Update(UpdateInfo info)
     {
         if (!client.IsConnected) return;
 
-        /*new UpdateEntityPacket(client.Id, ecs.LocalPos.X, ecs.LocalPos.Y, ecs.LocalPos.Z).Send(
-            client.Connection!, MessageSendMode.Unreliable);*/
+        if (_gameLogic.LocalPlayerEntityId.HasValue)
+        {
+            var localPlayer = world.GetEntity(_gameLogic.LocalPlayerEntityId.Value);
+            if (world.HasComponent<TransformComponent>(localPlayer))
+            {
+                ref var currentTransform = ref world.GetComponent<TransformComponent>(localPlayer);
+                var currentTransformRotation = Quaternion.CreateFromRotationMatrix(_camera.ViewMatrix);
+                if (currentTransform.Position != _camera.Position ||
+                    currentTransform.Rotation != currentTransformRotation)
+                {
+                    currentTransform.Position = _camera.Position;
+                    currentTransform.Rotation = currentTransformRotation;
+                    new EntityUpdatePacket(localPlayer.Id, currentTransform).Send(client.Connection!,
+                        MessageSendMode.Unreliable);
+                }
+            }
+        }
     }
 
-    public void Detach() {}
+    public void Detach()
+    {
+    }
 
     public ref bool Enabled => ref _enabled;
 
@@ -42,10 +72,14 @@ public class ClientConnectionLayer(Riptide.Client client) : IUiRenderLayer
             }
         }
 
-        /*foreach (var player in ecs.GetPlayers())
+        var transformStore = world.GetStore<TransformComponent>();
+        var transforms = transformStore.GetAll();
+        for (u32 i = 0; i < transforms.Length; i++)
         {
-            ImGui.Text($"Player {player.InstanceId}: {player.Position}");
-        }*/
+            var entityId = transformStore.GetEntityIdFromDenseIndex(i);
+            var transform = transforms[(i32)i];
+            ImGui.Text($"Entity: {entityId}: P:{transform.Position} R:{transform.Rotation} S:{transform.Scale}");
+        }
 
         ImGui.End();
     }

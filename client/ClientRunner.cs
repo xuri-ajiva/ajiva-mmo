@@ -5,6 +5,7 @@ using Client.Renderer;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
+using Common.Ecs;
 
 namespace Client;
 
@@ -16,6 +17,7 @@ public class ClientRunner
 
         services.AddSingleton<PlatformSystem>();
         services.AddSingleton<GameLogic>();
+        services.AddSingleton<World>();
         services.AddSingleton<ModelHelper>();
         services.AddSingleton<Scene>();
         services.AddSingleton<ICamera, FreeCamera>();

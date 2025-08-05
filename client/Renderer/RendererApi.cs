@@ -83,7 +83,7 @@ public class RendererApi(ILogger<RendererApi> logger)
                 Debugger.Break();
             }
         });
-        
+
         if (!Device.TryGetExtension(out _wgpuExtension))
         {
             logger.LogCritical("Wgpu (wgpu-rs) extension is not supported");
@@ -150,12 +150,12 @@ public class RendererApi(ILogger<RendererApi> logger)
     public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task StoppedAsync(CancellationToken cancellationToken)
+    public async Task StoppedAsync(CancellationToken cancellationToken)
     {
+        await _frameQueueAccessWaitQueue.WaitAsync(cancellationToken);
         Device.Destroy();
         Adapter.Release();
         Instance.Release();
         Wgpu.Dispose();
-        return Task.CompletedTask;
     }
 }

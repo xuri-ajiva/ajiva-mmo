@@ -14,8 +14,8 @@ public class ServerRunner
         services.AddSingleton<Riptide.Server>();
     }
 
-    public async Task RunAsync(IHost app)
+    public async Task RunAsync(IHost app, CancellationToken token = default)
     {
-        await app.RunAsync();
+        await app.RunAsync(token: token);
     }
 }

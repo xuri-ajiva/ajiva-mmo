@@ -68,23 +68,20 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
         }
     }
 
-    public void Handle(NewEntityPacket message)
+    public void Handle(EntityCreatedPacket message)
     {
-        var entity = new Entity((int)message.Id);
-        _gameLogic.GetWorld().AddComponent(entity, new TransformComponent { Position = new Vector3(message.X, message.Y, message.Z) });
-        // For now, we'll hardcode TypeId 0 to MeshId 0 (first mesh in Sponza)
-        _gameLogic.GetWorld().AddComponent(entity, new RenderableMeshComponent { MeshId = message.TypeId });
+        _gameLogic.HandleEntityCreated(message);
     }
 
-    public void Handle(UpdateEntityPacket message)
+    public void Handle(EntityUpdatePacket message)
     {
-        ref var transform = ref _gameLogic.GetWorld().GetComponent<TransformComponent>(new Entity((int)message.Id));
-        transform = transform with { Position = new Vector3(message.X, message.Y, message.Z) };
+        _gameLogic.HandleEntityUpdate(message);
     }
 
     public void Handle(BeginWorldStatePacket message)
     {
         _logger.LogInformation("Beginning to receive world state for {entityCount} entities.", message.EntityCount);
+        _gameLogic.HandleBeginWorldState(message);
     }
 
     public void Handle(LoadLevelPacket message)
@@ -92,4 +89,16 @@ public class ClientWorker : BackgroundService, IUniversalMessageHandler
         _logger.LogInformation("Loading level: {levelName}", message.LevelName);
         _scene.LoadLevel(message.LevelName);
     }
+
+    public void Handle(EntityAssignedPacket message)
+    {
+        _gameLogic.SetLocalPlayerEntityId(message.EntityId);
+        _logger.LogInformation("Assigned local player entity ID: {EntityId}", message.EntityId);
+    }
+
+    public void MessageNotHandled(string messageType)
+    {
+        _logger.LogWarning("Message not handled: {MessageType}", messageType);
+    }
+    
 }

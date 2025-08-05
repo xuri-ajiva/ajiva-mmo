@@ -182,46 +182,63 @@ public class Instanced3dDeferredRenderer(
             _transformVersion = transformStore.Version;
             _renderableMeshVersion = renderableStore.Version;
 
-            // Clear the old dynamic meshes
-            foreach (var mesh in _dynamicMeshes.OpaqueMeshes) mesh.Dispose();
-            _dynamicMeshes.OpaqueMeshes.Clear();
 
             // Group entities by mesh
-            var entitiesByMesh = new Dictionary<u32, List<TransformComponent>>();
+            _entitiesByMesh.Clear();
             var renderables = renderableStore.GetAll();
             for (var i = 0; i < renderables.Length; i++)
             {
                 var renderable = renderables[i];
-                if (!entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
+                if (!_entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
                 {
-                    list = new List<TransformComponent>();
-                    entitiesByMesh[renderable.MeshId] = list;
+                    list = [];
+                    _entitiesByMesh[renderable.MeshId] = list;
                 }
 
-                list.Add(transformStore.Get(new Entity((i32)renderable.MeshId)));
+                list.Add(renderable.EntityId);
             }
 
+            // Clear the old dynamic meshes
+            foreach (var mesh in _dynamicMeshes.OpaqueMeshes) mesh.Dispose();
+            _dynamicMeshes.OpaqueMeshes.Clear();
             // Create a mesh buffer for each mesh
-            foreach (var (meshId, transforms) in entitiesByMesh)
+            foreach (var (meshId, enitites) in _entitiesByMesh)
             {
-                if (transforms.Count > 0)
+                if (enitites.Count > 0)
                 {
-                    var dynamicMesh = new PbrInstancedMeshBuffer(_sceneRenderCollection.OpaqueMeshes[(i32)meshId].Mesh,
+                    var dynamicMesh = new PbrInstancedMeshBuffer(_loader.DefaultPbrCubeMesh,
                         ModelHelper.PbrMaterialExamples.WornLeather(),
                         _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
-                            BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"),
-                        new PbrGBufferShader.Instance[transforms.Count]);
-                    for (var i = 0; i < transforms.Count; i++)
-                    {
-                        dynamicMesh.InstanceInfos[i].SetTransform(Matrix4x4.CreateTranslation(transforms[i].Position));
-                    }
-
+                            BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"));
                     _dynamicMeshes.OpaqueMeshes.Add(dynamicMesh);
                 }
             }
         }
 
         //UpdateScene(queue, _sceneRenderCollection.StaticMeshes);
+
+        var index = 0;
+        foreach (var (_, entities) in _entitiesByMesh)
+        {
+            var dynamicMesh = _dynamicMeshes.OpaqueMeshes[index++];
+            if (dynamicMesh._instanceInfos.Count < entities.Count)
+            {
+                dynamicMesh._instanceInfos.AddRange(Enumerable.Repeat(new PbrGBufferShader.Instance(),
+                    entities.Count - dynamicMesh._instanceInfos.Count));
+            }
+            else if (dynamicMesh._instanceInfos.Count > entities.Count)
+            {
+                dynamicMesh._instanceInfos.RemoveRange(entities.Count, dynamicMesh._instanceInfos.Count - entities.Count);
+            }
+
+            for (var i = 0; i < entities.Count; i++)
+            {
+                ref var transform = ref transformStore.Get(_gameLogic.GetWorld().GetEntity(entities[i]));
+                dynamicMesh.InstanceInfos[i].SetTransform(Matrix4x4.CreateScale(transform.Scale) *
+                                                          Matrix4x4.CreateFromQuaternion(transform.Rotation) *
+                                                          Matrix4x4.CreateTranslation(transform.Position));
+            }
+        }
 
         UpdateScene(queue, _dynamicMeshes);
 
@@ -385,6 +402,7 @@ public class Instanced3dDeferredRenderer(
 
     f32 textureSize = 128f;
     private i32 maxConcurrentLoads = 1;
+    private Dictionary<u32, List<u32>> _entitiesByMesh = [];
 
     public void RenderUi(UpdateInfo info)
     {

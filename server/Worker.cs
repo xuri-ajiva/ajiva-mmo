@@ -10,6 +10,7 @@ namespace server;
 
 public class Worker : IHostedService, IUniversalMessageHandler
 {
+
     private Task? _serverUpdateTask;
     private CancellationTokenSource? _stoppingCts;
 
@@ -38,13 +39,14 @@ public class Worker : IHostedService, IUniversalMessageHandler
 
     private async Task UpdateAsync(CancellationToken cancellationToken)
     {
+        var lastUpdate = DateTime.Now;
         while (!cancellationToken.IsCancellationRequested)
         {
             _server.Update();
-            // TODO: Implement a proper game loop here.
-            // This loop should:
-            // 1. Update the world state (e.g., move entities).
-            // 2. Send EntityUpdatePacket messages for any entities that have changed.
+            var now = DateTime.Now;
+            var delta = (float)(now - lastUpdate).TotalSeconds;
+            _gameLogic.Update(delta);
+            lastUpdate = now;
             await Task.Delay(5, cancellationToken);
         }
     }
@@ -63,6 +65,7 @@ public class Worker : IHostedService, IUniversalMessageHandler
     {
         _logger.LogInformation("Client connected: {@Client}", e.Client);
         _gameLogic.SendWorldState(e.Client);
+        _gameLogic.CreatePlayerEntity(e.Client);
     }
 
     private void ServerOnMessageReceived(object? sender, MessageReceivedEventArgs e)
@@ -88,9 +91,14 @@ public class Worker : IHostedService, IUniversalMessageHandler
         }
     }
 
-    public void Handle(UpdateEntityPacket message)
+    public void Handle(EntityUpdatePacket message)
     {
-        // TODO: Update the entity's position in the world.
+        _gameLogic.HandleEntityUpdate(message);
+    }
+
+    public void MessageNotHandled(string messageType)
+    {
+        _logger.LogWarning("Message not handled: {MessageType}", messageType);
     }
 }
 

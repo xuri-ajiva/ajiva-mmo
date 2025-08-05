@@ -5,5 +5,6 @@ namespace Common.Ecs
         u64 Version { get; }
         void Remove(Entity entity);
         bool Has(Entity entity);
+        void Clear();
     }
 }
