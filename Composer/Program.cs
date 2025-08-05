@@ -19,6 +19,7 @@ using ServerConfiguration = Composer.ProcessOrchestrator.ServerConfiguration;
 Console.WriteLine("Hello, World!");
 
 var isSubprocess = args.Contains("--subprocess");
+var inlineServerClient = args.Contains("--inline");
 var debugPort = GetDebugPort(args);
 var processName = GetProcessName(args) ?? "Composer";
 var processType = GetProcessType(args);
@@ -30,7 +31,14 @@ var processType = GetProcessType(args);
     Console.WriteLine($"Process {processName} waiting for debugger on port {debugPort}");
 }*/
 
-if (isSubprocess)
+if (inlineServerClient)
+{
+    var server = Task.Run(async () => await RunAsSubprocess(processName, "server", args));
+    await RunAsSubprocess(processName, "client", args);
+    await Waiter.CancellationTokenSource.CancelAsync();
+    await server;
+}
+else if (isSubprocess)
 {
     await RunAsSubprocess(processName, processType, args);
 }
@@ -56,6 +64,8 @@ static async Task RunAsSubprocess(string processName, string processType, string
     var logger = new LoggerConfiguration()
         .WriteTo.Console(
             outputTemplate: "[{processName}] [{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+        .Enrich.WithProperty("processName", processName)
+        .Enrich.FromLogContext()
         .CreateLogger();
 
     Log.Logger = logger;
@@ -107,7 +117,8 @@ static async Task RunServerSubprocess(string processName, string[] args)
 
     var server = new ServerRunner(builder,
         new server.ServerConfiguration { Port = (ushort)port, MaxConnections = (ushort)maxConnections });
-    await server.RunAsync(builder.Build());
+    var app = builder.Build();
+    await server.RunAsync(app, Waiter.CancellationTokenSource.Token);
 }
 
 static async Task RunClientSubprocess(string processName, string[] args)
@@ -136,9 +147,7 @@ static async Task RunClientSubprocess(string processName, string[] args)
             typeof(SerilogExpression).Assembly))
         .Enrich.FromLogContext()
         .WriteTo.Sink(logWidget)
-        .WriteTo.Console(
-            outputTemplate: "[{processName}] [{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-        .MinimumLevel.Verbose()
+        .Enrich.WithProperty("processName", "client")
         .CreateLogger();
 
     var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
@@ -152,8 +161,18 @@ static async Task RunClientSubprocess(string processName, string[] args)
     builder.Configuration.AddConfiguration(config);
     builder.AddServiceDefaults();
     builder.Services.AddSingleton(logWidget);
-    if (windowConfig is not null)
-        builder.Services.AddSingleton(ApplyWindowConfiguration(windowConfig, processName));
+    builder.Services.AddSingleton(windowConfig is not null
+        ? ApplyWindowConfiguration(windowConfig, processName)
+        : new WindowConfig
+        {
+            Title = "Ajiva MMO: " + processName,
+            Width = 1920,
+            Height = 1080,
+            X = 100,
+            Y = 100,
+            Resizable = true,
+            FullscreenBorderless = false
+        });
 
     var client = new ClientRunner(builder);
     var app = builder.Build();
@@ -323,4 +342,9 @@ static WindowConfiguration? GetWindowConfiguration(string[] args)
     }
 
     return null;
+}
+
+internal static class Waiter
+{
+    public static readonly CancellationTokenSource CancellationTokenSource = new();
 }
