@@ -16,7 +16,7 @@ using System.Numerics; // For TransformComponent example
 
 // Define a simple packet
 [NetworkPacket(200)]
-public partial struct NewEntityPacket(uint id, uint type, float x, float y, float z);
+public partial struct PlayerMovePacket(float x, float y, float z);
 
 // Define a packet containing a custom IMessageSerializable type
 [NetworkPacket(300)]
@@ -73,17 +73,22 @@ public partial class EntityCreatedPacket(int entityId, TransformComponent transf
 
 ### 2. Send Your Packet
 
-Once your packet is defined, you can send it from either the client or server using the generated `Send` extension method.
+Once your packet is defined, you can send it from either the client or server using the generated `Send` or `SendToAll` extension methods.
 
 ```csharp
 using Riptide;
 using NetworkPackets; // Ensure this using directive is present
 
-// Example of sending a packet
+// Example of sending a packet to a single connection
 var connection = /* your Riptide Connection object */;
 var entityCount = 10;
 new BeginWorldStatePacket(entityCount)
     .Send(connection, MessageSendMode.Reliable); // Choose Reliable, Unreliable, or Notify
+
+// Example of broadcasting a packet to all clients from the server
+var server = /* your Riptide Server object */;
+new EntityUpdatePacket(/*...args*/)
+    .SendToAll(server, MessageSendMode.Unreliable);
 ```
 
 ### 3. Consume Your Packet
@@ -118,7 +123,11 @@ public class MyMessageHandler : IUniversalMessageHandler
     }
 
     // If a specific Handle method is not implemented for a packet type,
-    // the empty default implementation from IUniversalMessageHandler will be called.
+    // the MessageNotHandled method will be called.
+    public void MessageNotHandled(Message message)
+    {
+        Console.WriteLine($"Received an unhandled message with ID: {message.GetUShort()}");
+    }
 }
 ```
 
