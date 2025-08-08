@@ -1,6 +1,6 @@
 ﻿using Microsoft.CodeAnalysis;
 
-namespace EcsGenerator;
+namespace AjivaGenerator.Ecs;
 
 public static class EcsGeneratorRules
 {
@@ -58,6 +58,14 @@ public static class EcsGeneratorRules
         id: "ECS007",
         title: "Must be partial",
         messageFormat: "ECS component '{0}' must be declared as partial",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor MustUsePrimaryConstructorRule = new(
+        id: "ECS008",
+        title: "Must use primary constructor",
+        messageFormat: "ECS component '{0}' must use a primary constructor with parameters",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
