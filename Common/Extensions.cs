@@ -5,7 +5,7 @@ using OpenTelemetry;
 using OpenTelemetry.Trace;
 using Serilog;
 
-namespace ServiceDefaults;
+namespace Common;
 
 // Adds common .NET Aspire services: service discovery, resilience, health checks, and OpenTelemetry.
 // This project should be referenced by each service project in your solution.

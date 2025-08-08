@@ -1,13 +1,13 @@
-﻿using Common.Networking;
-using Common.Ecs;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Client.Game;
 using Client.LayerSystem;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
+using Common.EcsV2;
 using GlmSharp;
 using ImGuiNET;
 using NativeFileDialogExtendedSharp;
@@ -20,7 +20,7 @@ public class Instanced3dDeferredRenderer(
     ILogger<Instanced3dDeferredRenderer> logger,
     IShaderManager shaderManager,
     RendererApi api,
-    GameLogic gameLogic,
+    ClientGameLogic gameLogic,
     ResourceManager loader,
     ICamera camera,
     Scene scene) : IRenderLayer, IUiRenderLayer, IAjivaLayer
@@ -29,7 +29,7 @@ public class Instanced3dDeferredRenderer(
     private readonly IShaderManager _shaderManager = shaderManager;
     private readonly RendererApi _api = api;
     private readonly ResourceManager _loader = loader;
-    private readonly GameLogic _gameLogic = gameLogic;
+    private readonly ClientGameLogic _gameLogic = gameLogic;
 
     private readonly RenderableMeshCollection _dynamicMeshes = new();
     private u64 _transformVersion;
@@ -174,28 +174,23 @@ public class Instanced3dDeferredRenderer(
             }
         }
 
-        var transformStore = _gameLogic.GetWorld().GetStore<TransformComponent>();
-        var renderableStore = _gameLogic.GetWorld().GetStore<RenderableMeshComponent>();
-
-        if (_transformVersion != transformStore.Version || _renderableMeshVersion != renderableStore.Version)
+        var ecs = _gameLogic.World;
+        if (_renderableMeshVersion != _gameLogic.RenderEntityVersion)
         {
-            _transformVersion = transformStore.Version;
-            _renderableMeshVersion = renderableStore.Version;
-
+            _renderableMeshVersion = _gameLogic.RenderEntityVersion;
 
             // Group entities by mesh
             _entitiesByMesh.Clear();
-            var renderables = renderableStore.GetAll();
-            for (var i = 0; i < renderables.Length; i++)
+            foreach (var ent in ecs.GetEntitiesWithRenderMesh())
             {
-                var renderable = renderables[i];
+                var renderable = ecs.GetRenderMesh(ent);
                 if (!_entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
                 {
                     list = [];
                     _entitiesByMesh[renderable.MeshId] = list;
                 }
 
-                list.Add(renderable.EntityId);
+                list.Add(ent);
             }
 
             // Clear the old dynamic meshes
@@ -228,15 +223,23 @@ public class Instanced3dDeferredRenderer(
             }
             else if (dynamicMesh._instanceInfos.Count > entities.Count)
             {
-                dynamicMesh._instanceInfos.RemoveRange(entities.Count, dynamicMesh._instanceInfos.Count - entities.Count);
+                dynamicMesh._instanceInfos.RemoveRange(entities.Count,
+                    dynamicMesh._instanceInfos.Count - entities.Count);
             }
 
             for (var i = 0; i < entities.Count; i++)
             {
-                ref var transform = ref transformStore.Get(_gameLogic.GetWorld().GetEntity(entities[i]));
-                dynamicMesh.InstanceInfos[i].SetTransform(Matrix4x4.CreateScale(transform.Scale) *
-                                                          Matrix4x4.CreateFromQuaternion(transform.Rotation) *
-                                                          Matrix4x4.CreateTranslation(transform.Position));
+                var entity = entities[i];
+                if (ecs.HasPosition(entity))
+                    dynamicMesh.InstanceInfos[i++].SetTransform(
+                        Matrix4x4.CreateScale(ecs.GetScale(entity).Value) *
+                        Matrix4x4.CreateFromQuaternion(ecs.GetRotation(entity).Value)
+                        * Matrix4x4.CreateTranslation(ecs.GetPosition(entity).Value)
+                    );
+                else
+                {
+                    dynamicMesh.InstanceInfos[i++].SetTransform(default);
+                }
             }
         }
 
@@ -402,7 +405,7 @@ public class Instanced3dDeferredRenderer(
 
     f32 textureSize = 128f;
     private i32 maxConcurrentLoads = 1;
-    private Dictionary<u32, List<u32>> _entitiesByMesh = [];
+    private Dictionary<u32, List<EntityId>> _entitiesByMesh = [];
 
     public void RenderUi(UpdateInfo info)
     {

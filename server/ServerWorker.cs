@@ -1,28 +1,26 @@
-using System.Collections.Concurrent;
-using System.Numerics;
 using Common.Networking;
 using NetworkPackets;
 using Riptide;
-using server;
-using ServiceDefaults;
 
-namespace server;
+namespace Server;
 
-public class Worker : IHostedService, IUniversalMessageHandler
+public class ServerWorker : IHostedService, IUniversalMessageHandler
 {
 
     private Task? _serverUpdateTask;
     private CancellationTokenSource? _stoppingCts;
 
-    private readonly ILogger<Worker> _logger;
+    private readonly ILogger<ServerWorker> _logger;
     private readonly Riptide.Server _server;
-    private readonly GameLogic _gameLogic;
+    private readonly ServerConfiguration _configuration;
+    private readonly ServerGameLogic _serverGameLogic;
 
-    public Worker(ILogger<Worker> logger, Server server, ServerConfiguration configuration)
+    public ServerWorker(ILogger<ServerWorker> logger, Riptide.Server server, ServerConfiguration configuration)
     {
         _logger = logger;
         _server = server;
-        _gameLogic = new GameLogic(_server);
+        _configuration = configuration;
+        _serverGameLogic = new ServerGameLogic(_server);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -32,7 +30,7 @@ public class Worker : IHostedService, IUniversalMessageHandler
         _server.ClientConnected += ServerOnClientConnected;
         _server.ClientDisconnected += ServerOnClientDisconnected;
         _server.ConnectionFailed += ServerOnConnectionFailed;
-        _server.Start(7777, 10);
+        _server.Start(_configuration.Port, _configuration.MaxConnections);
         _serverUpdateTask = UpdateAsync(_stoppingCts.Token);
         return _serverUpdateTask.IsCompleted ? _serverUpdateTask : Task.CompletedTask;
     }
@@ -45,7 +43,7 @@ public class Worker : IHostedService, IUniversalMessageHandler
             _server.Update();
             var now = DateTime.Now;
             var delta = (float)(now - lastUpdate).TotalSeconds;
-            _gameLogic.Update(delta);
+            _serverGameLogic.Update(delta);
             lastUpdate = now;
             await Task.Delay(5, cancellationToken);
         }
@@ -59,13 +57,14 @@ public class Worker : IHostedService, IUniversalMessageHandler
     private void ServerOnClientDisconnected(object? sender, ServerDisconnectedEventArgs e)
     {
         _logger.LogInformation("Client disconnected: {@Client}", e.Client);
+        _serverGameLogic.RemovePlayer(e.Client);
     }
 
     private void ServerOnClientConnected(object? sender, ServerConnectedEventArgs e)
     {
         _logger.LogInformation("Client connected: {@Client}", e.Client);
-        _gameLogic.SendWorldState(e.Client);
-        _gameLogic.CreatePlayerEntity(e.Client);
+        _serverGameLogic.SendWorldState(e.Client);
+        _serverGameLogic.CreatePlayerEntity(e.Client);
     }
 
     private void ServerOnMessageReceived(object? sender, MessageReceivedEventArgs e)
@@ -93,7 +92,7 @@ public class Worker : IHostedService, IUniversalMessageHandler
 
     public void Handle(EntityUpdatePacket message)
     {
-        _gameLogic.HandleEntityUpdate(message);
+        _serverGameLogic.HandleEntityUpdate(message);
     }
 
     public void MessageNotHandled(string messageType)

@@ -6,14 +6,11 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Expressions;
 using Serilog.Settings.Configuration;
-using server;
-using ServiceDefaults;
-using System.Diagnostics;
+using Server;
 using Client.Config;
+using Common;
 using Composer;
-using Composer.Logging;
 using Composer.ProcessOrchestrator;
-using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using ServerConfiguration = Composer.ProcessOrchestrator.ServerConfiguration;
 
 Console.WriteLine("Hello, World!");
@@ -116,7 +113,7 @@ static async Task RunServerSubprocess(string processName, string[] args)
     builder.AddServiceDefaults();
 
     var server = new ServerRunner(builder,
-        new server.ServerConfiguration { Port = (ushort)port, MaxConnections = (ushort)maxConnections });
+        new Server.ServerConfiguration { Port = (ushort)port, MaxConnections = (ushort)maxConnections });
     var app = builder.Build();
     await server.RunAsync(app, Waiter.CancellationTokenSource.Token);
 }
@@ -231,6 +228,31 @@ static (int x, int y, int width, int height) CalculateWindowBounds(WindowConfigu
 
 static ProcessConfiguration LoadProcessConfiguration()
 {
+    /*ProcessConfiguration a = new ProcessConfiguration
+    {
+        BaseDebugPort = 5000,
+        ClientConfigurations = [],
+        ServerConfigurations = []
+    };
+
+    for (int i = 0; i < 20; i++)
+    {
+        a.ClientConfigurations.Add(new ClientConfiguration
+        {
+            Id = i + 1,
+            Name = $"Player{i + 1}",
+            WindowConfiguration = new WindowConfiguration
+            {
+                SplitMode = WindowSplitMode.None,
+                Width = 200,
+                Height = 200,
+                X = i * 200,
+            }
+        });
+    }
+
+    return a;*/
+
     return new ProcessConfiguration
     {
         BaseDebugPort = 5000,
@@ -244,7 +266,8 @@ static ProcessConfiguration LoadProcessConfiguration()
                 {
                     SplitMode = WindowSplitMode.LeftHalf,
                     Width = 2560,
-                    Height = 1080
+                    Height = 1080,
+                    Y = 100,
                 }
             },
 

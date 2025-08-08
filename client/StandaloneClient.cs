@@ -1,10 +1,10 @@
 ﻿using Client;
 using Client.Config;
 using Client.LayerSystem;
+using Common;
 using Serilog;
 using Serilog.Expressions;
 using Serilog.Settings.Configuration;
-using ServiceDefaults;
 
 var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
 {

@@ -1,4 +1,4 @@
-using Common.Ecs;
+using Common.EcsV2;
 using NetworkPackets;
 
 namespace Common.Networking;
@@ -7,13 +7,13 @@ namespace Common.Networking;
 public partial struct BeginWorldStatePacket(u32 entityCount);
 
 [NetworkPacket(301)]
-public partial struct EntityCreatedPacket(u32 entityId, TransformComponent transform, u32 typeId);
+public partial struct EntityCreatedPacket(u32 entityId, Transform transform, u32 typeId);
 
 [NetworkPacket(302)]
-public partial struct EntityUpdatePacket(u32 entityId, TransformComponent transform);
+public partial struct EntityUpdatePacket(u32 entityId, Transform transform);
 
 [NetworkPacket(303)]
-public partial struct EntityDeletePacket(u32 entityId);
+public partial struct EntityDestroyedPacket(u32 entityId);
 
 [NetworkPacket(304)]
 public partial struct LoadLevelPacket(string levelName);

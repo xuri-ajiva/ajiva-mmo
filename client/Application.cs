@@ -3,19 +3,15 @@ using Client.Renderer.PbrRenderer;
 
 namespace Client;
 
-public class Application : IHostedLifecycleService
+public class Application(
+    ILogger<Application> logger,
+    IServiceProvider serviceProvider,
+    IAjivaLayerSystem layerSystem)
+    : IHostedLifecycleService
 {
-    private readonly ILogger<Application> _logger;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IAjivaLayerSystem _layerSystem;
-
-    public Application(ILogger<Application> logger,
-        IServiceProvider serviceProvider, IAjivaLayerSystem layerSystem)
-    {
-        _logger = logger;
-        _serviceProvider = serviceProvider;
-        _layerSystem = layerSystem;
-    }
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
+    private readonly ILogger<Application> _logger = logger;
+    private readonly IAjivaLayerSystem _layerSystem = layerSystem;
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {

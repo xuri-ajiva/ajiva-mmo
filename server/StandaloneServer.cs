@@ -1,6 +1,6 @@
+using Common;
 using Serilog;
-using server;
-using ServiceDefaults;
+using Server;
 
 var builder = Host.CreateApplicationBuilder(args);
 

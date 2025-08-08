@@ -62,8 +62,8 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
         io.ConfigFlags |= ImGuiConfigFlags.DockingEnable; // Enable Docking
         io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable; // Enable Multi-Viewport / Platform Windows
-        _periodicUpdater.RegisterUpdate(UpdateCycle.Render, Render);
-        _periodicUpdater.RegisterUpdate(UpdateCycle.Update, Update);
+        _renderUpdateHandle = _periodicUpdater.RegisterUpdate(UpdateCycle.Render, Render);
+        _updateHandle = _periodicUpdater.RegisterUpdate(UpdateCycle.Update, Update);
         var style = ImGui.GetStyle();
         style.FrameRounding = 4;
         style.FrameBorderSize = 1;
@@ -340,6 +340,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     private f32[] _frameTimes = new f32[100];
     private readonly TypeInfo[] _layerTypes;
     private readonly IServiceScope _scope;
+    private PeriodicUpdater.UpdateHandle _renderUpdateHandle, _updateHandle;
 
     private void RenderMetrics(UpdateInfo info)
     {
@@ -403,6 +404,8 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     public void Dispose()
     {
         _scope.Dispose();
+        _updateHandle.Dispose();
+        _renderUpdateHandle.Dispose();
         GCStressTest = null;
     }
 }

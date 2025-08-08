@@ -1,6 +1,6 @@
-﻿using server;
+﻿using Server;
 
-namespace server;
+namespace Server;
 
 public class ServerRunner
 {
@@ -10,7 +10,7 @@ public class ServerRunner
 
         services.AddSingleton(config);
 
-        services.AddHostedService<Worker>();
+        services.AddHostedService<ServerWorker>();
         services.AddSingleton<Riptide.Server>();
     }
 

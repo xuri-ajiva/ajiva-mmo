@@ -45,6 +45,15 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
 {
     public delegate void UpdateRunnerDelegate(UpdateInfo info);
 
+    public record class UpdateHandle(UpdateCycle Cycle, UpdateRunnerDelegate Action, PeriodicUpdater Runner)
+        : IDisposable
+    {
+        public void Dispose()
+        {
+            Runner.UnregisterUpdate(Cycle, Action);
+        }
+    }
+
     private class UpdateRunner(UpdateCycle cycle) : IDisposable
     {
         private readonly List<UpdateRunnerDelegate> _tasks = [];
@@ -59,8 +68,16 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
             ArgumentNullException.ThrowIfNull(update);
             using var l = _locker.EnterScope();
             _tasks.Add(update);
-            if (!_disposed)
-                _running = true;
+            if (!_disposed) _running = true;
+        }
+
+        public void RemoveTask(UpdateRunnerDelegate action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            using var l = _locker.EnterScope();
+            if (!_tasks.Remove(action)) return;
+            if (_tasks.Count != 0) return;
+            _running = false;
         }
 
         public void StartDynamicUpdater(TimeSpan interval)
@@ -194,7 +211,7 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
         };
     }
 
-    public void RegisterUpdate(UpdateCycle cycle, UpdateRunnerDelegate update)
+    public UpdateHandle RegisterUpdate(UpdateCycle cycle, UpdateRunnerDelegate update)
     {
         ArgumentNullException.ThrowIfNull(update);
 
@@ -208,6 +225,18 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
 
         l.Dispose();
         r.AddTask(update);
+        // todo restart updater if it was stopped
+        // r.StartDynamicUpdater();
+        return new UpdateHandle(cycle, update, this);
+    }
+
+    private void UnregisterUpdate(UpdateCycle cycle, UpdateRunnerDelegate action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        using var l = _locker.EnterScope();
+        if (!_updateData.TryGetValue(cycle, out var r)) return;
+        r.RemoveTask(action);
     }
 
     private Task StopRunners()

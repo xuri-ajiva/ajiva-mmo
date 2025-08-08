@@ -1,11 +1,12 @@
-﻿using Client.LayerSystem;
+﻿using Client.Game;
+using Client.LayerSystem;
 using Client.Networking;
 using Client.Platform;
 using Client.Renderer;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
-using Common.Ecs;
+using Common.EcsV2;
 
 namespace Client;
 
@@ -15,14 +16,18 @@ public class ClientRunner
     {
         var services = builder.Services;
 
+        // Platform and core systems
         services.AddSingleton<PlatformSystem>();
-        services.AddSingleton<GameLogic>();
-        services.AddSingleton<World>();
         services.AddSingleton<ModelHelper>();
         services.AddSingleton<Scene>();
         services.AddSingleton<ICamera, FreeCamera>();
 
+        // EcsV2 Game Logic
+        services.AddSingleton<ClientGameLogic>();
+        services.AddSingleton<ClientEcsWorld>();
+        services.AddService<PlayerInputSystem>();
 
+        // UI/Rendering
         services.AddSingleton<IAjivaLayerSystem, AjivaImGuiLayerSystem>();
         services.AddSingleton<Instanced3dDeferredRenderer>();
         services.AddSingleton<ClientConnectionLayer>();
@@ -31,13 +36,17 @@ public class ClientRunner
 
         services.AddService<RendererApi>();
         services.AddService<ResourceManager>();
-        services.AddService<PeriodicUpdater>();
 
+        services.AddService<PeriodicUpdater>();
         services.AddService<ShaderReloadManager, IShaderManager>();
 
+        // Riptide client
         services.AddSingleton<Riptide.Client>();
-        services.AddHostedService<ClientWorker>();
+
+        // Background services
         services.AddHostedService<Application>();
+        // Networking
+        services.AddService<ClientNetworkManager>();
     }
 
     public async Task RunAsync(IHost app)
