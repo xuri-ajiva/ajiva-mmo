@@ -340,7 +340,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     private f32[] _frameTimes = new f32[100];
     private readonly TypeInfo[] _layerTypes;
     private readonly IServiceScope _scope;
-    private PeriodicUpdater.UpdateHandle _renderUpdateHandle, _updateHandle;
+    private PeriodicUpdater.UpdateHandle? _renderUpdateHandle, _updateHandle;
 
     private void RenderMetrics(UpdateInfo info)
     {
@@ -404,8 +404,8 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     public void Dispose()
     {
         _scope.Dispose();
-        _updateHandle.Dispose();
-        _renderUpdateHandle.Dispose();
+        _updateHandle?.Dispose();
+        _renderUpdateHandle?.Dispose();
         GCStressTest = null;
     }
 }

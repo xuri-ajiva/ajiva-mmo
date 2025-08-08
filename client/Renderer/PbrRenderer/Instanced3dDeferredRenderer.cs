@@ -231,14 +231,14 @@ public class Instanced3dDeferredRenderer(
             {
                 var entity = entities[i];
                 if (ecs.HasPosition(entity))
-                    dynamicMesh.InstanceInfos[i++].SetTransform(
+                    dynamicMesh.InstanceInfos[i].SetTransform(
                         Matrix4x4.CreateScale(ecs.GetScale(entity).Value) *
                         Matrix4x4.CreateFromQuaternion(ecs.GetRotation(entity).Value)
                         * Matrix4x4.CreateTranslation(ecs.GetPosition(entity).Value)
                     );
                 else
                 {
-                    dynamicMesh.InstanceInfos[i++].SetTransform(default);
+                    dynamicMesh.InstanceInfos[i].SetTransform(default);
                 }
             }
         }

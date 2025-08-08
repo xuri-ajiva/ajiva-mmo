@@ -36,7 +36,7 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, ILogger<ClientGa
 
     public void HandleEntityCreated(EntityCreatedPacket packet)
     {
-        logger.LogInformation("Entity created: {EntityId}", packet.EntityId);
+        logger.LogTrace("Entity created: {EntityId}", packet.EntityId);
         if (_networkToEcs.ContainsKey(packet.EntityId))
         {
             HandleEntityUpdate(new EntityUpdatePacket(packet.EntityId, packet.Transform));
@@ -90,7 +90,7 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, ILogger<ClientGa
 
     public void HandleEntityDestroyed(EntityDestroyedPacket packet)
     {
-        logger.LogInformation("Entity destroyed: {EntityId}", packet.EntityId);
+        logger.LogTrace("Entity destroyed: {EntityId}", packet.EntityId);
         if (!_networkToEcs.TryGetValue(packet.EntityId, out var entity))
             return;
 
