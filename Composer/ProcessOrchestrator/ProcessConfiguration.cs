@@ -4,24 +4,26 @@ namespace Composer.ProcessOrchestrator;
 
 public class ProcessConfiguration
 {
-    public string ExecutablePath { get; set; } = Process.GetCurrentProcess().MainModule?.FileName ?? "compositor.exe";
-    public int BaseDebugPort { get; set; } = 5000;
-    public List<ClientConfiguration> ClientConfigurations { get; set; } = new();
-    public List<ServerConfiguration> ServerConfigurations { get; set; } = new();
-}
-
-public class ClientConfiguration
-{
-    public int Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public WindowConfiguration WindowConfiguration { get; set; } = new();
-}
-
-public class ServerConfiguration
-{
-    public int Id { get; set; }
-    public string Name { get; set; } = string.Empty;
     public int Port { get; set; }
+
+    public string ExecutablePath { get; set; } = Process.GetCurrentProcess().MainModule?.FileName ?? "compositor.exe";
+    public List<ConfigurationBase> Configuration { get; set; } = new();
+}
+
+public class ClientConfiguration : ConfigurationBase
+{
+    public WindowConfiguration? WindowConfiguration { get; set; }
+}
+
+public class ConfigurationBase
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
+public class ServerConfiguration : ConfigurationBase
+{
+    public int MaxConnections { get; set; }
 }
 
 public class WindowConfiguration
@@ -47,4 +49,3 @@ public enum WindowSplitMode
     BottomLeft,
     BottomRight
 }
-

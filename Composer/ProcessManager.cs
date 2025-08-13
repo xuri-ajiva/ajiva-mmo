@@ -33,63 +33,36 @@ public partial class ProcessManager : IDisposable
         _logger.Information("Starting Ajiva Compositor Process Orchestrator");
 
         // Start client/server configurations
-        foreach (var clientConfig in _config.ClientConfigurations)
+        for (int i = 0; i < _config.Configuration.Count; i++)
         {
-            await StartClientProcessAsync(clientConfig);
-        }
-
-        foreach (var serverConfig in _config.ServerConfigurations)
-        {
-            await StartServerProcessAsync(serverConfig);
+            await StartSubProcessAsync(i, _config.Configuration[i]);
         }
 
         // Monitor processes
         _ = Task.Run(MonitorProcesses);
     }
 
-    private async Task StartClientProcessAsync(ClientConfiguration config)
+    private async Task StartSubProcessAsync(int index, ConfigurationBase configurationBase)
     {
-        var debugPort = _config.BaseDebugPort + 10 + config.Id;
-        var windowConfig = JsonSerializer.Serialize(config.WindowConfiguration);
-
         var processInfo = new ProcessStartInfo
         {
             FileName = _config.ExecutablePath,
             Arguments =
-                $"--subprocess --process-type client --config \"{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(windowConfig))}\" --debug-port {debugPort} --process-name Client-{config.Name}",
+                $"--subprocess --index {index}",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true
         };
 
-        var process = new ManagedProcess($"Client-{config.Name}", processInfo, debugPort);
+        var process = new ManagedProcess($"Client-{configurationBase.Name}", processInfo);
         await StartManagedProcessAsync(process);
     }
 
-    private async Task StartServerProcessAsync(ServerConfiguration config)
-    {
-        var debugPort = _config.BaseDebugPort + 20 + config.Id;
-
-        var processInfo = new ProcessStartInfo
-        {
-            FileName = _config.ExecutablePath,
-            Arguments =
-                $"--subprocess --process-type server --port {config.Port} --debug-port {debugPort} --process-name Server-{config.Name}",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = true
-        };
-
-        var process = new ManagedProcess($"Server-{config.Name}", processInfo, debugPort);
-        await StartManagedProcessAsync(process);
-    }
 
     private async Task StartManagedProcessAsync(ManagedProcess managedProcess)
     {
-        _logger.Information("Starting process: {ProcessName} (Debug port: {DebugPort})",
-            managedProcess.Name, managedProcess.DebugPort);
+        _logger.Information("Starting process: {ProcessName}", managedProcess.Name);
 
         managedProcess.Process = Process.Start(managedProcess.StartInfo);
         if (managedProcess.Process == null)
@@ -104,7 +77,7 @@ public partial class ProcessManager : IDisposable
         _ = Task.Run(() => RedirectOutput(managedProcess));
     }
 
-    private async Task RedirectOutput(ManagedProcess managedProcess)
+    private Task RedirectOutput(ManagedProcess managedProcess)
     {
         var process = managedProcess.Process;
         var name = managedProcess.Name;
@@ -128,6 +101,7 @@ public partial class ProcessManager : IDisposable
                     _logger.Error("[{ProcessName}] {Message}", name, line);
             }
         });
+        return Task.CompletedTask;
     }
 
     private async Task MonitorProcesses()
@@ -168,10 +142,9 @@ public partial class ProcessManager : IDisposable
     }
 }
 
-public class ManagedProcess(string name, ProcessStartInfo startInfo, int debugPort)
+public class ManagedProcess(string name, ProcessStartInfo startInfo)
 {
     public string Name { get; } = name;
     public ProcessStartInfo StartInfo { get; } = startInfo;
-    public int DebugPort { get; } = debugPort;
     public Process? Process { get; set; }
 }

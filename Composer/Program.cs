@@ -15,11 +15,8 @@ using ServerConfiguration = Composer.ProcessOrchestrator.ServerConfiguration;
 
 Console.WriteLine("Hello, World!");
 
-var isSubprocess = args.Contains("--subprocess");
 var inlineServerClient = args.Contains("--inline");
-var debugPort = GetDebugPort(args);
-var processName = GetProcessName(args) ?? "Composer";
-var processType = GetProcessType(args);
+var startIndex = GetStartIndex(args);
 
 //Debugger.Launch();
 
@@ -30,14 +27,17 @@ var processType = GetProcessType(args);
 
 if (inlineServerClient)
 {
-    var server = Task.Run(async () => await RunAsSubprocess(processName, "server", args));
-    await RunAsSubprocess(processName, "client", args);
+    var port = GetPort(args) ?? 7777;
+    var server = Task.Run(async () =>
+        await RunServerSubprocess("server", new ServerConfiguration { Id = 0, Name = "server", MaxConnections = 1 },
+            port, args));
+    await RunClientSubprocess("client", new ClientConfiguration { Id = 1, Name = "Client" }, port, args);
     await Waiter.CancellationTokenSource.CancelAsync();
     await server;
 }
-else if (isSubprocess)
+else if (startIndex is { } myIndex)
 {
-    await RunAsSubprocess(processName, processType, args);
+    await RunAsSubprocess(myIndex, args);
 }
 else
 {
@@ -55,8 +55,12 @@ static async Task RunAsOrchestrator(string[] args)
     Console.ReadKey();
 }
 
-static async Task RunAsSubprocess(string processName, string processType, string[] args)
+static async Task RunAsSubprocess(int configInex, string[] args)
 {
+    var port = GetPort(args) ?? 7777;
+    var conf = LoadProcessConfiguration();
+    var my = conf.Configuration[configInex];
+    var processName = my.Name;
     // Configure logging with named pipe sink
     var logger = new LoggerConfiguration()
         .WriteTo.Console(
@@ -67,16 +71,17 @@ static async Task RunAsSubprocess(string processName, string processType, string
 
     Log.Logger = logger;
 
+    var processType = my.GetType().Name;
     logger.Information("Starting subprocess: {ProcessName} of type {ProcessType}", processName, processType);
 
     // Run specific process type
-    switch (processType?.ToLower())
+    switch (my)
     {
-        case "server":
-            await RunServerSubprocess(processName, args);
+        case ServerConfiguration serverConf:
+            await RunServerSubprocess(processName, serverConf, port, args);
             break;
-        case "client":
-            await RunClientSubprocess(processName, args);
+        case ClientConfiguration clientConf:
+            await RunClientSubprocess(processName, clientConf, port, args);
             break;
         default:
             logger.Error("Unknown process type: {ProcessType}", processType);
@@ -84,11 +89,8 @@ static async Task RunAsSubprocess(string processName, string processType, string
     }
 }
 
-static async Task RunServerSubprocess(string processName, string[] args)
+static async Task RunServerSubprocess(string processName, ServerConfiguration conf, int port, string[] cmdArgs)
 {
-    var port = GetPort(args) ?? 7777;
-    var maxConnections = GetMaxConnections(args) ?? 100;
-
     Log.Information("Starting server subprocess {ProcessName} on port {Port}", processName, port);
 
     Directory.SetCurrentDirectory("../client");
@@ -98,12 +100,12 @@ static async Task RunServerSubprocess(string processName, string[] args)
         .AddJsonFile($"../client/appsettings.{Environments.Development}.json", optional: true, reloadOnChange: true)
         .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
         .AddEnvironmentVariables()
-        .AddCommandLine(args)
+        .AddCommandLine(cmdArgs)
         .Build();
 
     var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
     {
-        Args = args,
+        Args = cmdArgs,
         DisableDefaults = true,
         ApplicationName = "Ajiva." + processName,
         ContentRootPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "client"),
@@ -113,16 +115,13 @@ static async Task RunServerSubprocess(string processName, string[] args)
     builder.AddServiceDefaults();
 
     var server = new ServerRunner(builder,
-        new Server.ServerConfiguration { Port = (ushort)port, MaxConnections = (ushort)maxConnections });
+        new Server.ServerConfiguration { Port = (ushort)port, MaxConnections = (ushort)conf.MaxConnections });
     var app = builder.Build();
     await server.RunAsync(app, Waiter.CancellationTokenSource.Token);
 }
 
-static async Task RunClientSubprocess(string processName, string[] args)
+static async Task RunClientSubprocess(string processName, ClientConfiguration conf, int port, string[] cmdArgs)
 {
-    var windowConfig = GetWindowConfiguration(args);
-    var port = GetPort(args) ?? 7777;
-
     Log.Information("Starting client subprocess {ProcessName}", processName);
 
     Directory.SetCurrentDirectory("../client");
@@ -132,7 +131,7 @@ static async Task RunClientSubprocess(string processName, string[] args)
         .AddJsonFile($"../client/appsettings.{Environments.Development}.json", optional: true, reloadOnChange: true)
         .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
         .AddEnvironmentVariables()
-        .AddCommandLine(args)
+        .AddCommandLine(cmdArgs)
         .Build();
 
     LogWidget logWidget = new();
@@ -149,7 +148,7 @@ static async Task RunClientSubprocess(string processName, string[] args)
 
     var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
     {
-        Args = args,
+        Args = cmdArgs,
         DisableDefaults = true,
         ApplicationName = "Ajiva." + processName,
         ContentRootPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "client"),
@@ -158,8 +157,8 @@ static async Task RunClientSubprocess(string processName, string[] args)
     builder.Configuration.AddConfiguration(config);
     builder.AddServiceDefaults();
     builder.Services.AddSingleton(logWidget);
-    builder.Services.AddSingleton(windowConfig is not null
-        ? ApplyWindowConfiguration(windowConfig, processName)
+    builder.Services.AddSingleton(conf.WindowConfiguration is not null
+        ? ApplyWindowConfiguration(conf.WindowConfiguration, processName)
         : new WindowConfig
         {
             Title = "Ajiva MMO: " + processName,
@@ -214,7 +213,7 @@ static (int x, int y, int width, int height) CalculateWindowBounds(WindowConfigu
 
     return config.SplitMode switch
     {
-        WindowSplitMode.LeftHalf => (0, 0, screenWidth / 2, screenHeight),
+        WindowSplitMode.LeftHalf => (config.X, config.Y, screenWidth / 2, screenHeight),
         WindowSplitMode.RightHalf => (screenWidth / 2, 0, screenWidth / 2, screenHeight),
         WindowSplitMode.TopHalf => (0, 0, screenWidth, screenHeight / 2),
         WindowSplitMode.BottomHalf => (0, screenHeight / 2, screenWidth, screenHeight / 2),
@@ -228,35 +227,10 @@ static (int x, int y, int width, int height) CalculateWindowBounds(WindowConfigu
 
 static ProcessConfiguration LoadProcessConfiguration()
 {
-    /*ProcessConfiguration a = new ProcessConfiguration
-    {
-        BaseDebugPort = 5000,
-        ClientConfigurations = [],
-        ServerConfigurations = []
-    };
-
-    for (int i = 0; i < 20; i++)
-    {
-        a.ClientConfigurations.Add(new ClientConfiguration
-        {
-            Id = i + 1,
-            Name = $"Player{i + 1}",
-            WindowConfiguration = new WindowConfiguration
-            {
-                SplitMode = WindowSplitMode.None,
-                Width = 200,
-                Height = 200,
-                X = i * 200,
-            }
-        });
-    }
-
-    return a;*/
-
     return new ProcessConfiguration
     {
-        BaseDebugPort = 5000,
-        ClientConfigurations =
+        Port = 7777,
+        Configuration =
         [
             new ClientConfiguration
             {
@@ -281,44 +255,19 @@ static ProcessConfiguration LoadProcessConfiguration()
                     Width = 2560,
                     Height = 1080
                 }
-            }
-        ],
-        ServerConfigurations = new List<ServerConfiguration>
-        {
-            new() { Id = 1, Name = "GameServer", Port = 7777 }
-        }
+            },
+            new ServerConfiguration { Id = 1, Name = "GameServer" },
+        ]
     };
 }
 
-static int? GetDebugPort(string[] args)
+static int? GetStartIndex(string[] args)
 {
-    var debugPortIndex = Array.IndexOf(args, "--debug-port");
-    if (debugPortIndex >= 0 && debugPortIndex + 1 < args.Length)
+    var portIndex = Array.IndexOf(args, "--index");
+    if (portIndex >= 0 && portIndex + 1 < args.Length)
     {
-        if (int.TryParse(args[debugPortIndex + 1], out var port))
-            return port;
-    }
-
-    return null;
-}
-
-static string? GetProcessName(string[] args)
-{
-    var processNameIndex = Array.IndexOf(args, "--process-name");
-    if (processNameIndex >= 0 && processNameIndex + 1 < args.Length)
-    {
-        return args[processNameIndex + 1];
-    }
-
-    return null;
-}
-
-static string? GetProcessType(string[] args)
-{
-    var processTypeIndex = Array.IndexOf(args, "--process-type");
-    if (processTypeIndex >= 0 && processTypeIndex + 1 < args.Length)
-    {
-        return args[processTypeIndex + 1];
+        if (int.TryParse(args[portIndex + 1], out var inx))
+            return inx;
     }
 
     return null;
@@ -336,36 +285,6 @@ static int? GetPort(string[] args)
     return null;
 }
 
-static int? GetMaxConnections(string[] args)
-{
-    var maxConnectionsIndex = Array.IndexOf(args, "--max-connections");
-    if (maxConnectionsIndex >= 0 && maxConnectionsIndex + 1 < args.Length)
-    {
-        if (int.TryParse(args[maxConnectionsIndex + 1], out var maxConnections))
-            return maxConnections;
-    }
-
-    return null;
-}
-
-static WindowConfiguration? GetWindowConfiguration(string[] args)
-{
-    var configIndex = Array.IndexOf(args, "--config");
-    if (configIndex >= 0 && configIndex + 1 < args.Length)
-    {
-        try
-        {
-            var configJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(args[configIndex + 1]));
-            return System.Text.Json.JsonSerializer.Deserialize<WindowConfiguration>(configJson);
-        }
-        catch
-        {
-            // ignored
-        }
-    }
-
-    return null;
-}
 
 internal static class Waiter
 {
