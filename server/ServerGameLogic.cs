@@ -16,7 +16,8 @@ public class ServerGameLogic
     private readonly Dictionary<Connection, EntityId> _playerEntities = new();
     private readonly Dictionary<Connection, HashSet<EntityId>> _visibleEntities = new();
     private EntityId _rotatingEntity;
-    private List<EntityId> _bouncingEntities = new();
+    private List<EntityId> _bouncingEntities = [];
+    private List<EntityId> _slidingEntities = [];
     private string? _levelName;
     private const float UpdateRange = 64.0f; // Only send updates to clients within 32 units
 
@@ -66,12 +67,12 @@ public class ServerGameLogic
         _spatialGrid.MoveEntity(_rotatingEntity.Value, Vector3.Zero, 0, pos.Value, pos.Level);
 
         // Create some static test entities
-        for (var i = 0; i < 10; i++)
+        for (var i = 0; i < 30; i++)
         {
-            for (var j = 0; j < 10; j++)
+            for (var j = 0; j < 30; j++)
             {
                 var entity = _world.CreateEntity();
-                var position = new Vector3(i * 3, (f32.Cos(i) + f32.Sin(j) + 2) * 10, j * 3f);
+                var position = new Vector3(i * 2, (f32.Cos(i * 0.1f) + f32.Sin(j * 0.1f) + 2) * 5, j * 2);
 
                 _world.AddPosition(entity, new Position
                 {
@@ -84,7 +85,7 @@ public class ServerGameLogic
                 });
                 _world.AddScale(entity, new Scale
                 {
-                    Value = Vector3.One
+                    Value = new Vector3(0.5f)
                 });
                 _world.AddEntityType(entity, new EntityType { TypeId = 1 });
                 _world.AddVelocity(entity, new Velocity
@@ -104,6 +105,38 @@ public class ServerGameLogic
                 _spatialGrid.MoveEntity(entity.Value, Vector3.Zero, 0, position, 0);
                 _bouncingEntities.Add(entity);
             }
+        }
+
+        for (int i = 0; i < 10; i++)
+        {
+            var entity = _world.CreateEntity();
+            var position = new Vector3(-i * 2, 5, -i * 2 + 10);
+
+            _world.AddPosition(entity, new Position
+            {
+                Value = position,
+                Level = 0
+            });
+            _world.AddRotation(entity, new Rotation
+            {
+                Value = Quaternion.Identity
+            });
+            _world.AddScale(entity, new Scale
+            {
+                Value = new Vector3(0.5f)
+            });
+            _world.AddEntityType(entity, new EntityType { TypeId = 1 });
+
+            // Add to spatial grid
+            chunk = _spatialGrid.GetChunkCoord(position, 0);
+            _world.AddSpatialData(entity, new SpatialData
+            {
+                CurrentChunk = chunk,
+                PreviousChunk = chunk,
+                HasMoved = false
+            });
+            _spatialGrid.MoveEntity(entity.Value, Vector3.Zero, 0, position, 0);
+            _slidingEntities.Add(entity);
         }
     }
 
@@ -158,6 +191,8 @@ public class ServerGameLogic
         // Update visibility for this player
         UpdatePlayerVisibility(connection, entity);
     }
+
+    private float _progress = 0.0f;
 
     public void Update(float deltaTime)
     {
@@ -214,12 +249,68 @@ public class ServerGameLogic
                 MessageSendMode.Unreliable);
         }
 
+        float speed = 0.1f; // cycles per second (1 = full square per second)
+        float squareSize = 10f; // size of square
+        // Advance progress
+        _progress = (_progress + speed * deltaTime) % 1f;
+        foreach (var entityId in _slidingEntities)
+        {
+            if (!_world.HasPosition(entityId) || !_world.HasScale(entityId) || !_world.HasRotation(entityId))
+                continue;
+
+            var progress = (_progress + (entityId.Value % 8) * 0.25f) % 1.0f;
+
+            // Determine position along square perimeter
+            Vector3 pos;
+            if (progress < 0.25f) // bottom edge → right
+            {
+                float t = progress / 0.25f;
+                pos = new Vector3(Lerp(-squareSize, squareSize, t), 0, -squareSize);
+            }
+            else if (progress < 0.5f) // right edge → up
+            {
+                float t = (progress - 0.25f) / 0.25f;
+                pos = new Vector3(squareSize, 0, Lerp(-squareSize, squareSize, t));
+            }
+            else if (progress < 0.75f) // top edge → left
+            {
+                float t = (progress - 0.5f) / 0.25f;
+                pos = new Vector3(Lerp(squareSize, -squareSize, t), 0, squareSize);
+            }
+            else // left edge → down
+            {
+                float t = (progress - 0.75f) / 0.25f;
+                pos = new Vector3(-squareSize, 0, Lerp(squareSize, -squareSize, t));
+            }
+
+            // Example: scale changes from 0.5x at left to 2x at right
+            float scaleFactor = Lerp(0.5f, 2f, (pos.X + squareSize) / (squareSize * 2));
+
+            // Update ECS components
+            ref var position = ref _world.GetPosition(entityId);
+            position.Value = pos;
+
+            ref var scale = ref _world.GetScale(entityId);
+            scale.Value = new Vector3(scaleFactor);
+
+            ref var rotation = ref _world.GetRotation(entityId);
+            rotation.Value = Quaternion.Identity; // keep upright
+
+            // Send updates
+            var transform = CreateTransformFromComponents(position, rotation, scale);
+            SendToPlayersInRange(position.Value, position.Level,
+                new EntityUpdatePacket((u32)entityId.Value, transform),
+                MessageSendMode.Unreliable);
+        }
+
         // Update spatial partitioning for moved entities
         UpdateSpatialPartitioning();
 
         // Update player visibility based on spatial chunks
         UpdateAllPlayerVisibility();
     }
+
+    private static T Lerp<T>(T a, T b, T t) where T : INumber<T> => a + (b - a) * t;
 
     private void UpdateSpatialPartitioning()
     {

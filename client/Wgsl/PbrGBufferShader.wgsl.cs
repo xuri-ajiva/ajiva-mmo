@@ -63,6 +63,16 @@ public partial class PbrGBufferShader
             Transform2 = new vec4(transform.M31, transform.M32, transform.M33, transform.M34);
             Transform3 = new vec4(transform.M41, transform.M42, transform.M43, transform.M44);
         }
+
+        public Matrix4x4 GetTransform()
+        {
+            return new Matrix4x4(
+                Transform0.x, Transform0.y, Transform0.z, Transform0.w,
+                Transform1.x, Transform1.y, Transform1.z, Transform1.w,
+                Transform2.x, Transform2.y, Transform2.z, Transform2.w,
+                Transform3.x, Transform3.y, Transform3.z, Transform3.w
+            );
+        }
     }
 
     public partial struct Varyings(

@@ -211,7 +211,7 @@ public class Instanced3dDeferredRenderer(
         }
 
         //UpdateScene(queue, _sceneRenderCollection.StaticMeshes);
-
+        float sFrame = 1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFames);
         var index = 0;
         foreach (var (_, entities) in _entitiesByMesh)
         {
@@ -231,11 +231,15 @@ public class Instanced3dDeferredRenderer(
             {
                 var entity = entities[i];
                 if (ecs.HasPosition(entity))
-                    dynamicMesh.InstanceInfos[i].SetTransform(
-                        Matrix4x4.CreateScale(ecs.GetScale(entity).Value) *
-                        Matrix4x4.CreateFromQuaternion(ecs.GetRotation(entity).Value)
-                        * Matrix4x4.CreateTranslation(ecs.GetPosition(entity).Value)
-                    );
+                {
+                    var currentTransform =
+                        dynamicMesh.InstanceInfos[i].GetTransform();
+
+                    var blended = SmoothStep(currentTransform, ecs.GetScale(entity).Value,
+                        ecs.GetRotation(entity).Value, ecs.GetPosition(entity).Value, sFrame);
+
+                    dynamicMesh.InstanceInfos[i].SetTransform(blended);
+                }
                 else
                 {
                     dynamicMesh.InstanceInfos[i].SetTransform(default);
@@ -278,6 +282,27 @@ public class Instanced3dDeferredRenderer(
         }
     }
 
+    private f32 _smoothingFames = 30f;
+
+    public static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, float t)
+    {
+        if (current == default)
+            return Matrix4x4.CreateScale(tarScale) *
+                   Matrix4x4.CreateFromQuaternion(tarRot) *
+                   Matrix4x4.CreateTranslation(tarPos);
+        // Decompose matrices into components
+        Matrix4x4.Decompose(current, out Vector3 curScale, out Quaternion curRot, out Vector3 curPos);
+
+        // Interpolate position, scale, and rotation
+        Vector3 newPos = Vector3.Lerp(curPos, tarPos, t);
+        Vector3 newScale = Vector3.Lerp(curScale, tarScale, t);
+        Quaternion newRot = Quaternion.Slerp(curRot, tarRot, t);
+
+        // Recompose
+        return Matrix4x4.CreateScale(newScale) *
+               Matrix4x4.CreateFromQuaternion(newRot) *
+               Matrix4x4.CreateTranslation(newPos);
+    }
 
     private void UpdateScene(QueuePtr queue, RenderableMeshCollection dynamicMeshes)
     {
@@ -411,6 +436,9 @@ public class Instanced3dDeferredRenderer(
     {
         if (ImGui.Begin("Controls"))
         {
+            ImGui.InputFloat("SmoothingFames", ref _smoothingFames, 0.1f, 1f);
+            ImGui.Text($"SFrame: {1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFames)}");
+
             if (ImGui.Button("Collect Resources"))
             {
                 _loader.DoCollection();
