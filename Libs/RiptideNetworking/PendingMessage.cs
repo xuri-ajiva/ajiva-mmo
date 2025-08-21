@@ -3,6 +3,7 @@
 // For additional information please see the included LICENSE.md file or view it on GitHub:
 // https://github.com/RiptideNetworking/Riptide/blob/main/LICENSE.md
 
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Riptide.Transports;
 using Riptide.Utils;
@@ -19,7 +20,7 @@ namespace Riptide
         private const float RetryTimeMultiplier = 1.2f;
 
         /// <summary>A pool of reusable <see cref="PendingMessage"/> instances.</summary>
-        private static readonly List<PendingMessage> Pool = new List<PendingMessage>();
+        private static readonly ConcurrentBag<PendingMessage> Pool = new();
 
         /// <summary>The <see cref="Connection"/> to use to send (and resend) the pending message.</summary>
         private Connection _connection = null!;
@@ -67,15 +68,8 @@ namespace Riptide
         /// <returns>A <see cref="PendingMessage"/> instance.</returns>
         private static PendingMessage RetrieveFromPool()
         {
-            PendingMessage message;
-            if (Pool.Count > 0)
-            {
-                message = Pool[0];
-                Pool.RemoveAt(0);
-            }
-            else
+            if (!Pool.TryTake(out var message))
                 message = new PendingMessage();
-
             return message;
         }
 
