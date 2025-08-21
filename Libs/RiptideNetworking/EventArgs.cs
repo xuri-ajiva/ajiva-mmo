@@ -6,7 +6,7 @@
 namespace Riptide
 {
     /// <summary>Contains event data for when a client connects to the server.</summary>
-    public class ServerConnectedEventArgs : EventArgs
+    public struct ServerConnectedEventArgs
     {
         /// <summary>The newly connected client.</summary>
         public readonly Connection Client;
@@ -20,7 +20,7 @@ namespace Riptide
     }
 
     /// <summary>Contains event data for when a connection fails to be fully established.</summary>
-    public class ServerConnectionFailedEventArgs : EventArgs
+    public struct ServerConnectionFailedEventArgs
     {
         /// <summary>The connection that failed to be established.</summary>
         public readonly Connection Client;
@@ -34,7 +34,7 @@ namespace Riptide
     }
 
     /// <summary>Contains event data for when a client disconnects from the server.</summary>
-    public class ServerDisconnectedEventArgs : EventArgs
+    public struct ServerDisconnectedEventArgs
     {
         /// <summary>The client that disconnected.</summary>
         public readonly Connection Client;
@@ -52,7 +52,7 @@ namespace Riptide
     }
 
     /// <summary>Contains event data for when a message is received.</summary>
-    public class MessageReceivedEventArgs : EventArgs
+    public struct MessageReceivedEventArgs
     {
         /// <summary>The connection from which the message was received.</summary>
         public readonly Connection FromConnection;
@@ -70,7 +70,7 @@ namespace Riptide
     }
 
     /// <summary>Contains event data for when a connection attempt to a server fails.</summary>
-    public class ConnectionFailedEventArgs : EventArgs
+    public struct ConnectionFailedEventArgs
     {
         /// <summary>The reason for the connection failure.</summary>
         public readonly RejectReason Reason;
@@ -88,7 +88,7 @@ namespace Riptide
     }
 
     /// <summary>Contains event data for when the client disconnects from a server.</summary>
-    public class DisconnectedEventArgs : EventArgs
+    public struct DisconnectedEventArgs
     {
         /// <summary>The reason for the disconnection.</summary>
         public readonly DisconnectReason Reason;
@@ -106,7 +106,7 @@ namespace Riptide
     }
 
     /// <summary>Contains event data for when a non-local client connects to the server.</summary>
-    public class ClientConnectedEventArgs : EventArgs
+    public struct ClientConnectedEventArgs
     {
         /// <summary>The numeric ID of the client that connected.</summary>
         public readonly ushort Id;
@@ -117,7 +117,7 @@ namespace Riptide
     }
 
     /// <summary>Contains event data for when a non-local client disconnects from the server.</summary>
-    public class ClientDisconnectedEventArgs : EventArgs
+    public struct ClientDisconnectedEventArgs
     {
         /// <summary>The numeric ID of the client that disconnected.</summary>
         public readonly ushort Id;

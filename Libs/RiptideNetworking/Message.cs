@@ -5,6 +5,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Numerics;
 using Riptide.Transports;
 using Riptide.Utils;
 using System.Runtime.CompilerServices;
@@ -234,14 +235,19 @@ namespace Riptide
             return message;
         }
 
+        private bool _relerased = false;
+
         /// <summary>Returns the message instance to the internal pool so it can be reused.</summary>
         public void Release()
         {
+            if (_relerased)
+                return;
+            _relerased = true;
             if (Pool.Count < _poolTargetCapacity)
             {
                 // Pool exists and there's room
-                if (!Pool.Contains(this))
-                    Pool.Add(this); // Only add it if it's not already in the list, otherwise this method being called twice in a row for whatever reason could cause *serious* issues
+                Pool.Add(this);
+                // Only add it if it's not already in the list, otherwise this method being called twice in a row for whatever reason could cause *serious* issues
             }
         }
 
@@ -254,6 +260,7 @@ namespace Riptide
         /// <returns>The message, ready to be used for sending.</returns>
         private Message Init(MessageHeader header)
         {
+            _relerased = false;
             _data[0] = (byte)header;
             SetHeader(header);
             return this;
@@ -2263,6 +2270,44 @@ namespace Riptide
         #endregion
 
         #endregion
+
+        public void AddVector3(Vector3 value)
+        {
+            AddFloat(value.X);
+            AddFloat(value.Y);
+            AddFloat(value.Z);
+        }
+
+        public void Add(Vector3 value) => AddVector3(value);
+
+        public Vector3 GetVector3()
+        {
+            return new Vector3(GetFloat(), GetFloat(), GetFloat());
+        }
+        public void Get(out Vector3 value)
+        {
+            value = GetVector3();
+        }
+
+        public void Add(Quaternion value) => AddQuaternion(value);
+
+        public void AddQuaternion(Quaternion value)
+        {
+            AddFloat(value.X);
+            AddFloat(value.Y);
+            AddFloat(value.Z);
+            AddFloat(value.W);
+        }
+
+        public Quaternion GetQuaternion()
+        {
+            return new Quaternion(GetFloat(), GetFloat(), GetFloat(), GetFloat());
+        }
+        
+        public void Get(out Quaternion value)
+        {
+            value = GetQuaternion();
+        }
 
         #region Error Messaging
 
