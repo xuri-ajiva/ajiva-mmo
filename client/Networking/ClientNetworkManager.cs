@@ -1,7 +1,7 @@
 ﻿using System.Numerics;
 using Client.Game;
 using Client.Renderer;
-using Common.EcsV2;
+using Common.Ecs;
 using Common.Networking;
 using NetworkPackets;
 using Riptide;
@@ -140,9 +140,10 @@ public class ClientNetworkManager : BackgroundService, IUniversalMessageHandler,
             .Send(_client.Connection!, MessageSendMode.Unreliable);
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         _client.MessageReceived -= OnMessageReceived;
         Disconnect();
+        base.Dispose();
     }
 }

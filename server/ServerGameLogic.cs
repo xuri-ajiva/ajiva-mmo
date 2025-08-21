@@ -1,5 +1,6 @@
 using System.Numerics;
-using Common.EcsV2;
+using Ajiva.Ecs;
+using Common.Ecs;
 using Common.Networking;
 using Common.SpacialPartitioning;
 using NetworkPackets;

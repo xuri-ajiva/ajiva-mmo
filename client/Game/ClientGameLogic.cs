@@ -1,7 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
+using Ajiva.Ecs;
 using Client.Renderer;
-using Common.EcsV2;
+using Common.Ecs;
 using Common.Networking;
 
 namespace Client.Game;
@@ -91,11 +92,10 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, ILogger<ClientGa
     public void HandleEntityDestroyed(EntityDestroyedPacket packet)
     {
         logger.LogTrace("Entity destroyed: {EntityId}", packet.EntityId);
-        if (!_networkToEcs.TryGetValue(packet.EntityId, out var entity))
+        if (!_networkToEcs.Remove(packet.EntityId, out var entity))
             return;
 
         // Clean up mappings
-        _networkToEcs.Remove(packet.EntityId);
         _ecsToNetwork.Remove(entity);
 
         // Clear local player reference if this was our entity

@@ -7,7 +7,7 @@ using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
-using Common.EcsV2;
+using Common.Ecs;
 using GlmSharp;
 using ImGuiNET;
 using NativeFileDialogExtendedSharp;
@@ -379,7 +379,7 @@ public class Instanced3dDeferredRenderer(
             {
                 InverseProjectionRef = invViewProjection,
                 InverseViewRef = invView,
-                CameraPositionWorldRef = camera.Position,
+                CameraPositionWorldRef = _camera.Position,
                 LightCount = _sceneLights.LightCount,
                 AmbientColorRef = new Vector3(0.1f, 0.1f, 0.1f),
                 IblIntensity = 1f,

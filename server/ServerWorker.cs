@@ -6,8 +6,9 @@ namespace Server;
 
 public class ServerWorker : IHostedService, IUniversalMessageHandler
 {
-
+    private Task? _serverTickTask;
     private Task? _serverUpdateTask;
+    private readonly SemaphoreSlim _semaphore = new(1, 1);
     private CancellationTokenSource? _stoppingCts;
 
     private readonly ILogger<ServerWorker> _logger;
@@ -31,21 +32,51 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
         _server.ClientDisconnected += ServerOnClientDisconnected;
         _server.ConnectionFailed += ServerOnConnectionFailed;
         _server.Start(_configuration.Port, _configuration.MaxConnections);
+        _serverTickTask = TickAsync(_stoppingCts.Token);
         _serverUpdateTask = UpdateAsync(_stoppingCts.Token);
         return _serverUpdateTask.IsCompleted ? _serverUpdateTask : Task.CompletedTask;
     }
 
-    private async Task UpdateAsync(CancellationToken cancellationToken)
+    private async Task UpdateAsync(CancellationToken token)
     {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await _semaphore.WaitAsync(token);
+                _server.Update();
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+
+            await Task.Delay(10, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+    }
+
+    private async Task TickAsync(CancellationToken cancellationToken)
+    {
+        const f32 tps = 10;
         var lastUpdate = DateTime.Now;
         while (!cancellationToken.IsCancellationRequested)
         {
-            _server.Update();
             var now = DateTime.Now;
-            var delta = (float)(now - lastUpdate).TotalSeconds;
-            _serverGameLogic.Update(delta);
+            var delta = (f32)(now - lastUpdate).TotalSeconds;
+            try
+            {
+                await _semaphore.WaitAsync(cancellationToken);
+                _serverGameLogic.Update(delta);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+
             lastUpdate = now;
-            await Task.Delay(5, cancellationToken);
+            var sleepTime = 1f / tps - delta;
+            await Task.Delay(Math.Max(1, (i32)(sleepTime * 1000)), cancellationToken)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }
 
@@ -76,7 +107,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
     {
         _server.Stop();
 
-        if (_serverUpdateTask == null)
+        if (_serverUpdateTask is null && _serverTickTask is null)
             return;
 
         try
@@ -86,7 +117,12 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
         }
         finally
         {
-            await _serverUpdateTask.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (_serverUpdateTask is not null)
+                await _serverUpdateTask.WaitAsync(cancellationToken)
+                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (_serverTickTask is not null)
+                await _serverTickTask.WaitAsync(cancellationToken)
+                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }
 

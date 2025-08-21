@@ -27,7 +27,7 @@ internal static class ComponentValidator
                 structSymbol.Name));
             isValid = false;
         }
-        
+
         // Must be partial
         if (!structSyntax.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
         {
@@ -39,10 +39,8 @@ internal static class ComponentValidator
         }
 
         // Must implement IComponent
-        var implementsIComponent = structSymbol.AllInterfaces.Any(i => 
-            i.Name == "IComponent" && 
-            i.ContainingNamespace?.ToDisplayString() == "Common.EcsV2");
-        
+        var implementsIComponent = structSymbol.AllInterfaces.Any(i => i.Name == "IComponent");
+
         if (!implementsIComponent)
         {
             diagnostics.Add(Diagnostic.Create(

@@ -2,7 +2,6 @@
 using Client.Game;
 using Client.Networking;
 using Client.Renderer.PbrRenderer;
-using Common.EcsV2;
 using ImGuiNET;
 using Silk.NET.Maths;
 

@@ -38,8 +38,7 @@ public class EcsSourceGenerator : IIncrementalGenerator
         // Look for EcsComponent attribute
         var ecsAttribute = structSymbol.GetAttributes()
             .FirstOrDefault(attr => attr.AttributeClass?.Name == "EcsComponentAttribute" &&
-                                    attr.AttributeClass?.ContainingNamespace?.ToDisplayString() ==
-                                    "Common.EcsV2.Generator");
+                                    attr.AttributeClass?.ContainingNamespace?.ToDisplayString() == "Ajiva.Ecs");
 
         if (ecsAttribute == null)
             return (null, ImmutableArray<Diagnostic>.Empty);

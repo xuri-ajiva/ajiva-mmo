@@ -1,4 +1,4 @@
-﻿namespace Common.EcsV2;
+﻿namespace Common.Ecs;
 
 public interface IComponent
 {

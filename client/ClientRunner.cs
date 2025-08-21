@@ -1,4 +1,5 @@
-﻿using Client.Game;
+﻿using Ajiva.Ecs;
+using Client.Game;
 using Client.LayerSystem;
 using Client.Networking;
 using Client.Platform;
@@ -6,7 +7,6 @@ using Client.Renderer;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
-using Common.EcsV2;
 
 namespace Client;
 

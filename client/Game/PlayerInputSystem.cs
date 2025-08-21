@@ -3,7 +3,7 @@ using Client.Game;
 using Client.LayerSystem;
 using Client.Networking;
 using Client.Renderer.PbrRenderer;
-using Common.EcsV2;
+using Common.Ecs;
 
 namespace Client.Game;
 

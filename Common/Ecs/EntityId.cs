@@ -1,4 +1,4 @@
-﻿namespace Common.EcsV2;
+﻿namespace Common.Ecs;
 
 public readonly struct EntityId(i32 value) : IEquatable<EntityId>
 {

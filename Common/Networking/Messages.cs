@@ -1,4 +1,4 @@
-using Common.EcsV2;
+using Common.Ecs;
 using NetworkPackets;
 
 namespace Common.Networking;

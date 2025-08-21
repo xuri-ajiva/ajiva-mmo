@@ -1,9 +1,9 @@
 ﻿using System.Numerics;
+using Ajiva.Ecs;
 using Common.SpacialPartitioning;
-using Common.EcsV2.Generator;
 using Riptide;
 
-namespace Common.EcsV2;
+namespace Common.Ecs;
 
 // Core transform components - separated for better granularity and MMO optimization
 [EcsComponent(ComponentScope.Shared, ComponentSync.ServerToClient,

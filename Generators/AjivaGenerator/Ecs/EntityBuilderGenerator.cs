@@ -25,10 +25,10 @@ internal static class EntityBuilderGenerator
         sb.AppendLine("#nullable enable");
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Numerics;");
-        sb.AppendLine("using Common.EcsV2;");
+        sb.AppendLine("using Ajiva.Ecs;");
         sb.AppendLine("using Common.SpacialPartitioning;");
         sb.AppendLine();
-        sb.AppendLine("namespace Common.EcsV2;");
+        sb.AppendLine("namespace Ajiva.Ecs;");
         sb.AppendLine();
         sb.AppendLine("/// <summary>");
         sb.AppendLine("/// Fluent entity builder for clean entity creation syntax");
