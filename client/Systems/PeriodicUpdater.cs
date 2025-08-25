@@ -1,5 +1,7 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Client.Platform;
+using Common;
 
 namespace Client.LayerSystem;
 
@@ -41,7 +43,10 @@ public enum UpdateCycle
     Blocking,
 }
 
-public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdater> logger) : IHostedLifecycleService
+public class PeriodicUpdater(
+    IConfiguration configuration,
+    ILogger<PeriodicUpdater> logger,
+    Instrumentation instrumentation) : IHostedLifecycleService
 {
     public delegate void UpdateRunnerDelegate(UpdateInfo info);
 
@@ -54,7 +59,7 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
         }
     }
 
-    private class UpdateRunner(UpdateCycle cycle) : IDisposable
+    internal class UpdateRunner(UpdateCycle cycle) : IDisposable
     {
         private readonly List<UpdateRunnerDelegate> _tasks = [];
         private readonly Lock _locker = new();
@@ -121,13 +126,16 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
             using var l = _locker.EnterScope();
             foreach (var task in _tasks)
             {
-                task(info);
+                task.Invoke(info);
             }
         }
     }
 
     private readonly Dictionary<UpdateCycle, UpdateRunner> _updateData = new();
     public bool Running { get; private set; }
+    public bool TraceRenderer { get; set; }
+    public bool TraceUpdate { get; set; }
+
     private readonly Lock _locker = new();
     private Thread? _updateCycle;
     private Thread? _renderCycle;
@@ -180,7 +188,18 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
         {
             _resetEvent.WaitOne();
             ReleaseAllWaiting();
-            updateRunner.RunOnce();
+            if (TraceUpdate)
+            {
+                TraceUpdate = false;
+                using var activityRenderer = instrumentation.StartActivity(ActivityKind.Client);
+                Instrumentation.Instance = instrumentation;
+                updateRunner.RunOnce();
+                Instrumentation.Instance = null!;
+            }
+            else
+            {
+                updateRunner.RunOnce();
+            }
         }
     }
 
@@ -191,7 +210,18 @@ public class PeriodicUpdater(IConfiguration configuration, ILogger<PeriodicUpdat
         {
             _resetEvent.Set();
             ReleaseAllWaiting();
-            updateRunner.RunOnce();
+            if (TraceRenderer)
+            {
+                TraceRenderer = false;
+                using var activityRenderer = instrumentation.StartActivity(ActivityKind.Client);
+                Instrumentation.Instance = instrumentation;
+                updateRunner.RunOnce();
+                Instrumentation.Instance = null!;
+            }
+            else
+            {
+                updateRunner.RunOnce();
+            }
         }
     }
 

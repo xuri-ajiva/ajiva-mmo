@@ -7,6 +7,9 @@
         <InvariantGlobalization>true</InvariantGlobalization>
         <PublishAot>true</PublishAot>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <LangVersion>preview</LangVersion>
+        <Features>InterceptorsPreview</Features>
+        <InterceptorsPreviewNamespaces>$(InterceptorsPreviewNamespaces);Microsoft.AspNetCore.Http.Generated;Server;System.Runtime.CompilerServices;Interception</InterceptorsPreviewNamespaces>
     </PropertyGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="Composer"/>
@@ -19,5 +22,6 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Common\Common.csproj"/>
+        <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
     </ItemGroup>
 </Project>

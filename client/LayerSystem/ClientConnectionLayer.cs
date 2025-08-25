@@ -1,9 +1,7 @@
-﻿using System.Numerics;
-using Client.Game;
+﻿using Client.Game;
 using Client.Networking;
-using Client.Renderer.PbrRenderer;
 using ImGuiNET;
-using Silk.NET.Maths;
+using Interception;
 
 namespace Client.LayerSystem;
 
@@ -11,6 +9,7 @@ namespace Client.LayerSystem;
 /// UI layer for connection status and entity debugging
 /// Now purely focused on UI - no network logic
 /// </summary>
+[ExcludeFromInterception]
 public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGameLogic gameLogic)
     : IUiRenderLayer
 {
@@ -34,7 +33,7 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
     public void RenderUi(UpdateInfo info)
     {
         ImGui.Begin("Client Connection");
-
+        
         // Connection status and controls
         ImGui.Text($"Status: {networkManager.State?.ToString()}");
         if (networkManager.IsNotConnected)

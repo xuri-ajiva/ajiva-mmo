@@ -39,7 +39,10 @@ public static class Extensions
                 serviceVersion: serviceVersion));
         });
 
-        builder.Services.AddSingleton(new Instrumentation(serviceName, serviceVersion));
+        var instrumentation = new Instrumentation(serviceName, serviceVersion);
+        builder.Services.AddSingleton(instrumentation);
+        builder.Services.AddSingleton(_ => instrumentation.ActivitySource);
+        builder.Services.AddSingleton(_ => instrumentation.Meter);
 
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource =>

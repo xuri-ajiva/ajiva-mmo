@@ -53,7 +53,7 @@ public class RendererApi(ILogger<RendererApi> logger)
 
         Device.SetUncapturedErrorCallback((type, m) =>
         {
-            var message = m?.Replace("\\r\\n", "\n").Replace("\\n", "\n").Replace("\\t", "\t");
+            var message = m?.Replace(@"\r\n", "\n").Replace("\\n", "\n").Replace("\\t", "\t");
             switch (type)
             {
                 case ErrorType.NoError:
@@ -93,7 +93,7 @@ public class RendererApi(ILogger<RendererApi> logger)
         Queue = Device.GetQueue();
     }
 
-    public ShaderModulePtr CreateShaderModuleFromFile(string fileName,
+    /*public ShaderModulePtr CreateShaderModuleFromFile(string fileName,
         string? label = null, params Span<ShaderModuleCompilationHint> compilationHints)
     {
         try
@@ -117,7 +117,7 @@ public class RendererApi(ILogger<RendererApi> logger)
             logger.LogCritical(e, "Failed to load shader module {FileName}", fileName);
             throw;
         }
-    }
+    }*/
 
     public void Poll()
     {

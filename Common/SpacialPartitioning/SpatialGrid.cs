@@ -1,9 +1,11 @@
 ﻿using System.Numerics;
+using Interception;
 using Riptide;
 
 namespace Common.SpacialPartitioning;
 
-public struct ChunkCoord(i32 x, i32 y, i32 z, i32 level) : IMessageSerializable,  IEquatable<ChunkCoord>
+[ExcludeFromInterception]
+public struct ChunkCoord(i32 x, i32 y, i32 z, i32 level) : IMessageSerializable, IEquatable<ChunkCoord>
 {
     public i32 X = x;
     public i32 Y = y;
@@ -76,7 +78,8 @@ public class SpatialGrid(u32 chunkSize)
 {
     private readonly Dictionary<ChunkCoord, SpatialChunk> chunks = new();
     private readonly u32 _chunkSize = chunkSize;
-
+    
+    [ExcludeFromInterception]
     public ChunkCoord GetChunkCoord(Vector3 position, i32 level)
     {
         i32 x = (i32)Math.Floor(position.X / _chunkSize);

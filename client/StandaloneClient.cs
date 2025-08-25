@@ -7,7 +7,7 @@ using Serilog;
 using Serilog.Expressions;
 using Serilog.Settings.Configuration;
 
-var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
+var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 {
     Args = args,
     DisableDefaults = true,
@@ -40,4 +40,5 @@ builder.Services.AddSingleton(builder.Configuration.GetSection("Window").Get<Win
 
 var clientConfiguration = builder.Configuration.GetSection(nameof(ClientConfiguration)).Get<ClientConfiguration>();
 var client = new ClientRunner(builder, clientConfiguration);
-await client.RunAsync(builder.Build());
+var host = builder.Build();
+await client.RunAsync(host);

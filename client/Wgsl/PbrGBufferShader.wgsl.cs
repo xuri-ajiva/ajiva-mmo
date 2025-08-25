@@ -1,6 +1,7 @@
 ﻿using System.Numerics;
 using Generators;
 using GlmSharp;
+using Interception;
 
 namespace Client.Wgsl;
 
@@ -48,6 +49,7 @@ public partial class PbrGBufferShader
         vec4 tangent
     );
 
+    [ExcludeFromInterception]
     public partial struct Instance(
         vec4 transform0,
         vec4 transform1,

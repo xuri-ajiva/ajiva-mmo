@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Client.Game;
@@ -7,9 +8,11 @@ using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
+using Common;
 using Common.Ecs;
 using GlmSharp;
 using ImGuiNET;
+using Interception;
 using NativeFileDialogExtendedSharp;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
@@ -23,7 +26,8 @@ public class Instanced3dDeferredRenderer(
     ClientGameLogic gameLogic,
     ResourceManager loader,
     ICamera camera,
-    Scene scene) : IRenderLayer, IUiRenderLayer, IAjivaLayer
+    Scene scene,
+    PeriodicUpdater periodicUpdater) : IRenderLayer, IUiRenderLayer, IAjivaLayer
 {
     private readonly ILogger<Instanced3dDeferredRenderer> _logger = logger;
     private readonly IShaderManager _shaderManager = shaderManager;
@@ -142,6 +146,7 @@ public class Instanced3dDeferredRenderer(
 
     public void Render(UpdateInfo info, RenderTarget target, Extent3D sceneViewport)
     {
+        using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Internal);
         var queue = target.QueuePtr;
         _camera.AspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
         _pbrPipeline!.WriteGBufferSceneUniforms(queue, new PbrGBufferShader.SceneUniform
@@ -282,7 +287,7 @@ public class Instanced3dDeferredRenderer(
         }
     }
 
-    private f32 _smoothingFames = 30f;
+    private f32 _smoothingFames = 10f;
 
     public static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, float t)
     {
@@ -378,7 +383,6 @@ public class Instanced3dDeferredRenderer(
         _api.Poll();
         _underCursor = _samplingPipeline.ReadResult(mappingTask);
 
-
         if (_sceneGBuffer.TryGetCompositorOutputView(out var emissive, out var objectAndInstanceId, out var accum,
                 out var reveal, out var depth) && _finalSceneTexture.TryGetTargets(out var colorOutput))
         {
@@ -432,12 +436,27 @@ public class Instanced3dDeferredRenderer(
     private i32 maxConcurrentLoads = 1;
     private Dictionary<u32, List<EntityId>> _entitiesByMesh = [];
 
+    [ExcludeFromInterception]
     public void RenderUi(UpdateInfo info)
     {
+        using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Internal);
         if (ImGui.Begin("Controls"))
         {
             ImGui.InputFloat("SmoothingFames", ref _smoothingFames, 0.1f, 1f);
             ImGui.Text($"SFrame: {1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFames)}");
+
+            if (ImGui.Button("Trace Renderer"))
+            {
+                periodicUpdater.TraceRenderer = true;
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Trace Update"))
+            {
+                periodicUpdater.TraceUpdate = true;
+            }
+
+            ImGui.Separator();
 
             if (ImGui.Button("Collect Resources"))
             {
@@ -536,8 +555,7 @@ public class Instanced3dDeferredRenderer(
                     }
                 }
 
-                ref var uniform = ref selectedBuffer.MaterialUniform;
-                ImGui.Text(uniform.ToString());
+                //ImGui.Text(selectedBuffer.MaterialUniform.ToString());
 
                 if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
                 {

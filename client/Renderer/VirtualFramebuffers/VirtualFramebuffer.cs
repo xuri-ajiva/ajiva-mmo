@@ -6,7 +6,7 @@ namespace Client.Renderer.VirtualFramebuffers;
 
 public class VirtualFramebuffer : IDisposable
 {
-    private struct ColorTarget(string name, TextureFormat format, TexturePtr? tex, TextureViewPtr? view)
+    internal struct ColorTarget(string name, TextureFormat format, TexturePtr? tex, TextureViewPtr? view)
     {
         public readonly string Name = name;
         public readonly TextureFormat Format = format;
@@ -14,7 +14,7 @@ public class VirtualFramebuffer : IDisposable
         public TextureViewPtr? View = view;
     }
 
-    private struct DepthStencilTarget(
+    internal struct DepthStencilTarget(
         TextureFormat format,
         TexturePtr? tex,
         TextureViewPtr? view,

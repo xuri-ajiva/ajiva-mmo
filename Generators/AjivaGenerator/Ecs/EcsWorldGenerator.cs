@@ -17,7 +17,6 @@ internal static class EcsWorldGenerator
         var sourceCode = BuildEcsWorldClass(components, className);
         context.AddSource($"{className}.g.cs", SourceText.From(sourceCode, Encoding.UTF8));
     }
-
     private static string BuildEcsWorldClass(ImmutableArray<ComponentInfo> components, string className)
     {
         var sb = new StringBuilder();
@@ -37,6 +36,8 @@ internal static class EcsWorldGenerator
         sb.AppendLine(
             $"/// Generated ECS World containing all component storage and entity management for {className}");
         sb.AppendLine("/// </summary>");
+        sb.AppendLine("[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]");
+        sb.AppendLine("[System.Runtime.CompilerServices.CompilerGenerated]");
         sb.AppendLine($"public partial class {className}");
         sb.AppendLine("{");
 

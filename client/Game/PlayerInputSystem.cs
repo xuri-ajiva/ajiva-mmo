@@ -4,6 +4,7 @@ using Client.LayerSystem;
 using Client.Networking;
 using Client.Renderer.PbrRenderer;
 using Common.Ecs;
+using Interception;
 
 namespace Client.Game;
 
@@ -11,6 +12,8 @@ namespace Client.Game;
 /// Handles player input and sends updates to server
 /// Separated from UI layers for clean architecture
 /// </summary>
+
+[ExcludeFromInterception]
 public class PlayerInputSystem : IHostedService
 {
     private readonly ILogger<PlayerInputSystem> _logger;

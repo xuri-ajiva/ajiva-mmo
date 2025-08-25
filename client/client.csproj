@@ -12,6 +12,9 @@
         <NoDefaultLaunchSettingsFile>True</NoDefaultLaunchSettingsFile>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <RootNamespace>Client</RootNamespace>
+        <LangVersion>preview</LangVersion>
+        <Features>InterceptorsPreview</Features>
+        <InterceptorsPreviewNamespaces>$(InterceptorsPreviewNamespaces);Microsoft.AspNetCore.Http.Generated;Client.Generated;System.Runtime.CompilerServices;Interception</InterceptorsPreviewNamespaces>
     </PropertyGroup>
 
     <ItemGroup>
@@ -49,6 +52,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
         <ProjectReference Include="..\Generators\WgslGenerator\WgslGenerator.csproj" OutputItemType="Analyzer"/>
         <ProjectReference Include="..\Common\Common.csproj"/>
         <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Extensions.ImGui\Silk.NET.WebGPU.Extensions.ImGui.csproj"/>

@@ -15,7 +15,6 @@ public class ServerGameLogic
     private readonly ServerEcsWorld _world = new();
     private readonly SpatialGrid _spatialGrid = new(32);
     private readonly Riptide.Server _server;
-    private readonly Instrumentation _instrumentation;
     private readonly Dictionary<Connection, EntityId> _playerEntities = new();
     private readonly Dictionary<Connection, HashSet<EntityId>> _visibleEntities = new();
     private EntityId _rotatingEntity;
@@ -24,10 +23,9 @@ public class ServerGameLogic
     private string? _levelName;
     private const float UpdateRange = 64.0f; // Only send updates to clients within 32 units
 
-    public ServerGameLogic(Riptide.Server server, Instrumentation instrumentation)
+    public ServerGameLogic(Riptide.Server server)
     {
         _server = server;
-        _instrumentation = instrumentation;
         LoadLevel("Sponza");
     }
 
@@ -200,12 +198,12 @@ public class ServerGameLogic
 
     public void Update(float deltaTime)
     {
-        using var update =
-            _instrumentation.ActivitySource.StartActivity(ActivityKind.Server, Activity.Current?.Context ?? default);
+        using var update = Instrumentation.Trace(ActivityKind.Server);
 
         // Update rotating entity
         if (_world.HasVelocity(_rotatingEntity))
         {
+            using var act = Instrumentation.NamedTrace("Velocity");
             ref var rotation = ref _world.GetRotation(_rotatingEntity);
             var velocity = _world.GetVelocity(_rotatingEntity);
 
@@ -227,36 +225,37 @@ public class ServerGameLogic
         update?.AddEvent(new ActivityEvent("Updated rotating entity"));
 
         // Update bouncing entities
-        foreach (var entityId in _bouncingEntities)
-        {
-            if (!_world.HasPosition(entityId) || !_world.HasVelocity(entityId)) continue;
-
-            ref var position = ref _world.GetPosition(entityId);
-            ref var velocity = ref _world.GetVelocity(entityId);
-
-            // simple bounce logic
-            if (position.Value.Y <= 0)
+        using (var act = Instrumentation.NamedTrace("Bouncing"))
+            foreach (var entityId in _bouncingEntities)
             {
-                velocity.Linear.Y = -velocity.Linear.Y; // Reverse Y velocity on hit
-                position.Value.Y = 0; // Reset to ground level
+                if (!_world.HasPosition(entityId) || !_world.HasVelocity(entityId)) continue;
+
+                ref var position = ref _world.GetPosition(entityId);
+                ref var velocity = ref _world.GetVelocity(entityId);
+
+                // simple bounce logic
+                if (position.Value.Y <= 0)
+                {
+                    velocity.Linear.Y = -velocity.Linear.Y; // Reverse Y velocity on hit
+                    position.Value.Y = 0; // Reset to ground level
+                }
+                else
+                {
+                    velocity.Linear.Y -= 9.81f * deltaTime; // Apply gravity
+                }
+
+                // Update position based on velocity
+                position.Value += velocity.Linear * deltaTime;
+
+                // Send updates to players in range
+                var rotation = _world.GetRotation(entityId);
+                var scale = _world.GetScale(entityId);
+                var transform = CreateTransformFromComponents(position, rotation, scale);
+
+                SendToPlayersInRange(position.Value, position.Level,
+                    new EntityUpdatePacket((u32)entityId.Value, transform),
+                    MessageSendMode.Unreliable);
             }
-            else
-            {
-                velocity.Linear.Y -= 9.81f * deltaTime; // Apply gravity
-            }
-
-            // Update position based on velocity
-            position.Value += velocity.Linear * deltaTime;
-
-            // Send updates to players in range
-            var rotation = _world.GetRotation(entityId);
-            var scale = _world.GetScale(entityId);
-            var transform = CreateTransformFromComponents(position, rotation, scale);
-
-            SendToPlayersInRange(position.Value, position.Level,
-                new EntityUpdatePacket((u32)entityId.Value, transform),
-                MessageSendMode.Unreliable);
-        }
 
         update?.AddEvent(new ActivityEvent("Updated bouncing entities"));
 
@@ -265,67 +264,66 @@ public class ServerGameLogic
         float squareSize = 10f; // size of square
         // Advance progress
         _progress = (_progress + speed * deltaTime) % 1f;
-        foreach (var entityId in _slidingEntities)
-        {
-            if (!_world.HasPosition(entityId) || !_world.HasScale(entityId) || !_world.HasRotation(entityId))
-                continue;
-
-            var progress = (_progress + (entityId.Value % 8) * 0.25f) % 1.0f;
-
-            // Determine position along square perimeter
-            Vector3 pos;
-            if (progress < 0.25f) // bottom edge → right
+        using (var act = Instrumentation.NamedTrace("Sliding"))
+            foreach (var entityId in _slidingEntities)
             {
-                float t = progress / 0.25f;
-                pos = new Vector3(Lerp(-squareSize, squareSize, t), 0, -squareSize);
+                if (!_world.HasPosition(entityId) || !_world.HasScale(entityId) || !_world.HasRotation(entityId))
+                    continue;
+
+                var progress = (_progress + (entityId.Value % 8) * 0.25f) % 1.0f;
+
+                // Determine position along square perimeter
+                Vector3 pos;
+                if (progress < 0.25f) // bottom edge → right
+                {
+                    float t = progress / 0.25f;
+                    pos = new Vector3(Lerp(-squareSize, squareSize, t), 0, -squareSize);
+                }
+                else if (progress < 0.5f) // right edge → up
+                {
+                    float t = (progress - 0.25f) / 0.25f;
+                    pos = new Vector3(squareSize, 0, Lerp(-squareSize, squareSize, t));
+                }
+                else if (progress < 0.75f) // top edge → left
+                {
+                    float t = (progress - 0.5f) / 0.25f;
+                    pos = new Vector3(Lerp(squareSize, -squareSize, t), 0, squareSize);
+                }
+                else // left edge → down
+                {
+                    float t = (progress - 0.75f) / 0.25f;
+                    pos = new Vector3(-squareSize, 0, Lerp(squareSize, -squareSize, t));
+                }
+
+                // Example: scale changes from 0.5x at left to 2x at right
+                float scaleFactor = Lerp(0.5f, 2f, (pos.X + squareSize) / (squareSize * 2));
+
+                // Update ECS components
+                ref var position = ref _world.GetPosition(entityId);
+                position.Value = pos;
+
+                ref var scale = ref _world.GetScale(entityId);
+                scale.Value = new Vector3(scaleFactor);
+
+                ref var rotation = ref _world.GetRotation(entityId);
+                rotation.Value = Quaternion.Identity; // keep upright
+
+                // Send updates
+                var transform = CreateTransformFromComponents(position, rotation, scale);
+                SendToPlayersInRange(position.Value, position.Level,
+                    new EntityUpdatePacket((u32)entityId.Value, transform),
+                    MessageSendMode.Unreliable);
             }
-            else if (progress < 0.5f) // right edge → up
-            {
-                float t = (progress - 0.25f) / 0.25f;
-                pos = new Vector3(squareSize, 0, Lerp(-squareSize, squareSize, t));
-            }
-            else if (progress < 0.75f) // top edge → left
-            {
-                float t = (progress - 0.5f) / 0.25f;
-                pos = new Vector3(Lerp(squareSize, -squareSize, t), 0, squareSize);
-            }
-            else // left edge → down
-            {
-                float t = (progress - 0.75f) / 0.25f;
-                pos = new Vector3(-squareSize, 0, Lerp(squareSize, -squareSize, t));
-            }
 
-            // Example: scale changes from 0.5x at left to 2x at right
-            float scaleFactor = Lerp(0.5f, 2f, (pos.X + squareSize) / (squareSize * 2));
-
-            // Update ECS components
-            ref var position = ref _world.GetPosition(entityId);
-            position.Value = pos;
-
-            ref var scale = ref _world.GetScale(entityId);
-            scale.Value = new Vector3(scaleFactor);
-
-            ref var rotation = ref _world.GetRotation(entityId);
-            rotation.Value = Quaternion.Identity; // keep upright
-
-            // Send updates
-            var transform = CreateTransformFromComponents(position, rotation, scale);
-            SendToPlayersInRange(position.Value, position.Level,
-                new EntityUpdatePacket((u32)entityId.Value, transform),
-                MessageSendMode.Unreliable);
-        }
-
-        update?.AddEvent(new ActivityEvent("Updated sliding entities"));
 
         // Update spatial partitioning for moved entities
-        UpdateSpatialPartitioning();
+        using (var act = Instrumentation.NamedTrace("SpatialPartitioning"))
+            UpdateSpatialPartitioning();
 
-        update?.AddEvent(new ActivityEvent("Updated spatial partitioning"));
 
         // Update player visibility based on spatial chunks
-        UpdateAllPlayerVisibility();
-
-        update?.AddEvent(new ActivityEvent("Updated player visibility"));
+        using (var act = Instrumentation.NamedTrace("PlayerVisibility"))
+            UpdateAllPlayerVisibility();
     }
 
     private static T Lerp<T>(T a, T b, T t) where T : INumber<T> => a + (b - a) * t;

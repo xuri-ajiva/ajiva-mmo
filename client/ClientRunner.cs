@@ -10,6 +10,7 @@ using Client.Renderer.Resources;
 using Client.Wgsl;
 using Common;
 using Common.Config;
+using Microsoft.AspNetCore.Builder;
 using OpenTelemetry.Trace;
 
 namespace Client;
@@ -18,7 +19,7 @@ public class ClientRunner
 {
     private readonly ClientConfiguration? _clientConfiguration;
 
-    public ClientRunner(HostApplicationBuilder builder, ClientConfiguration? clientConfiguration)
+    public ClientRunner(IHostApplicationBuilder builder, ClientConfiguration? clientConfiguration)
     {
         _clientConfiguration = clientConfiguration;
         var services = builder.Services;
@@ -62,10 +63,12 @@ public class ClientRunner
         var services = scop.ServiceProvider;
 
         var logger = services.GetRequiredService<ILogger<ClientRunner>>();
-        var tracer = services.GetRequiredService<Instrumentation>();
+        var instrumentation = services.GetRequiredService<Instrumentation>();
+        using var activity = instrumentation.StartActivity(ActivityKind.Client);
+
         var platform = services.GetRequiredService<PlatformSystem>();
         platform.Init();
-        _ = Task.Run(() => RunAutoConnect(app, tracer, logger));
+        _ = Task.Run(() => RunAutoConnect(app, instrumentation, logger));
         await app.RunAsync();
 
         platform.Shotdown();
@@ -75,7 +78,7 @@ public class ClientRunner
     {
         if (_clientConfiguration is not { AutoConnect: true, AutoConnectAddress: not null })
             return;
-        
+
         var client = app.Services.GetRequiredService<Riptide.Client>();
 
         while (client.IsNotConnected)

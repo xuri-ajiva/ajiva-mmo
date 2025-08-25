@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using Common;
 using Common.Config;
 using Common.Networking;
@@ -10,10 +11,9 @@ namespace Server;
 
 public class ServerWorker : IHostedService, IUniversalMessageHandler
 {
-    private Task? _serverTickTask;
-    private Task? _serverUpdateTask;
+    private readonly Thread _serverTickTask, _serverUpdateTask;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
-    private CancellationTokenSource? _stoppingCts;
+    private readonly CancellationTokenSource _stoppingCts;
 
     private readonly ILogger<ServerWorker> _logger;
     private readonly Riptide.Server _server;
@@ -29,64 +29,76 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
         _instrumentation = instrumentation;
         _configuration = configuration;
         _serverGameLogic = serverGameLogic;
+        _stoppingCts = new CancellationTokenSource();
+        _serverTickTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "ServerUpdate",
+                histogram: _instrumentation.Meter.CreateHistogram<f64>("server.update.duration",
+                    unit: "ms", description: "Duration of server update"),
+                lockedAction: _ => _server.Update(), tps: 10f) // 100 ms interval equivalent
+        );
+        _serverUpdateTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "GameTick",
+            histogram: _instrumentation.Meter.CreateHistogram<f64>("server.tick.duration",
+                unit: "ms", description: "Duration of server tick"),
+            lockedAction: delta => _serverGameLogic.Update(delta), tps: 30f)
+        );
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _server.MessageReceived += ServerOnMessageReceived;
         _server.ClientConnected += ServerOnClientConnected;
         _server.ClientDisconnected += ServerOnClientDisconnected;
         _server.ConnectionFailed += ServerOnConnectionFailed;
         _server.Start(_configuration.Port, _configuration.MaxConnections);
-        _serverTickTask = TickAsync(_stoppingCts.Token);
-        _serverUpdateTask = UpdateAsync(_stoppingCts.Token);
-        return _serverUpdateTask.IsCompleted ? _serverUpdateTask : Task.CompletedTask;
+        _serverUpdateTask.Start();
+        _serverTickTask.Start();
+        return Task.CompletedTask;
     }
 
-    private async Task UpdateAsync(CancellationToken token)
+
+    private void RunLoop(CancellationToken token, string loopName, Histogram<f64> histogram, Action<f32> lockedAction,
+        f32 tps, u32 traceIntervallSeconds = 10)
     {
+        f32 traceIntervallElapsed = 0;
+        var lastUpdate = Stopwatch.GetTimestamp();
         while (!token.IsCancellationRequested)
         {
+            if (traceIntervallElapsed > traceIntervallSeconds) Instrumentation.Instance = _instrumentation;
+
+            using var activity = Instrumentation.Instance?.StartActivity(ActivityKind.Server);
+
+            var now = Stopwatch.GetTimestamp();
+            var elapsed = Stopwatch.GetElapsedTime(lastUpdate, now);
+            var delta = (f32)elapsed.TotalSeconds;
+
             try
             {
-                await _semaphore.WaitAsync(token);
-                _server.Update();
+                using (Instrumentation.Instance?.StartNamedActivity($"Entering Locked Section ({loopName})"))
+                    _semaphore.Wait(token);
+                using var exec = Instrumentation.Instance?.StartNamedActivity($"Executing ({loopName})");
+                lockedAction.Invoke(delta);
             }
             finally
             {
                 _semaphore.Release();
             }
 
-            await Task.Delay(10, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        }
-    }
-
-    private async Task TickAsync(CancellationToken cancellationToken)
-    {
-        const f32 tps = 10;
-        var lastUpdate = DateTime.Now;
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            using var activity = _instrumentation.ActivitySource.StartActivity(ActivityKind.Server);
-            var now = DateTime.Now;
-            var delta = (f32)(now - lastUpdate).TotalSeconds;
-            try
-            {
-                await _semaphore.WaitAsync(cancellationToken);
-                _serverGameLogic.Update(delta);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
-
+            histogram.Record(elapsed.TotalMilliseconds);
             lastUpdate = now;
+
             var sleepTime = 1f / tps - delta;
-            await Task.Delay(Math.Max(1, (i32)(sleepTime * 1000)), cancellationToken)
-                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            using var wait = Instrumentation.Instance?.StartNamedActivity("Waiting",
+                tags: [new KeyValuePair<string, object?>("sleepTime", sleepTime)]);
+            Thread.Sleep(Math.Max(1, (i32)(sleepTime * 1000)));
+            if (traceIntervallElapsed > traceIntervallSeconds)
+            {
+                Instrumentation.Instance = null;
+                traceIntervallElapsed = 0;
+            }
+
+            traceIntervallElapsed += delta;
         }
     }
+
 
     private void ServerOnConnectionFailed(object? sender, ServerConnectionFailedEventArgs e)
     {
@@ -125,12 +137,8 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
         }
         finally
         {
-            if (_serverUpdateTask is not null)
-                await _serverUpdateTask.WaitAsync(cancellationToken)
-                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-            if (_serverTickTask is not null)
-                await _serverTickTask.WaitAsync(cancellationToken)
-                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            _serverUpdateTask?.Join();
+            _serverTickTask?.Join();
         }
     }
 
