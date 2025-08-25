@@ -1,10 +1,11 @@
-﻿using Server;
+﻿using Common.Config;
+using Server;
 
 namespace Server;
 
 public class ServerRunner
 {
-    public ServerRunner(HostApplicationBuilder builder, ServerConfiguration config)
+    public ServerRunner(IHostApplicationBuilder builder, ServerConfiguration config)
     {
         var services = builder.Services;
 
@@ -12,6 +13,7 @@ public class ServerRunner
 
         services.AddHostedService<ServerWorker>();
         services.AddSingleton<Riptide.Server>();
+        services.AddSingleton<ServerGameLogic>();
     }
 
     public async Task RunAsync(IHost app, CancellationToken token = default)

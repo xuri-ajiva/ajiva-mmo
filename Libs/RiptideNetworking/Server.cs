@@ -119,7 +119,7 @@ namespace Riptide
             StartTime();
             Heartbeat();
             IsRunning = true;
-            Logger.Log(LogLevel.Information, "Started on port {port}.", port);
+            Logger.Log(LogLevel.Information, "Started on port {Port}", port);
         }
 
         /// <summary>Subscribes appropriate methods to the transport's events.</summary>

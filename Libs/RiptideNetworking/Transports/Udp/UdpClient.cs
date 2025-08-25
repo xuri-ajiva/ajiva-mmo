@@ -70,6 +70,8 @@ namespace Riptide.Transports.Udp
         /// <returns>Whether or not <paramref name="hostAddress"/> was in a valid format.</returns>
         private bool ParseHostAddress(string hostAddress, [NotNullWhen(true)] out IPAddress? ip, out ushort port)
         {
+            if(hostAddress.StartsWith("udp://"))
+                hostAddress = hostAddress["udp://".Length..];
             string[] ipAndPort = hostAddress.Split(':');
             string ipString = "";
             string portString = "";
@@ -85,7 +87,6 @@ namespace Riptide.Transports.Udp
                 ipString = ipAndPort[0];
                 portString = ipAndPort[1];
             }
-
             port = 0; // Need to make sure a value is assigned in case IP parsing fails
             return IPAddress.TryParse(ipString, out ip) && ushort.TryParse(portString, out port);
         }

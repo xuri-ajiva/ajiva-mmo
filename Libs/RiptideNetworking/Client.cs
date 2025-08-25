@@ -148,7 +148,7 @@ namespace Riptide
 
             StartTime();
             Heartbeat();
-            Logger.Log(LogLevel.Information, $"Connecting to {_connection}...");
+            Logger.Log(LogLevel.Information, "Connecting to {Connection}...", _connection);
             return true;
         }
 

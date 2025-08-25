@@ -2,6 +2,7 @@
 using Client.Config;
 using Client.LayerSystem;
 using Common;
+using Common.Config;
 using Serilog;
 using Serilog.Expressions;
 using Serilog.Settings.Configuration;
@@ -10,7 +11,7 @@ var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSetti
 {
     Args = args,
     DisableDefaults = true,
-    ApplicationName = "Ajiva",
+    ApplicationName = "Ajiva.MMO.Client",
     ContentRootPath = Directory.GetCurrentDirectory(),
 });
 
@@ -28,6 +29,7 @@ Log.Logger = new LoggerConfiguration()
         new ConfigurationReaderOptions(typeof(ConsoleLoggerConfigurationExtensions).Assembly,
             typeof(SerilogExpression).Assembly))
     .Enrich.FromLogContext()
+    .WriteTo.OpenTelemetry()
     .WriteTo.Sink(logWidget)
 //    .MinimumLevel.Verbose()
     .CreateLogger();
@@ -36,5 +38,6 @@ builder.AddServiceDefaults();
 builder.Services.AddSingleton(logWidget);
 builder.Services.AddSingleton(builder.Configuration.GetSection("Window").Get<WindowConfig>() ?? new WindowConfig());
 
-var client = new ClientRunner(builder);
+var clientConfiguration = builder.Configuration.GetSection(nameof(ClientConfiguration)).Get<ClientConfiguration>();
+var client = new ClientRunner(builder, clientConfiguration);
 await client.RunAsync(builder.Build());

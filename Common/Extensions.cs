@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
 
@@ -12,31 +14,67 @@ namespace Common;
 // To learn more about using this project, see https://aka.ms/dotnet/aspire/service-defaults
 public static class Extensions
 {
-    public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
+    public static IHostApplicationBuilder AddServiceDefaults<TBuilder>(this TBuilder builder)
+        where TBuilder : IHostApplicationBuilder
     {
-        //builder.ConfigureOpenTelemetry();
+        builder.Services.AddServiceDiscovery();
         builder.Services.AddSerilog();
-        builder.Services.AddSingleton(TracerProvider.Default.GetTracer(""));
+
+        builder.ConfigureOpenTelemetry();
         return builder;
     }
 
-    public static IHostApplicationBuilder ConfigureOpenTelemetry(this IHostApplicationBuilder builder)
+    public static IHostApplicationBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder)
+        where TBuilder : IHostApplicationBuilder
     {
+        var serviceName = builder.Environment.ApplicationName + ".Service";
+        var serviceVersion = "1.0.0";
+
         builder.Logging.AddOpenTelemetry(logging =>
         {
             logging.IncludeFormattedMessage = true;
             logging.IncludeScopes = true;
+            logging.SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(
+                serviceName: serviceName,
+                serviceVersion: serviceVersion));
         });
 
+        builder.Services.AddSingleton(new Instrumentation(serviceName, serviceVersion));
+
         builder.Services.AddOpenTelemetry()
-            .WithMetrics().WithTracing().WithLogging();
+            .ConfigureResource(resource =>
+                resource.AddService(serviceName: serviceName, serviceVersion: serviceVersion))
+            .WithMetrics(metrics =>
+            {
+                metrics
+                    .AddMeter(serviceName)
+                    .AddAspNetCoreInstrumentation()
+                    .AddHttpClientInstrumentation()
+                    .AddRuntimeInstrumentation();
+            })
+            .WithTracing(tracing =>
+            {
+                tracing
+                    .AddSource(serviceName)
+                    .AddSource(builder.Environment.ApplicationName)
+                    .AddAspNetCoreInstrumentation(tracing =>
+                    {
+                        // Exclude health check requests from tracing
+                        // tracing.Filter = context => !context.Request.Path.StartsWithSegments(HealthEndpointPath) && !context.Request.Path.StartsWithSegments(AlivenessEndpointPath)
+                    })
+                    // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
+                    //.AddGrpcClientInstrumentation()
+                    .AddHttpClientInstrumentation();
+            })
+            .WithLogging();
 
         builder.AddOpenTelemetryExporters();
 
         return builder;
     }
 
-    private static IHostApplicationBuilder AddOpenTelemetryExporters(this IHostApplicationBuilder builder)
+    private static IHostApplicationBuilder AddOpenTelemetryExporters<TBuilder>(this TBuilder builder)
+        where TBuilder : IHostApplicationBuilder
     {
         var useOtlpExporter = !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
 
@@ -54,5 +92,4 @@ public static class Extensions
 
         return builder;
     }
-    
 }

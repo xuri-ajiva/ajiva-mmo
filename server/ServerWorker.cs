@@ -1,5 +1,9 @@
+using System.Diagnostics;
+using Common;
+using Common.Config;
 using Common.Networking;
 using NetworkPackets;
+using OpenTelemetry.Trace;
 using Riptide;
 
 namespace Server;
@@ -13,15 +17,18 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
 
     private readonly ILogger<ServerWorker> _logger;
     private readonly Riptide.Server _server;
+    private readonly Instrumentation _instrumentation;
     private readonly ServerConfiguration _configuration;
     private readonly ServerGameLogic _serverGameLogic;
 
-    public ServerWorker(ILogger<ServerWorker> logger, Riptide.Server server, ServerConfiguration configuration)
+    public ServerWorker(ILogger<ServerWorker> logger, Riptide.Server server, Instrumentation instrumentation,
+        ServerConfiguration configuration, ServerGameLogic serverGameLogic)
     {
         _logger = logger;
         _server = server;
+        _instrumentation = instrumentation;
         _configuration = configuration;
-        _serverGameLogic = new ServerGameLogic(_server);
+        _serverGameLogic = serverGameLogic;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -61,6 +68,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
         var lastUpdate = DateTime.Now;
         while (!cancellationToken.IsCancellationRequested)
         {
+            using var activity = _instrumentation.ActivitySource.StartActivity(ActivityKind.Server);
             var now = DateTime.Now;
             var delta = (f32)(now - lastUpdate).TotalSeconds;
             try
@@ -135,10 +143,4 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
     {
         _logger.LogWarning("Message not handled: {MessageType}", messageType);
     }
-}
-
-public class ServerConfiguration
-{
-    public ushort Port { get; set; }
-    public ushort MaxConnections { get; set; }
 }

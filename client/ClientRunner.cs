@@ -1,4 +1,5 @@
-﻿using Ajiva.Ecs;
+﻿using System.Diagnostics;
+using Ajiva.Ecs;
 using Client.Game;
 using Client.LayerSystem;
 using Client.Networking;
@@ -7,13 +8,19 @@ using Client.Renderer;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
+using Common;
+using Common.Config;
+using OpenTelemetry.Trace;
 
 namespace Client;
 
 public class ClientRunner
 {
-    public ClientRunner(HostApplicationBuilder builder)
+    private readonly ClientConfiguration? _clientConfiguration;
+
+    public ClientRunner(HostApplicationBuilder builder, ClientConfiguration? clientConfiguration)
     {
+        _clientConfiguration = clientConfiguration;
         var services = builder.Services;
 
         // Platform and core systems
@@ -54,11 +61,60 @@ public class ClientRunner
         using var scop = app.Services.CreateScope();
         var services = scop.ServiceProvider;
 
+        var logger = services.GetRequiredService<ILogger<ClientRunner>>();
+        var tracer = services.GetRequiredService<Instrumentation>();
         var platform = services.GetRequiredService<PlatformSystem>();
         platform.Init();
-
+        _ = Task.Run(() => RunAutoConnect(app, tracer, logger));
         await app.RunAsync();
 
         platform.Shotdown();
+    }
+
+    private async Task RunAutoConnect(IHost app, Instrumentation tracer, ILogger<ClientRunner> logger)
+    {
+        if (_clientConfiguration is not { AutoConnect: true, AutoConnectAddress: not null })
+            return;
+        
+        var client = app.Services.GetRequiredService<Riptide.Client>();
+
+        while (client.IsNotConnected)
+        {
+            using var span = tracer.ActivitySource.StartActivity(ActivityKind.Client);
+            try
+            {
+                span?.AddEvent(new ActivityEvent("Connecting to server", DateTimeOffset.Now));
+                await Task.Delay(1000);
+                logger.LogInformation("Connecting client to server on {ServerAddress}",
+                    _clientConfiguration.AutoConnectAddress);
+                client.Connect(_clientConfiguration.AutoConnectAddress.Replace("localhost", "127.0.0.1"));
+                while (client.IsConnecting)
+                {
+                    await Task.Delay(100);
+                }
+            }
+            catch (Exception e)
+            {
+                span?.AddException(e);
+                logger.LogError(e, "Failed to connect to server at {ServerAddress}",
+                    _clientConfiguration.AutoConnectAddress);
+                break;
+            }
+
+            if (client.IsConnected)
+            {
+                span?.AddEvent(new ActivityEvent(
+                    "Connected to server",
+                    DateTimeOffset.Now));
+                span?.SetStatus(ActivityStatusCode.Ok);
+            }
+            else
+            {
+                span?.AddEvent(new ActivityEvent(
+                    "Failed to connect to server",
+                    DateTimeOffset.Now));
+                span?.SetStatus(ActivityStatusCode.Error);
+            }
+        }
     }
 }

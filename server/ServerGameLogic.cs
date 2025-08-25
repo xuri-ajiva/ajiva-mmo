@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Numerics;
 using Ajiva.Ecs;
+using Common;
 using Common.Ecs;
 using Common.Networking;
 using Common.SpacialPartitioning;
@@ -13,6 +15,7 @@ public class ServerGameLogic
     private readonly ServerEcsWorld _world = new();
     private readonly SpatialGrid _spatialGrid = new(32);
     private readonly Riptide.Server _server;
+    private readonly Instrumentation _instrumentation;
     private readonly Dictionary<Connection, EntityId> _playerEntities = new();
     private readonly Dictionary<Connection, HashSet<EntityId>> _visibleEntities = new();
     private EntityId _rotatingEntity;
@@ -21,9 +24,10 @@ public class ServerGameLogic
     private string? _levelName;
     private const float UpdateRange = 64.0f; // Only send updates to clients within 32 units
 
-    public ServerGameLogic(Riptide.Server server)
+    public ServerGameLogic(Riptide.Server server, Instrumentation instrumentation)
     {
         _server = server;
+        _instrumentation = instrumentation;
         LoadLevel("Sponza");
     }
 
@@ -196,6 +200,9 @@ public class ServerGameLogic
 
     public void Update(float deltaTime)
     {
+        using var update =
+            _instrumentation.ActivitySource.StartActivity(ActivityKind.Server, Activity.Current?.Context ?? default);
+
         // Update rotating entity
         if (_world.HasVelocity(_rotatingEntity))
         {
@@ -216,6 +223,8 @@ public class ServerGameLogic
                 new EntityUpdatePacket((u32)_rotatingEntity.Value, transform),
                 MessageSendMode.Unreliable);
         }
+
+        update?.AddEvent(new ActivityEvent("Updated rotating entity"));
 
         // Update bouncing entities
         foreach (var entityId in _bouncingEntities)
@@ -248,6 +257,9 @@ public class ServerGameLogic
                 new EntityUpdatePacket((u32)entityId.Value, transform),
                 MessageSendMode.Unreliable);
         }
+
+        update?.AddEvent(new ActivityEvent("Updated bouncing entities"));
+
 
         float speed = 0.1f; // cycles per second (1 = full square per second)
         float squareSize = 10f; // size of square
@@ -303,11 +315,17 @@ public class ServerGameLogic
                 MessageSendMode.Unreliable);
         }
 
+        update?.AddEvent(new ActivityEvent("Updated sliding entities"));
+
         // Update spatial partitioning for moved entities
         UpdateSpatialPartitioning();
 
+        update?.AddEvent(new ActivityEvent("Updated spatial partitioning"));
+
         // Update player visibility based on spatial chunks
         UpdateAllPlayerVisibility();
+
+        update?.AddEvent(new ActivityEvent("Updated player visibility"));
     }
 
     private static T Lerp<T>(T a, T b, T t) where T : INumber<T> => a + (b - a) * t;
