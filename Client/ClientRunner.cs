@@ -18,12 +18,10 @@ namespace Client;
 
 public class ClientRunner
 {
-    private readonly ClientConfiguration? _clientConfiguration;
-
     public ClientRunner(IHostApplicationBuilder builder, ClientConfiguration? clientConfiguration)
     {
-        _clientConfiguration = clientConfiguration;
         var services = builder.Services;
+        services.AddSingleton(clientConfiguration ?? new ClientConfiguration());
 
         // Platform and core systems
         services.AddSingleton<PlatformSystem>();
@@ -82,58 +80,7 @@ public class ClientRunner
 
         var platform = services.GetRequiredService<PlatformSystem>();
         platform.Init();
-        _ = Task.Run(() => RunAutoConnect(app, instrumentation, logger));
         await app.RunAsync();
-
         platform.Shotdown();
-    }
-
-    private async Task RunAutoConnect(IHost app, Instrumentation tracer, ILogger<ClientRunner> logger)
-    {
-        if (_clientConfiguration is not { AutoConnect: true, AutoConnectAddress: not null })
-            return;
-
-        var client = app.Services.GetRequiredService<QClient>();
-        var handler = app.Services.GetRequiredService<ClientNetworkManager>();
-
-        while (!client.IsConnected)
-        {
-            using var span = tracer.ActivitySource.StartActivity(ActivityKind.Client);
-            try
-            {
-                span?.AddEvent(new ActivityEvent("Connecting to server", DateTimeOffset.Now));
-                await Task.Delay(1000);
-                logger.LogInformation("Connecting client to server on {ServerAddress}",
-                    _clientConfiguration.AutoConnectAddress);
-                await client.ConnectAsync(handler,
-                    _clientConfiguration.AutoConnectAddress.Replace("localhost", "127.0.0.1"));
-                while (client.State == ConnectionState.Connecting)
-                {
-                    await Task.Delay(100);
-                }
-            }
-            catch (Exception e)
-            {
-                span?.AddException(e);
-                logger.LogError(e, "Failed to connect to server at {ServerAddress}",
-                    _clientConfiguration.AutoConnectAddress);
-                break;
-            }
-
-            if (client.IsConnected)
-            {
-                span?.AddEvent(new ActivityEvent(
-                    "Connected to server",
-                    DateTimeOffset.Now));
-                span?.SetStatus(ActivityStatusCode.Ok);
-            }
-            else
-            {
-                span?.AddEvent(new ActivityEvent(
-                    "Failed to connect to server",
-                    DateTimeOffset.Now));
-                span?.SetStatus(ActivityStatusCode.Error);
-            }
-        }
     }
 }
