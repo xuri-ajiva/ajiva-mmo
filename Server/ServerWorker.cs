@@ -1,40 +1,35 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Net;
 using Common;
-using Common.Config;
 using Common.Networking;
 using NetworkPackets;
-using OpenTelemetry.Trace;
-using Riptide;
 
 namespace Server;
 
-public class ServerWorker : IHostedService, IUniversalMessageHandler
+public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection>, QServerEventListener
 {
-    private readonly Thread _serverTickTask, _serverUpdateTask;
+    private readonly Thread? _serverTickTask, _serverUpdateTask;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly CancellationTokenSource _stoppingCts;
 
     private readonly ILogger<ServerWorker> _logger;
-    private readonly Riptide.Server _server;
+    private readonly QServer _server;
     private readonly Instrumentation _instrumentation;
-    private readonly ServerConfiguration _configuration;
     private readonly ServerGameLogic _serverGameLogic;
 
-    public ServerWorker(ILogger<ServerWorker> logger, Riptide.Server server, Instrumentation instrumentation,
-        ServerConfiguration configuration, ServerGameLogic serverGameLogic)
+    public ServerWorker(ILogger<ServerWorker> logger, QServer server, Instrumentation instrumentation, ServerGameLogic serverGameLogic)
     {
         _logger = logger;
         _server = server;
         _instrumentation = instrumentation;
-        _configuration = configuration;
         _serverGameLogic = serverGameLogic;
         _stoppingCts = new CancellationTokenSource();
-        _serverTickTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "ServerUpdate",
+        /*_serverTickTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "ServerUpdate",
                 histogram: _instrumentation.Meter.CreateHistogram<f64>("server.update.duration",
                     unit: "ms", description: "Duration of server update"),
-                lockedAction: _ => _server.Update(), tps: 10f) // 100 ms interval equivalent
-        );
+                lockedAction: _ => _server.UpdateClients(), tps: 10f) // 100 ms interval equivalent
+        );*/
         _serverUpdateTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "GameTick",
             histogram: _instrumentation.Meter.CreateHistogram<f64>("server.tick.duration",
                 unit: "ms", description: "Duration of server tick"),
@@ -44,13 +39,9 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _server.MessageReceived += ServerOnMessageReceived;
-        _server.ClientConnected += ServerOnClientConnected;
-        _server.ClientDisconnected += ServerOnClientDisconnected;
-        _server.ConnectionFailed += ServerOnConnectionFailed;
-        _server.Start(_configuration.Port, _configuration.MaxConnections);
-        _serverUpdateTask.Start();
-        _serverTickTask.Start();
+        _server.Start(this, this);
+        _serverUpdateTask?.Start();
+        _serverTickTask?.Start();
         return Task.CompletedTask;
     }
 
@@ -100,32 +91,28 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
     }
 
 
-    private void ServerOnConnectionFailed(object? sender, ServerConnectionFailedEventArgs e)
+    public void OnClientDisconnected(QConnection connection)
     {
-        _logger.LogCritical("Server connection failed: {@Client}", e.Client);
+        _logger.LogInformation("Client disconnected: {Client}", connection);
+        _serverGameLogic.RemovePlayer(connection);
     }
 
-    private void ServerOnClientDisconnected(object? sender, ServerDisconnectedEventArgs e)
+    public void OnConnectionFailed(IPEndPoint? connection, Exception exception)
     {
-        _logger.LogInformation("Client disconnected: {@Client}", e.Client);
-        _serverGameLogic.RemovePlayer(e.Client);
+        _logger.LogCritical(exception, "Server connection failed: {@Client}", connection);
     }
 
-    private void ServerOnClientConnected(object? sender, ServerConnectedEventArgs e)
+    public void OnClientConnected(QConnection connection)
     {
-        _logger.LogInformation("Client connected: {@Client}", e.Client);
-        _serverGameLogic.SendWorldState(e.Client);
-        _serverGameLogic.CreatePlayerEntity(e.Client);
+        _logger.LogInformation("Client connected: {Client}", connection);
+        _serverGameLogic.SendWorldState(connection);
+        _serverGameLogic.CreatePlayerEntity(connection);
     }
-
-    private void ServerOnMessageReceived(object? sender, MessageReceivedEventArgs e)
-    {
-        this.HandleMessage(e.Message!);
-    }
+    
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        _server.Stop();
+        await _server.DisposeAsync();
 
         if (_serverUpdateTask is null && _serverTickTask is null)
             return;
@@ -142,12 +129,12 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler
         }
     }
 
-    public void Handle(EntityUpdatePacket message)
+    public void Handle(EntityUpdatePacket message, QConnection connection)
     {
         _serverGameLogic.HandleEntityUpdate(message);
     }
 
-    public void MessageNotHandled(string messageType)
+    public void MessageNotHandled(string messageType, QConnection connection)
     {
         _logger.LogWarning("Message not handled: {MessageType}", messageType);
     }

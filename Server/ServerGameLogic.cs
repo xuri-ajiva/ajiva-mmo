@@ -6,7 +6,6 @@ using Common.Ecs;
 using Common.Networking;
 using Common.SpacialPartitioning;
 using NetworkPackets;
-using Riptide;
 
 namespace Server;
 
@@ -14,16 +13,16 @@ public class ServerGameLogic
 {
     private readonly ServerEcsWorld _world = new();
     private readonly SpatialGrid _spatialGrid = new(32);
-    private readonly Riptide.Server _server;
-    private readonly Dictionary<Connection, EntityId> _playerEntities = new();
-    private readonly Dictionary<Connection, HashSet<EntityId>> _visibleEntities = new();
+    private readonly QServer _server;
+    private readonly Dictionary<QConnection, EntityId> _playerEntities = new();
+    private readonly Dictionary<QConnection, HashSet<EntityId>> _visibleEntities = new();
     private EntityId _rotatingEntity;
     private List<EntityId> _bouncingEntities = [];
     private List<EntityId> _slidingEntities = [];
     private string? _levelName;
     private const float UpdateRange = 64.0f; // Only send updates to clients within 32 units
 
-    public ServerGameLogic(Riptide.Server server)
+    public ServerGameLogic(QServer server)
     {
         _server = server;
         LoadLevel("Sponza");
@@ -142,7 +141,7 @@ public class ServerGameLogic
         }
     }
 
-    public void CreatePlayerEntity(Connection connection)
+    public void CreatePlayerEntity(QConnection connection)
     {
         var entity = _world.CreateEntity();
         var spawnPosition = new Vector3(0, 1, 0);
@@ -182,13 +181,13 @@ public class ServerGameLogic
         var rotation = _world.GetRotation(entity);
         var scale = _world.GetScale(entity);
 
-        SendToPlayersInRange(position.Value, position.Level,
-            new EntityCreatedPacket((u32)entity.Value, CreateTransformFromComponents(position, rotation, scale),
-                entityType.TypeId),
-            MessageSendMode.Reliable);
+        using (var msg = new EntityCreatedPacket((u32)entity.Value,
+                   CreateTransformFromComponents(position, rotation, scale), entityType.TypeId).ToMessage())
+            SendToPlayersInRange(position.Value, position.Level, msg);
 
         // Send assignment to the player
-        new EntityAssignedPacket((u32)entity.Value).Send(connection, MessageSendMode.Reliable);
+        using (var msg = new EntityAssignedPacket((u32)entity.Value).ToMessage())
+            connection.Send(msg);
 
         // Update visibility for this player
         UpdatePlayerVisibility(connection, entity);
@@ -216,10 +215,8 @@ public class ServerGameLogic
             var position = _world.GetPosition(_rotatingEntity);
             var scale = _world.GetScale(_rotatingEntity);
             var transform = CreateTransformFromComponents(position, rotation, scale);
-
-            SendToPlayersInRange(position.Value, position.Level,
-                new EntityUpdatePacket((u32)_rotatingEntity.Value, transform),
-                MessageSendMode.Unreliable);
+            using var msg = new EntityUpdatePacket((u32)_rotatingEntity.Value, transform).ToMessage();
+            SendToPlayersInRange(position.Value, position.Level, msg);
         }
 
         update?.AddEvent(new ActivityEvent("Updated rotating entity"));
@@ -251,10 +248,8 @@ public class ServerGameLogic
                 var rotation = _world.GetRotation(entityId);
                 var scale = _world.GetScale(entityId);
                 var transform = CreateTransformFromComponents(position, rotation, scale);
-
-                SendToPlayersInRange(position.Value, position.Level,
-                    new EntityUpdatePacket((u32)entityId.Value, transform),
-                    MessageSendMode.Unreliable);
+                using var msg = new EntityUpdatePacket((u32)entityId.Value, transform).ToMessage();
+                SendToPlayersInRange(position.Value, position.Level, msg);
             }
 
         update?.AddEvent(new ActivityEvent("Updated bouncing entities"));
@@ -310,9 +305,8 @@ public class ServerGameLogic
 
                 // Send updates
                 var transform = CreateTransformFromComponents(position, rotation, scale);
-                SendToPlayersInRange(position.Value, position.Level,
-                    new EntityUpdatePacket((u32)entityId.Value, transform),
-                    MessageSendMode.Unreliable);
+                using var msg = new EntityUpdatePacket((u32)entityId.Value, transform).ToMessage();
+                SendToPlayersInRange(position.Value, position.Level, msg);
             }
 
 
@@ -364,7 +358,7 @@ public class ServerGameLogic
         }
     }
 
-    private void UpdatePlayerVisibility(Connection connection, EntityId playerEntity)
+    private void UpdatePlayerVisibility(QConnection connection, EntityId playerEntity)
     {
         //if (!_playerEntities.TryGetValue(connection, out var playerEntity)) return;
         if (!_world.TryGetPosition(playerEntity, out var playerPosition)) return;
@@ -401,7 +395,7 @@ public class ServerGameLogic
                         var transform = CreateTransformFromComponents(entityPosition, rotation, scale);
 
                         new EntityCreatedPacket((u32)entityId.Value, transform, entityType.TypeId)
-                            .Send(connection, MessageSendMode.Reliable);
+                            .Send(connection);
                     }
                 }
             }
@@ -411,15 +405,16 @@ public class ServerGameLogic
         var noLongerVisible = visibleEntities.Except(newlyVisible).ToList();
         foreach (var entityId in noLongerVisible)
         {
-            new EntityDestroyedPacket((u32)entityId.Value).Send(connection, MessageSendMode.Reliable);
+            var entityDestroyedPacket = new EntityDestroyedPacket((u32)entityId.Value);
+            using var msg = entityDestroyedPacket.ToMessage();
+            ((IQConnection)connection).Send(msg);
         }
 
         // Update visibility set
         _visibleEntities[connection] = newlyVisible;
     }
 
-    private void SendToPlayersInRange<T>(Vector3 position, i32 level, T packet, MessageSendMode sendMode)
-        where T : IPacket
+    private void SendToPlayersInRange(Vector3 position, i32 level, SerializedMessage packet)
     {
         foreach (var (connection, playerEntity) in _playerEntities)
         {
@@ -433,15 +428,16 @@ public class ServerGameLogic
                 var distance = Vector3.Distance(playerPosition.Value, position);
                 if (distance <= UpdateRange)
                 {
-                    packet.Send(connection, sendMode);
+                    connection.Send(packet);
                 }
             }
         }
     }
 
-    public void SendWorldState(Connection connection)
+    public void SendWorldState(QConnection connection)
     {
-        new LoadLevelPacket(_levelName ?? "").Send(connection, MessageSendMode.Reliable);
+        using (var msg = new LoadLevelPacket(_levelName ?? "").ToMessage())
+            connection.Send(msg);
 
         if (!_playerEntities.TryGetValue(connection, out var playerEntity)) return;
         if (!_world.HasPosition(playerEntity)) return;
@@ -477,12 +473,12 @@ public class ServerGameLogic
         }
 
         new BeginWorldStatePacket((u32)entitiesInRange.Count)
-            .Send(connection, MessageSendMode.Reliable);
+            .Send(connection);
 
         foreach (var (entityId, transform, typeId) in entitiesInRange)
         {
             new EntityCreatedPacket((u32)entityId.Value, transform, typeId)
-                .Send(connection, MessageSendMode.Reliable);
+                .Send(connection);
         }
     }
 
@@ -518,10 +514,11 @@ public class ServerGameLogic
             }
         }
 
-        SendToPlayersInRange(position.Value, position.Level, message, MessageSendMode.Unreliable);
+        using var msg = new EntityUpdatePacket((u32)entity.Value, message.Transform).ToMessage();
+        SendToPlayersInRange(position.Value, position.Level, msg);
     }
 
-    public void RemovePlayer(Connection connection)
+    public void RemovePlayer(QConnection connection)
     {
         if (_playerEntities.TryGetValue(connection, out var playerEntity))
         {
@@ -541,9 +538,8 @@ public class ServerGameLogic
 
             // Notify other players in range
             var position = _world.HasPosition(playerEntity) ? _world.GetPosition(playerEntity) : new Position();
-            SendToPlayersInRange(position.Value, position.Level,
-                new EntityDestroyedPacket((u32)playerEntity.Value),
-                MessageSendMode.Reliable);
+            using var msg = new EntityDestroyedPacket((u32)playerEntity.Value).ToMessage();
+            SendToPlayersInRange(position.Value, position.Level, msg);
         }
     }
 
