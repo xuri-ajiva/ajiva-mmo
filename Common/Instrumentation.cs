@@ -26,23 +26,27 @@ public class Instrumentation : IDisposable
     public ActivitySource ActivitySource { get; }
     public Meter Meter { get; }
 
+    [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
     public Activity? StartActivity(ActivityKind? kind = null, IEnumerable<KeyValuePair<string, object?>>? tags = null,
         DateTimeOffset startTime = default, [CallerMemberName] string name = "")
         => ActivitySource.StartActivity(name, kind ?? Activity.Current?.Kind ?? ActivityKind.Internal,
             parentContext: Activity.Current?.Context ?? default, tags: tags,
             startTime: startTime);
 
+    [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
     public Activity? StartNamedActivity(string name, ActivityKind? kind = null,
         IEnumerable<KeyValuePair<string, object?>>? tags = null, DateTimeOffset startTime = default)
         => ActivitySource.StartActivity(name, kind ?? Activity.Current?.Kind ?? ActivityKind.Internal,
             parentContext: Activity.Current?.Context ?? default, tags: tags,
             startTime: startTime);
 
+    [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
     public static Activity? Trace(ActivityKind? kind = null,
         IEnumerable<KeyValuePair<string, object?>>? tags = null,
         DateTimeOffset startTime = default, [CallerMemberName] string name = "")
         => Instance?.StartActivity(name: name, kind: kind, tags: tags, startTime: startTime);
 
+    [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
     public static Activity? NamedTrace(string name, ActivityKind? kind = null,
         IEnumerable<KeyValuePair<string, object?>>? tags = null, DateTimeOffset startTime = default)
         => Instance?.StartActivity(name: name, kind: kind, tags: tags, startTime: startTime);
