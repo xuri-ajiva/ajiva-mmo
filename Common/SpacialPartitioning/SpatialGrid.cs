@@ -1,11 +1,12 @@
 ﻿using System.Numerics;
 using Interception;
-using Riptide;
+using MemoryPack;
 
 namespace Common.SpacialPartitioning;
 
 [ExcludeFromInterception]
-public struct ChunkCoord(i32 x, i32 y, i32 z, i32 level) : IMessageSerializable, IEquatable<ChunkCoord>
+[MemoryPackable]
+public partial struct ChunkCoord(i32 x, i32 y, i32 z, i32 level) : IEquatable<ChunkCoord>
 {
     public i32 X = x;
     public i32 Y = y;
@@ -33,22 +34,6 @@ public struct ChunkCoord(i32 x, i32 y, i32 z, i32 level) : IMessageSerializable,
             hash = hash * 31 + Level;
             return hash;
         }
-    }
-
-    public void Serialize(Message message)
-    {
-        message.AddUShort((ushort)X);
-        message.AddUShort((ushort)Y);
-        message.AddUShort((ushort)Z);
-        message.AddUShort((ushort)Level);
-    }
-
-    public void Deserialize(Message message)
-    {
-        X = message.GetUShort();
-        Y = message.GetUShort();
-        Z = message.GetUShort();
-        Level = message.GetUShort();
     }
 }
 
