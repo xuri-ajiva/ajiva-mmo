@@ -23,4 +23,12 @@ public static class NetworkGeneratorRules
         "NetworkPacket",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+    
+    public static readonly DiagnosticDescriptor UnsupportedFieldTypeRule = new(
+        "NET003", 
+        "Unsupported field type for network serialization",
+        "Field '{0}' in type '{1}' is of unsupported type '{2}' for network serialization",
+        "NetworkPacket",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

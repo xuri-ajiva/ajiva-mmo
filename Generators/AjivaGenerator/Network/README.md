@@ -83,12 +83,12 @@ using NetworkPackets; // Ensure this using directive is present
 var connection = /* your Riptide Connection object */;
 var entityCount = 10;
 new BeginWorldStatePacket(entityCount)
-    .Send(connection, MessageSendMode.Reliable); // Choose Reliable, Unreliable, or Notify
+    .Send(connection); // Choose Reliable, Unreliable, or Notify
 
 // Example of broadcasting a packet to all clients from the server
 var server = /* your Riptide Server object */;
 new EntityUpdatePacket(/*...args*/)
-    .SendToAll(server, MessageSendMode.Unreliable);
+    .SendToAll(server);
 ```
 
 ### 3. Consume Your Packet
@@ -100,23 +100,23 @@ using Riptide;
 using NetworkPackets; // Ensure this using directive is present
 using NetworkPackets.Generated; // For generated PacketType enum and HandleMessage extension
 
-public class MyMessageHandler : IUniversalMessageHandler
+public class MyMessageHandler : IUniversalMessageHandler<object>
 {
     // This method is called by Riptide when a message is received
     private void OnMessageReceived(object? sender, MessageReceivedEventArgs e)
     {
         // Call the generated HandleMessage extension method
-        this.HandleMessage(e.Message!);
+        this.HandleMessage(e.Message!, sender);
     }
 
     // Implement specific handlers for each packet type you want to process
-    public void Handle(BeginWorldStatePacket message)
+    public void Handle(BeginWorldStatePacket message, object sender)
     {
         // Logic to handle BeginWorldStatePacket
         Console.WriteLine($"Received BeginWorldStatePacket with {message.EntityCount} entities.");
     }
 
-    public void Handle(EntityCreatedPacket message)
+    public void Handle(EntityCreatedPacket message, object sender)
     {
         // Logic to handle EntityCreatedPacket
         Console.WriteLine($"Entity {message.EntityId} created at {message.Transform.Position}");
@@ -124,7 +124,7 @@ public class MyMessageHandler : IUniversalMessageHandler
 
     // If a specific Handle method is not implemented for a packet type,
     // the MessageNotHandled method will be called.
-    public void MessageNotHandled(Message message)
+    public void MessageNotHandled(Message message, object sender)
     {
         Console.WriteLine($"Received an unhandled message with ID: {message.GetUShort()}");
     }
