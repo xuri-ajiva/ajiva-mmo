@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Numerics;
 using Ajiva.Ecs;
@@ -14,7 +15,7 @@ public class ServerGameLogic
     private readonly ServerEcsWorld _world = new();
     private readonly SpatialGrid _spatialGrid = new(32);
     private readonly QServer _server;
-    private readonly Dictionary<QConnection, EntityId> _playerEntities = new();
+    private readonly ConcurrentDictionary<QConnection, EntityId> _playerEntities = new();
     private readonly Dictionary<QConnection, HashSet<EntityId>> _visibleEntities = new();
     private EntityId _rotatingEntity;
     private List<EntityId> _bouncingEntities = [];
@@ -68,12 +69,12 @@ public class ServerGameLogic
         _spatialGrid.MoveEntity(_rotatingEntity.Value, Vector3.Zero, 0, pos.Value, pos.Level);
 
         // Create some static test entities
-        for (var i = 0; i < 30; i++)
+        for (var i = 0; i < 200; i++)
         {
-            for (var j = 0; j < 30; j++)
+            for (var j = 0; j < 200; j++)
             {
                 var entity = _world.CreateEntity();
-                var position = new Vector3(i * 2, (f32.Cos(i * 0.1f) + f32.Sin(j * 0.1f) + 2) * 5, j * 2);
+                var position = new Vector3(i, (f32.Cos(i * 0.1f) + f32.Sin(j * 0.1f) + 2) * 3, j);
 
                 _world.AddPosition(entity, new Position
                 {
@@ -533,7 +534,7 @@ public class ServerGameLogic
             _world.DeleteEntity(playerEntity);
 
             // Clean up tracking
-            _playerEntities.Remove(connection);
+            _playerEntities.TryRemove(connection, out var playerEntityId);
             _visibleEntities.Remove(connection);
 
             // Notify other players in range

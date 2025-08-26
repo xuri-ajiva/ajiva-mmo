@@ -585,7 +585,7 @@ public class Instanced3dDeferredRenderer(
             var hi = 0;
             foreach (var buffer in _dynamicMeshes.OpaqueMeshes)
             {
-                for (var i = 0; i < buffer.InstanceInfos.Length; i++)
+                for (var i = 0; i < buffer.InstanceInfos.Length && i < 100; i++)
                 {
                     ref var instance = ref buffer.InstanceInfos[i];
                     ImGui.Text($"Instance {hi}");

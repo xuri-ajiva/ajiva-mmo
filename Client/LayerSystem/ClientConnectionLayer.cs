@@ -30,6 +30,7 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
     private string _address = "127.0.0.1:7777";
     private bool _enabled = true;
 
+    [ExcludeFromInterception]
     public void RenderUi(UpdateInfo info)
     {
         ImGui.Begin("Client Connection");
@@ -38,6 +39,10 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
         ImGui.Text($"Status: {networkManager.State.ToString()}");
         ImGui.SameLine();
         ImGui.Text($"RoundTrip: {networkManager.LastRtt}");
+        ImGui.Text($"RenderVersion: {gameLogic.RenderEntityVersion}");
+        ImGui.SameLine();
+        ImGui.Text($"EnitityCount: {gameLogic.EntityCount}");
+        
         if (networkManager.IsNotConnected)
         {
             ImGui.InputText("Address", ref _address, 100);
@@ -77,7 +82,7 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
         ImGui.Separator();
 
         // Entity list
-        ImGui.Text("Entities:");
+        ImGui.Text("Entities (first 200):");
         if (ImGui.BeginTable("entityTable", 6, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable))
         {
             ImGui.TableSetupColumn("ECS", ImGuiTableColumnFlags.WidthFixed, 50);
@@ -88,7 +93,7 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
             ImGui.TableSetupColumn("Scale");
             ImGui.TableHeadersRow();
 
-            foreach (var entityId in gameLogic.GetAllEntities())
+            foreach (var entityId in gameLogic.GetAllEntities().Take(200))
             {
                 var networkId = gameLogic.GetNetworkId(entityId);
 

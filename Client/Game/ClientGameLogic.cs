@@ -4,6 +4,7 @@ using Ajiva.Ecs;
 using Client.Renderer;
 using Common.Ecs;
 using Common.Networking;
+using Interception;
 
 namespace Client.Game;
 
@@ -16,7 +17,6 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, ILogger<ClientGa
     private readonly Scene _scene = scene;
     private readonly Dictionary<u32, EntityId> _networkToEcs = new();
     private readonly Dictionary<EntityId, u32> _ecsToNetwork = new();
-    private readonly Dictionary<EntityId, long> _staleEntities = new();
     private readonly ClientEcsWorld _world = world;
     public u64 RenderEntityVersion { get; private set; } = 0;
 
@@ -24,6 +24,7 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, ILogger<ClientGa
     public EntityId? LocalPlayerEntityId { get; private set; }
 
     public ClientEcsWorld World => _world;
+    public int EntityCount => _networkToEcs.Count;
 
     public void SetLocalPlayerEntityId(u32 networkEntityId)
     {
@@ -133,6 +134,7 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, ILogger<ClientGa
     /// <summary>
     /// Get the network ID for an ECS entity (for sending updates to server)
     /// </summary>
+    [ExcludeFromInterception]
     public u32? GetNetworkId(EntityId ecsEntity)
     {
         return _ecsToNetwork.TryGetValue(ecsEntity, out var networkId) ? networkId : null;
