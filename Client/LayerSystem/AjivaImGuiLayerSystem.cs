@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Reflection;
 using Client.Platform;
 using Client.Renderer;
+using Common;
 using ImGuiNET;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU;
@@ -143,6 +144,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     public void Render(UpdateInfo info)
     {
         if (!_attatched) return;
+        using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Client);
 
         var window = _window.Window;
         var surface = _window.Surface;
@@ -182,10 +184,13 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
         ImGui.PushFont(_quicksandFont);
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
+        using (Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Queue"))
         using (var guard = _api.EnterQueue())
         {
             foreach (var layer in Layers)
             {
+                using var layers =
+                    Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: layer.GetType().ToString());
                 if (!layer.Enabled) continue;
 
                 // ReSharper disable once ConvertIfStatementToSwitchStatement
@@ -223,6 +228,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
             guard.Queue.Submit(cmd.Finish());
         }
 
+        using var present = Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Presenting");
         surface.Present();
     }
 
