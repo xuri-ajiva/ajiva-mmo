@@ -18,8 +18,7 @@ public class QClient
 {
     private readonly QuicClientConnectionOptions _options;
     private readonly ILogger<QClient> _logger;
-    private QConnection? _connection;
-    private readonly CancellationTokenSource _cts = new();
+    private CancellationTokenSource? _cts;
 
     public QClient(QuicClientConnectionOptions options, ILogger<QClient> logger)
     {
@@ -30,12 +29,14 @@ public class QClient
     public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
     public bool IsConnected => State == ConnectionState.Connected;
     public bool IsNotConnected => !IsConnected;
-    public QConnection? Connection => _connection;
+    public QConnection? Connection { get; private set; }
 
     [ExcludeFromInterception]
     public async ValueTask ConnectAsync(IUniversalMessageHandler<QConnection> handler, string? ipEndpoint = null,
         CancellationToken token = default)
     {
+        if (State != ConnectionState.Disconnected) return;
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(token);
         if (ipEndpoint is not null)
             _options.RemoteEndPoint =
                 IPEndPoint.Parse(ipEndpoint.TrimStart("http://").TrimStart("https://").TrimStart("udp://"));
@@ -45,8 +46,8 @@ public class QClient
         {
             State = ConnectionState.Connecting;
             var connection = await QuicConnection.ConnectAsync(_options, _cts.Token);
-            _connection = await QConnectionEstablisher.Client(connection, _cts.Token);
-            _connection?.Update(handler);
+            Connection = await QConnectionEstablisher.Client(connection, _cts.Token);
+            Connection?.Update(handler);
 
             State = ConnectionState.Connected;
         }
@@ -60,10 +61,13 @@ public class QClient
 
     public async Task DisconnectAsync()
     {
-        if (State != ConnectionState.Connected || _connection is null)
+        if (State != ConnectionState.Connected || Connection is null)
             State = ConnectionState.Disconnecting;
         _logger.LogInformation("Disconnecting from server at {EndPoint}", _options.RemoteEndPoint);
-        await _connection.Connection.DisposeAsync();
+        if (_cts is not null)
+            await _cts.CancelAsync();
+        if (Connection is not null)
+            await Connection.Connection.DisposeAsync();
         State = ConnectionState.Disconnected;
     }
 }
