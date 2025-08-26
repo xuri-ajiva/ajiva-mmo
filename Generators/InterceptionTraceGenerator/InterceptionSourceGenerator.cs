@@ -35,7 +35,7 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
 
              namespace {Namespace};
              [AttributeUsage(AttributeTargets.All, Inherited = false, AllowMultiple = false)]
-             internal sealed class ExcludeFromInterception : Attribute;
+             public sealed partial class ExcludeFromInterception : Attribute;
              """));
 
         var provider = context.SyntaxProvider
@@ -118,6 +118,9 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
 
             foreach (var containingSyntax in invocation.Ancestors().OfType<MethodDeclarationSyntax>())
             {
+                if (containingSyntax.AttributeLists.SelectMany(x => x.Attributes)
+                    .Select(x => x.Name.ToString()).Any(CheckAttributName))
+                    goto superbreak; // Skip calls within methods with ExcludeFromInterception
                 if (containingSyntax?.TypeParameterList != null)
                     goto superbreak; // Skip calls within generic methods
             }
