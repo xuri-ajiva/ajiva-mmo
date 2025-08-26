@@ -1,4 +1,6 @@
 ﻿using System.Diagnostics;
+using System.Net.Quic;
+using System.Net.Security;
 using Ajiva.Ecs;
 using Client.Game;
 using Client.LayerSystem;
@@ -10,8 +12,7 @@ using Client.Renderer.Resources;
 using Client.Wgsl;
 using Common;
 using Common.Config;
-using Microsoft.AspNetCore.Builder;
-using OpenTelemetry.Trace;
+using Common.Networking;
 
 namespace Client;
 
@@ -49,7 +50,20 @@ public class ClientRunner
         services.AddService<ShaderReloadManager, IShaderManager>();
 
         // Riptide client
-        services.AddSingleton<Riptide.Client>();
+        services.AddSingleton<QClient>();
+        services.AddSingleton(new QuicClientConnectionOptions
+        {
+            DefaultCloseErrorCode = 12332, DefaultStreamErrorCode = 14323,
+            ClientAuthenticationOptions = new SslClientAuthenticationOptions
+            {
+                ApplicationProtocols = [new SslApplicationProtocol("ice-rpc")],
+                RemoteCertificateValidationCallback = (sender, certificate, chain, errors) => true
+            },
+            IdleTimeout = TimeSpan.FromHours(1),
+            HandshakeTimeout = TimeSpan.FromMinutes(1),
+            MaxInboundBidirectionalStreams = 99,
+            MaxInboundUnidirectionalStreams = 99,
+        });
 
         // Background services
         services.AddHostedService<Application>();
@@ -79,9 +93,10 @@ public class ClientRunner
         if (_clientConfiguration is not { AutoConnect: true, AutoConnectAddress: not null })
             return;
 
-        var client = app.Services.GetRequiredService<Riptide.Client>();
+        var client = app.Services.GetRequiredService<QClient>();
+        var handler = app.Services.GetRequiredService<ClientNetworkManager>();
 
-        while (client.IsNotConnected)
+        while (!client.IsConnected)
         {
             using var span = tracer.ActivitySource.StartActivity(ActivityKind.Client);
             try
@@ -90,8 +105,9 @@ public class ClientRunner
                 await Task.Delay(1000);
                 logger.LogInformation("Connecting client to server on {ServerAddress}",
                     _clientConfiguration.AutoConnectAddress);
-                client.Connect(_clientConfiguration.AutoConnectAddress.Replace("localhost", "127.0.0.1"));
-                while (client.IsConnecting)
+                await client.ConnectAsync(handler,
+                    _clientConfiguration.AutoConnectAddress.Replace("localhost", "127.0.0.1"));
+                while (client.State == ConnectionState.Connecting)
                 {
                     await Task.Delay(100);
                 }

@@ -1,10 +1,12 @@
-﻿using System.Numerics;
+﻿using System.Diagnostics;
+using System.Net.Quic;
+using System.Numerics;
 using Client.Game;
 using Client.Renderer;
+using Common;
 using Common.Ecs;
 using Common.Networking;
 using NetworkPackets;
-using Riptide;
 
 namespace Client.Networking;
 
@@ -12,67 +14,66 @@ namespace Client.Networking;
 /// Clean network manager that handles all client-server communication
 /// Separates networking concerns from UI and game logic
 /// </summary>
-public class ClientNetworkManager : BackgroundService, IUniversalMessageHandler, IDisposable
+public class ClientNetworkManager(
+    ILogger<ClientNetworkManager> logger,
+    QClient client,
+    ClientGameLogic gameLogic,
+    Instrumentation instrumentation)
+    : BackgroundService, IUniversalMessageHandler<QConnection>, IDisposable
 {
-    private readonly ILogger<ClientNetworkManager> _logger;
-    private readonly Riptide.Client _client;
-    private readonly ClientGameLogic _gameLogic;
-
-    public ClientNetworkManager(ILogger<ClientNetworkManager> logger, Riptide.Client client, ClientGameLogic gameLogic)
-    {
-        _logger = logger;
-        _client = client;
-        _gameLogic = gameLogic;
-
-        _client.MessageReceived += OnMessageReceived;
-    }
+    public ConnectionState State => client.State;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            Update();
             try
             {
+                await Update();
                 await Task.Delay(5, cancellationToken: stoppingToken); // ~200 FPS update rate
             }
             catch (OperationCanceledException)
             {
                 break;
             }
+            catch (Exception e)
+            {
+                logger.LogError(e, "Error in ClientNetworkManager ExecuteAsync!");
+            }
         }
     }
 
-    private void OnMessageReceived(object? sender, MessageReceivedEventArgs e)
+    public void Handle(EntityCreatedPacket message, QConnection connection)
     {
-        this.HandleMessage(e.Message!);
+        gameLogic.HandleEntityCreated(message);
     }
 
-    public void Handle(EntityCreatedPacket message)
+    public void Handle(EntityUpdatePacket message, QConnection connection)
     {
-        _gameLogic.HandleEntityCreated(message);
+        gameLogic.HandleEntityUpdate(message);
     }
 
-    public void Handle(EntityUpdatePacket message)
+    public void Handle(EntityDestroyedPacket message, QConnection connection)
     {
-        _gameLogic.HandleEntityUpdate(message);
+        gameLogic.HandleEntityDestroyed(message);
     }
 
-    public void Handle(EntityDestroyedPacket message)
+    public void Handle(BeginWorldStatePacket message, QConnection connection)
     {
-        _gameLogic.HandleEntityDestroyed(message);
+        logger.LogInformation("Beginning to receive world state for {entityCount} entities.", message.EntityCount);
+        gameLogic.HandleBeginWorldState(message);
     }
 
-    public void Handle(BeginWorldStatePacket message)
+    public void Handle(LoadLevelPacket message, QConnection connection)
     {
-        _logger.LogInformation("Beginning to receive world state for {entityCount} entities.", message.EntityCount);
-        _gameLogic.HandleBeginWorldState(message);
+        logger.LogInformation("Loading level: {levelName}", message.LevelName);
+        gameLogic.LoadLevel(message.LevelName);
     }
 
-    public void Handle(LoadLevelPacket message)
+    public void Handle(EntityAssignedPacket message, QConnection connection)
     {
-        _logger.LogInformation("Loading level: {levelName}", message.LevelName);
-        _gameLogic.LoadLevel(message.LevelName);
+        gameLogic.SetLocalPlayerEntityId(message.EntityId);
+        logger.LogInformation("Assigned local player entity ID: {EntityId}", message.EntityId);
     }
 
     public TimeSpan LastRtt = TimeSpan.Zero;
@@ -83,46 +84,56 @@ public class ClientNetworkManager : BackgroundService, IUniversalMessageHandler,
         LastRtt = Stopwatch.GetElapsedTime(message.Timestamp, now);
     }
 
-    public void MessageNotHandled(string messageType)
+    public void MessageNotHandled(string messageType, QConnection connection)
     {
-        _logger.LogWarning("Message not handled: {MessageType}", messageType);
+        logger.LogWarning("Message not handled: {MessageType}", messageType);
     }
 
 
     public void Connect(string address)
     {
-        if (_client.IsNotConnected)
+        if (client.IsNotConnected)
         {
-            _client.Connect(address);
+            Task.Run(() => client.ConnectAsync(this, address));
         }
     }
 
     public void Disconnect()
     {
-        if (!_client.IsNotConnected)
+        if (!client.IsNotConnected)
         {
-            _client.Disconnect();
+            Task.Run(client.DisconnectAsync);
         }
     }
 
-    public void Update()
+    public async Task Update()
     {
-        if (_client.IsNotConnected) return;
+        if (client.IsNotConnected) return;
 
         try
         {
-            _client.Update();
+            //using var activity = instrumentation.StartActivity(ActivityKind.Client);
+            //Instrumentation.Instance = instrumentation;
+            //await client.Update(this);
+            //Instrumentation.Instance = null;
+        }
+        catch (OperationCanceledException)
+        {
+            await client.DisconnectAsync();
+        }
+        catch (QuicException e)
+        {
+            logger.LogError(e, "QuicException in Client Update, disconnecting.");
+            await client.DisconnectAsync();
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Error in Client Update!");
+            logger.LogError(e, "Error in Client Update!");
         }
     }
 
-    public bool IsConnected => _client.IsConnected;
-    public bool IsNotConnected => _client.IsNotConnected;
-    public ConnectionState? State => _client.State;
-    public Connection? Connection => _client.Connection;
+    public bool IsConnected => client.IsConnected;
+    public bool IsNotConnected => client.IsNotConnected;
 
     /// <summary>
     /// Send entity update to server (called by player input system)
@@ -139,12 +150,11 @@ public class ClientNetworkManager : BackgroundService, IUniversalMessageHandler,
         };
 
         new EntityUpdatePacket(networkEntityId, transform)
-            .Send(_client.Connection!, MessageSendMode.Unreliable);
+            .Send(client.Connection!);
     }
 
     public override void Dispose()
     {
-        _client.MessageReceived -= OnMessageReceived;
         Disconnect();
         base.Dispose();
     }
