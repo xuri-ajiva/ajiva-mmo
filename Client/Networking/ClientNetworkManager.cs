@@ -75,10 +75,12 @@ public class ClientNetworkManager : BackgroundService, IUniversalMessageHandler,
         _gameLogic.LoadLevel(message.LevelName);
     }
 
-    public void Handle(EntityAssignedPacket message)
+    public TimeSpan LastRtt = TimeSpan.Zero;
+
+    public void Handle(PingPacket message, QConnection userData)
     {
-        _gameLogic.SetLocalPlayerEntityId(message.EntityId);
-        _logger.LogInformation("Assigned local player entity ID: {EntityId}", message.EntityId);
+        var now = Stopwatch.GetTimestamp();
+        LastRtt = Stopwatch.GetElapsedTime(message.Timestamp, now);
     }
 
     public void MessageNotHandled(string messageType)

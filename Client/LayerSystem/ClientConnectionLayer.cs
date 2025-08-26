@@ -35,7 +35,9 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
         ImGui.Begin("Client Connection");
         
         // Connection status and controls
-        ImGui.Text($"Status: {networkManager.State?.ToString()}");
+        ImGui.Text($"Status: {networkManager.State.ToString()}");
+        ImGui.SameLine();
+        ImGui.Text($"RoundTrip: {networkManager.LastRtt}");
         if (networkManager.IsNotConnected)
         {
             ImGui.InputText("Address", ref _address, 100);

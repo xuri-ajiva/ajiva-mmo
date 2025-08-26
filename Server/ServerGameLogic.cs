@@ -359,6 +359,8 @@ public class ServerGameLogic
         foreach (var kv in _playerEntities)
         {
             UpdatePlayerVisibility(kv.Key, kv.Value);
+
+            new PingPacket(Stopwatch.GetTimestamp()).Send(kv.Key);
         }
     }
 

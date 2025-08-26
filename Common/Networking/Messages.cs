@@ -3,6 +3,10 @@ using NetworkPackets;
 
 namespace Common.Networking;
 
+[NetworkPacket(10)]
+[MemoryPackable]
+public partial struct PingPacket(i64 timestamp);
+
 [NetworkPacket(300)]
 public partial struct BeginWorldStatePacket(u32 entityCount);
 
