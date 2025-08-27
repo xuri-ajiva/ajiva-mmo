@@ -18,10 +18,21 @@ public class ServerGameLogic
     private readonly ConcurrentDictionary<QConnection, EntityId> _playerEntities = new();
     private readonly Dictionary<QConnection, HashSet<EntityId>> _visibleEntities = new();
     private EntityId _rotatingEntity;
-    private List<EntityId> _bouncingEntities = [];
-    private List<EntityId> _slidingEntities = [];
+    private readonly List<EntityId> _bouncingEntities = [];
+    private readonly List<EntityId> _slidingEntities = [];
     private string? _levelName;
-    private const float UpdateRange = 64.0f; // Only send updates to clients within 32 units
+    private const f32 MaxUpdateRange = 128.0f;
+    private const f32 MinUpdateRange = 32.0f;
+    private f32 _currentUpdateRange = MinUpdateRange;
+    private int _rangeStep;
+    private const int MaxRangeSteps = 100;
+
+    private void UpdateUpdateRange()
+    {
+        var t = (f32)_rangeStep / MaxRangeSteps; // 0..1
+        _currentUpdateRange = MinUpdateRange * MathF.Pow(MaxUpdateRange / MinUpdateRange, t);
+        _rangeStep = (_rangeStep + 1) % (MaxRangeSteps + 1);
+    }
 
     public ServerGameLogic(QServer server)
     {
@@ -194,35 +205,89 @@ public class ServerGameLogic
         UpdatePlayerVisibility(connection, entity);
     }
 
-    private float _progress = 0.0f;
-
-    public void Update(float deltaTime)
+    public void Update(f32 deltaTime)
     {
         using var update = Instrumentation.Trace(ActivityKind.Server);
 
-        // Update rotating entity
-        if (_world.HasVelocity(_rotatingEntity))
-        {
-            using var act = Instrumentation.NamedTrace("Velocity");
-            ref var rotation = ref _world.GetRotation(_rotatingEntity);
-            var velocity = _world.GetVelocity(_rotatingEntity);
+        UpdateUpdateRange();
 
-            // Apply angular velocity
-            var angularRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, velocity.Angular.Y * deltaTime);
-            rotation.Value *= angularRotation;
-            //rotation.Value = Quaternion.Normalize(rotation.Value);
-
-            // Send updates to players in range
-            var position = _world.GetPosition(_rotatingEntity);
-            var scale = _world.GetScale(_rotatingEntity);
-            var transform = CreateTransformFromComponents(position, rotation, scale);
-            using var msg = new EntityUpdatePacket((u32)_rotatingEntity.Value, transform).ToMessage();
-            SendToPlayersInRange(position.Value, position.Level, msg);
-        }
-
-        update?.AddEvent(new ActivityEvent("Updated rotating entity"));
+        RotateEntity(deltaTime);
 
         // Update bouncing entities
+        UpdateBouncing(deltaTime);
+
+        UpdateSliding(deltaTime);
+
+        // Update spatial partitioning for moved entities
+        using (var act = Instrumentation.NamedTrace("SpatialPartitioning"))
+            UpdateSpatialPartitioning();
+
+        // Update player visibility based on spatial chunks
+        using (var act = Instrumentation.NamedTrace("PlayerVisibility"))
+            UpdateAllPlayerVisibility();
+    }
+
+    private f32 _progress;
+
+    private void UpdateSliding(f32 deltaTime)
+    {
+        f32 speed = 0.1f; // cycles per second (1 = full square per second)
+        f32 squareSize = 10f; // size of square
+        // Advance progress
+        _progress = (_progress + speed * deltaTime) % 1f;
+        using (var act = Instrumentation.NamedTrace("Sliding"))
+            foreach (var entityId in _slidingEntities)
+            {
+                if (!_world.HasPosition(entityId) || !_world.HasScale(entityId) || !_world.HasRotation(entityId))
+                    continue;
+
+                var progress = (_progress + (entityId.Value % 8) * 0.25f) % 1.0f;
+
+                // Determine position along square perimeter
+                Vector3 pos;
+                if (progress < 0.25f) // bottom edge → right
+                {
+                    f32 t = progress / 0.25f;
+                    pos = new Vector3(Lerp(-squareSize, squareSize, t), 0, -squareSize);
+                }
+                else if (progress < 0.5f) // right edge → up
+                {
+                    f32 t = (progress - 0.25f) / 0.25f;
+                    pos = new Vector3(squareSize, 0, Lerp(-squareSize, squareSize, t));
+                }
+                else if (progress < 0.75f) // top edge → left
+                {
+                    f32 t = (progress - 0.5f) / 0.25f;
+                    pos = new Vector3(Lerp(squareSize, -squareSize, t), 0, squareSize);
+                }
+                else // left edge → down
+                {
+                    f32 t = (progress - 0.75f) / 0.25f;
+                    pos = new Vector3(-squareSize, 0, Lerp(squareSize, -squareSize, t));
+                }
+
+                // Example: scale changes from 0.5x at left to 2x at right
+                f32 scaleFactor = Lerp(0.5f, 2f, (pos.X + squareSize) / (squareSize * 2));
+
+                // Update ECS components
+                ref var position = ref _world.GetPosition(entityId);
+                position.Value = pos;
+
+                ref var scale = ref _world.GetScale(entityId);
+                scale.Value = new Vector3(scaleFactor);
+
+                ref var rotation = ref _world.GetRotation(entityId);
+                rotation.Value = Quaternion.Identity; // keep upright
+
+                // Send updates
+                var transform = CreateTransformFromComponents(position, rotation, scale);
+                using var msg = new EntityUpdatePacket((u32)entityId.Value, transform).ToMessage();
+                SendToPlayersInRange(position.Value, position.Level, msg);
+            }
+    }
+
+    private void UpdateBouncing(f32 deltaTime)
+    {
         using (var act = Instrumentation.NamedTrace("Bouncing"))
             foreach (var entityId in _bouncingEntities)
             {
@@ -252,73 +317,27 @@ public class ServerGameLogic
                 using var msg = new EntityUpdatePacket((u32)entityId.Value, transform).ToMessage();
                 SendToPlayersInRange(position.Value, position.Level, msg);
             }
+    }
 
-        update?.AddEvent(new ActivityEvent("Updated bouncing entities"));
+    private void RotateEntity(f32 deltaTime)
+    {
+        if (!_world.HasVelocity(_rotatingEntity)) return;
 
+        using var act = Instrumentation.NamedTrace("Velocity");
+        ref var rotation = ref _world.GetRotation(_rotatingEntity);
+        var velocity = _world.GetVelocity(_rotatingEntity);
 
-        float speed = 0.1f; // cycles per second (1 = full square per second)
-        float squareSize = 10f; // size of square
-        // Advance progress
-        _progress = (_progress + speed * deltaTime) % 1f;
-        using (var act = Instrumentation.NamedTrace("Sliding"))
-            foreach (var entityId in _slidingEntities)
-            {
-                if (!_world.HasPosition(entityId) || !_world.HasScale(entityId) || !_world.HasRotation(entityId))
-                    continue;
+        // Apply angular velocity
+        var angularRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, velocity.Angular.Y * deltaTime);
+        rotation.Value *= angularRotation;
+        //rotation.Value = Quaternion.Normalize(rotation.Value);
 
-                var progress = (_progress + (entityId.Value % 8) * 0.25f) % 1.0f;
-
-                // Determine position along square perimeter
-                Vector3 pos;
-                if (progress < 0.25f) // bottom edge → right
-                {
-                    float t = progress / 0.25f;
-                    pos = new Vector3(Lerp(-squareSize, squareSize, t), 0, -squareSize);
-                }
-                else if (progress < 0.5f) // right edge → up
-                {
-                    float t = (progress - 0.25f) / 0.25f;
-                    pos = new Vector3(squareSize, 0, Lerp(-squareSize, squareSize, t));
-                }
-                else if (progress < 0.75f) // top edge → left
-                {
-                    float t = (progress - 0.5f) / 0.25f;
-                    pos = new Vector3(Lerp(squareSize, -squareSize, t), 0, squareSize);
-                }
-                else // left edge → down
-                {
-                    float t = (progress - 0.75f) / 0.25f;
-                    pos = new Vector3(-squareSize, 0, Lerp(squareSize, -squareSize, t));
-                }
-
-                // Example: scale changes from 0.5x at left to 2x at right
-                float scaleFactor = Lerp(0.5f, 2f, (pos.X + squareSize) / (squareSize * 2));
-
-                // Update ECS components
-                ref var position = ref _world.GetPosition(entityId);
-                position.Value = pos;
-
-                ref var scale = ref _world.GetScale(entityId);
-                scale.Value = new Vector3(scaleFactor);
-
-                ref var rotation = ref _world.GetRotation(entityId);
-                rotation.Value = Quaternion.Identity; // keep upright
-
-                // Send updates
-                var transform = CreateTransformFromComponents(position, rotation, scale);
-                using var msg = new EntityUpdatePacket((u32)entityId.Value, transform).ToMessage();
-                SendToPlayersInRange(position.Value, position.Level, msg);
-            }
-
-
-        // Update spatial partitioning for moved entities
-        using (var act = Instrumentation.NamedTrace("SpatialPartitioning"))
-            UpdateSpatialPartitioning();
-
-
-        // Update player visibility based on spatial chunks
-        using (var act = Instrumentation.NamedTrace("PlayerVisibility"))
-            UpdateAllPlayerVisibility();
+        // Send updates to players in range
+        var position = _world.GetPosition(_rotatingEntity);
+        var scale = _world.GetScale(_rotatingEntity);
+        var transform = CreateTransformFromComponents(position, rotation, scale);
+        using var msg = new EntityUpdatePacket((u32)_rotatingEntity.Value, transform).ToMessage();
+        SendToPlayersInRange(position.Value, position.Level, msg);
     }
 
     private static T Lerp<T>(T a, T b, T t) where T : INumber<T> => a + (b - a) * t;
@@ -379,7 +398,7 @@ public class ServerGameLogic
             if (entityPosition.Level == playerPosition.Level)
             {
                 var distance = Vector3.Distance(playerPosition.Value, entityPosition.Value);
-                if (distance <= UpdateRange)
+                if (distance <= MaxUpdateRange)
                 {
                     newlyVisible.Add(entityId);
 
@@ -427,7 +446,7 @@ public class ServerGameLogic
             if (playerPosition.Level == level)
             {
                 var distance = Vector3.Distance(playerPosition.Value, position);
-                if (distance <= UpdateRange)
+                if (distance <= _currentUpdateRange)
                 {
                     connection.Send(packet);
                 }
@@ -457,7 +476,7 @@ public class ServerGameLogic
             if (entityPosition.Level == playerPosition.Level)
             {
                 var distance = Vector3.Distance(playerPosition.Value, entityPosition.Value);
-                if (distance <= UpdateRange)
+                if (distance <= MaxUpdateRange)
                 {
                     var entityType = _world.GetEntityType(entityId);
                     var rotation = _world.HasRotation(entityId)
