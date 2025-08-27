@@ -5,26 +5,25 @@ using NetworkPackets;
 
 namespace Common.Networking;
 
-public class QConnection(QuicConnection connection, QStream primary, QStream secondary, CancellationToken token)
+public class QConnection(QuicConnection connection, QStream primary, QStream secondary, CancellationTokenSource ctx)
     : IQConnection, IAsyncDisposable
 {
-    public QuicConnection Connection { get; } = connection;
-    private Thread? _primary, _secondary;
+    private readonly List<Thread> _threads = [];
 
     [ExcludeFromInterception]
     public void Update(IUniversalMessageHandler<QConnection> handler)
     {
-        _primary = RunThreadLoop(() => primary.Flush(token));
-        _secondary = RunThreadLoop(() => secondary.Flush(token));
-        RunTaskLoop(() => primary.ReadMessages(Wrap(handler)));
-        RunTaskLoop(() => secondary.ReadMessages(Wrap(handler)));
+        RunThreadLoop(() => primary.Flush(ctx.Token));
+        RunThreadLoop(() => secondary.Flush(ctx.Token));
+        RunThreadLoop(() => primary.ReadMessages(Wrap(handler)));
+        RunThreadLoop(() => secondary.ReadMessages(Wrap(handler)));
     }
 
-    private Thread RunThreadLoop(Action action)
+    private void RunThreadLoop(Action action)
     {
-        var result = new Thread(() =>
+        var thread = new Thread(() =>
         {
-            while (!token.IsCancellationRequested)
+            while (!ctx.IsCancellationRequested)
             {
                 try
                 {
@@ -63,16 +62,19 @@ public class QConnection(QuicConnection connection, QStream primary, QStream sec
                     Debug.WriteLine(e);
                 }
             }
-        });
-        result.Start();
-        return result;
+        })
+        {
+            Name = "QConnectionThread"
+        };
+        thread.Start();
+        _threads.Add(thread);
     }
 
     private void RunTaskLoop(Func<ValueTask> loopFunc)
     {
         _ = Task.Run(async () =>
         {
-            while (!token.IsCancellationRequested)
+            while (!ctx.IsCancellationRequested)
             {
                 try
                 {
@@ -84,7 +86,7 @@ public class QConnection(QuicConnection connection, QStream primary, QStream sec
                     Debug.WriteLine(e);
                 }
             }
-        }, token);
+        }, ctx.Token);
     }
 
     private Action<ReadOnlySpan<u8>> Wrap(IUniversalMessageHandler<QConnection> handler) =>
@@ -109,8 +111,16 @@ public class QConnection(QuicConnection connection, QStream primary, QStream sec
 
     public async ValueTask DisposeAsync()
     {
-        await Connection.DisposeAsync();
-        _primary?.Join();
-        _secondary?.Join();
+        await ctx.CancelAsync();
+        await connection.DisposeAsync();
+        foreach (var thread in _threads)
+        {
+            thread.Join();
+        }
+
+        ctx.Dispose();
+        _threads.Clear();
     }
+
+    public override string ToString() => $"{connection}: {connection.RemoteEndPoint}";
 }

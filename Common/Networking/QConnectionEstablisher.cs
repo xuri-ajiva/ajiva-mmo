@@ -15,7 +15,8 @@ public static class QConnectionEstablisher
         await HandShakeSend(token, secondary);
         HandShakeReceive(secondary);
 
-        return new QConnection(connection, new QStream(primary), new QStream(secondary), token);
+        return new QConnection(connection, new QStream(primary), new QStream(secondary),
+            CancellationTokenSource.CreateLinkedTokenSource(token));
     }
 
 
@@ -45,7 +46,8 @@ public static class QConnectionEstablisher
             HandShakeReceive(secondary);
             await HandShakeSend(token, secondary);
 
-            return new QConnection(connection, new QStream(primary), new QStream(secondary), token);
+            return new QConnection(connection, new QStream(primary), new QStream(secondary),
+                CancellationTokenSource.CreateLinkedTokenSource(token));
         }
         finally
         {

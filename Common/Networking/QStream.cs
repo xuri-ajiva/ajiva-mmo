@@ -3,34 +3,28 @@ using NetworkPackets;
 
 namespace Common.Networking;
 
-public class QStream(QuicStream stream, i32 bufferSize = 4 * 1024)
+public class QStream(QuicStream stream, i32 bufferSize = 64 * 1024)
 {
     private readonly MessageDecoder _decoder = new();
     private readonly ResizableRingBuffer _writeBuffer = new(bufferSize);
     private readonly u8[] _readBuffer = new u8[bufferSize];
     private readonly SemaphoreSlim _dataAvailableSignal = new(1, 1);
 
-    public async ValueTask ReadMessages(Action<ReadOnlySpan<u8>> handler)
+    public void ReadMessages(Action<ReadOnlySpan<u8>> handler)
     {
-        var bytesRead = await stream.ReadAsync(_readBuffer);
+        var bytesRead = stream.Read(_readBuffer);
         _decoder.DecodeMessages(_readBuffer.AsSpan(0, bytesRead), handler);
     }
 
     public void Flush(CancellationToken token)
     {
-        if (_writeBuffer.DataAvailable() == 0)
-        {
-            _dataAvailableSignal.Wait(token);
-            return;
-        }
-
-        stream.Write(_writeBuffer.ConsumePart().Span);
-        if (_writeBuffer.DataAvailable() > 0)
+        while (_writeBuffer.DataAvailable() > 0)
         {
             stream.Write(_writeBuffer.ConsumePart().Span);
+            stream.Flush();
         }
 
-        stream.Flush();
+        _dataAvailableSignal.Wait(token);
     }
 
     public i32 PendingWriteBytes() => _writeBuffer.DataAvailable();
