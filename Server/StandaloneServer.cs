@@ -1,10 +1,9 @@
 using Common;
 using Common.Config;
-using Microsoft.AspNetCore.Builder;
 using Serilog;
 using Server;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = Host.CreateApplicationBuilder(args);
 
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
@@ -20,6 +19,5 @@ var serverConfig = builder.Configuration
 
 var server = new ServerRunner(builder, serverConfig);
 var iHost = builder.Build();
-iHost.MapGet("/", () => "Hello World!");
 
 await server.RunAsync(iHost);
