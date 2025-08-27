@@ -15,7 +15,7 @@ Log.Logger = new LoggerConfiguration()
 builder.AddServiceDefaults();
 var serverConfig = builder.Configuration
                        .GetSection(nameof(ServerConfiguration)).Get<ServerConfiguration>()
-                   ?? new ServerConfiguration { Port = 7777, MaxConnections = 100 };
+                   ?? new ServerConfiguration { Port = 7777 };
 
 var server = new ServerRunner(builder, serverConfig);
 var iHost = builder.Build();

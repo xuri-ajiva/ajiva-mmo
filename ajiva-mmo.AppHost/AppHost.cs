@@ -13,16 +13,15 @@ if (!int.TryParse(serverConfig["port"], out var serverPort))
 }
 
 var server = builder.AddProject<Projects.Server>("server")
-        .WithArgs("--ServerConfiguration:Port", serverPort.ToString(), "--ServerConfiguration:MaxConnections",
-            clients * 2)
-        .WithReplicas(1)
-        .WithEndpoint(port: serverPort - 1, targetPort: serverPort, protocol: ProtocolType.Udp, name: "server")
-    ;
+    .WithArgs("--ServerConfiguration:Port", serverPort.ToString())
+    .WithReplicas(1)
+    .WithEndpoint(port: serverPort - 1, targetPort: serverPort, protocol: ProtocolType.Udp, name: "server");
 
 builder.AddProject<Projects.Client>("client")
     .WaitFor(server)
     .WithReplicas(clients)
-    .WithArgs("--ClientConfiguration:AutoConnect=true", "--ClientConfiguration:AutoConnectAddress", server.GetEndpoint("server"));
+    .WithArgs("--ClientConfiguration:AutoConnect=true", "--ClientConfiguration:AutoConnectAddress",
+        server.GetEndpoint("server"));
 
 
 builder.Build().Run();
