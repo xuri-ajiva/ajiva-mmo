@@ -35,7 +35,7 @@ public class QServer(
             }
             catch (Exception e)
             {
-                logger.LogError(e, "Error sending message to client {Connection}", connection.Connection);
+                logger.LogError(e, "Error sending message to client {Connection}", connection);
             }
         }
     }

@@ -30,6 +30,33 @@ public class QConnection(QuicConnection connection, QStream primary, QStream sec
                 {
                     action();
                 }
+                catch (QuicException e)
+                {
+                    switch (e.QuicError)
+                    {
+                        case QuicError.InternalError:
+                        case QuicError.ConnectionAborted:
+                        case QuicError.StreamAborted:
+                        case QuicError.ConnectionIdle:
+                        case QuicError.OperationAborted:
+                            ctx.Cancel();
+                            return;
+                        case QuicError.ConnectionTimeout:
+                        case QuicError.ConnectionRefused:
+                        case QuicError.TransportError:
+                            // wtf happened here
+                            Debug.WriteLine(e, "CONFUSION01");
+                            return;
+                        default:
+                            break;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    if (ctx.IsCancellationRequested)
+                        return;
+                    throw;
+                }
                 catch (Exception e)
                 {
                     // TODO Handle some how etc

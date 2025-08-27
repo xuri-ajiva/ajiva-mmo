@@ -152,10 +152,16 @@ public class RendererApi(ILogger<RendererApi> logger)
 
     public async Task StoppedAsync(CancellationToken cancellationToken)
     {
-        await _frameQueueAccessWaitQueue.WaitAsync(cancellationToken);
-        Device.Destroy();
-        Adapter.Release();
-        Instance.Release();
-        Wgpu.Dispose();
+        try
+        {
+            await _frameQueueAccessWaitQueue.WaitAsync(cancellationToken);
+        }
+        finally
+        {
+            Device.Destroy();
+            Adapter.Release();
+            Instance.Release();
+            Wgpu.Dispose();
+        }
     }
 }

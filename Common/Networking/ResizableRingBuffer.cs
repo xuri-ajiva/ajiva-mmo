@@ -30,7 +30,10 @@ public class ResizableRingBuffer
     {
         if (data.Length == 0) return;
 
-        EnsureBufferSize(data.Length);
+        if (!EnsureBufferSize(data.Length))
+        {
+            throw new OverflowException("Buffer exceeded maximum size");
+        }
 
         lock (_lock)
         {
@@ -71,11 +74,15 @@ public class ResizableRingBuffer
         }
     }
 
-    private void EnsureBufferSize(i32 additionalRequired)
+    private bool EnsureBufferSize(i32 additionalRequired)
     {
         i32 available = FreeSpace();
         if (available >= additionalRequired)
-            return;
+            return true;
+        
+        /*// check size fo max of 20mb
+        if (_buffer.Length > 20 * 1024 * 1024)
+            return false;*/
 
         i32 used = DataAvailable();
         i32 newSize = _buffer.Length;
@@ -101,6 +108,8 @@ public class ResizableRingBuffer
             _readPos = 0;
             _writePos = used;
         }
+
+        return true;
     }
 
     public Lock.Scope EnterLock()

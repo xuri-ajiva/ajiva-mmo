@@ -67,7 +67,7 @@ public class QClient
         if (_cts is not null)
             await _cts.CancelAsync();
         if (Connection is not null)
-            await Connection.Connection.DisposeAsync();
+            await Connection.DisposeAsync();
         State = ConnectionState.Disconnected;
     }
 }
