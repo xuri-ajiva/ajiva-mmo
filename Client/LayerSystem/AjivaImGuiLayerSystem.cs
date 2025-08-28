@@ -139,12 +139,14 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
     private TextureViewPtr? _swapchainView;
     private Vector2D<i32> _lastFramebufferSize = new(0, 0);
+    private bool _lastFrameSuboptimal = false;
+    private bool _requestReConfigure = true;
 
 
     public void Render(UpdateInfo info)
     {
         if (!_attatched) return;
-        using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Client);
+        using var tracer = Instrumentation.Trace(ActivityKind.Client);
 
         var window = _window.Window;
         var surface = _window.Surface;
@@ -153,7 +155,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         if (framebufferSize.X * framebufferSize.Y == 0)
             return;
 
-        if (_lastFramebufferSize != framebufferSize)
+        if (_lastFrameSuboptimal || _lastFramebufferSize != framebufferSize)
         {
             _lastFramebufferSize = framebufferSize;
 
@@ -173,9 +175,63 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         _imguiController!.Update(info.DeltaTime);
         _swapchainView?.Release();
 
-        var (swapChainTexture, _, status) = _window.Surface.GetCurrentTexture();
-        Debug.Assert(status == SurfaceGetCurrentTextureStatus.Success);
+        (var swapChainTexture, _lastFrameSuboptimal, var status) = _window.Surface.GetCurrentTexture();
+        if (!CanContinueRender(status))
+            return;
 
+        try
+        {
+            ActualRender(info, swapChainTexture);
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "Exception during rendering");
+            _requestReConfigure = true;
+        }
+
+        try
+        {
+            using var present = Instrumentation.NamedTrace("Presenting");
+            surface.Present();
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "Exception during presenting");
+            _requestReConfigure = true;
+        }
+    }
+
+    private bool CanContinueRender(SurfaceGetCurrentTextureStatus status)
+    {
+        switch (status)
+        {
+            case SurfaceGetCurrentTextureStatus.Success:
+                return true;
+            case SurfaceGetCurrentTextureStatus.Outdated:
+            case SurfaceGetCurrentTextureStatus.Timeout:
+                _requestReConfigure = true;
+                return true;
+            case SurfaceGetCurrentTextureStatus.Lost:
+                _logger.LogError("Surface lost, cannot continue rendering");
+                _requestReConfigure = true;
+                return false;
+            case SurfaceGetCurrentTextureStatus.OutOfMemory:
+                _logger.LogCritical("Out of memory, cannot continue rendering");
+                _requestReConfigure = true;
+                return false;
+            case SurfaceGetCurrentTextureStatus.DeviceLost:
+                _logger.LogCritical("Device lost, cannot continue rendering");
+                _requestReConfigure = true;
+                return false;
+            default:
+                _logger.LogWarning("Unknown surface status: {Status}, cannot continue rendering", status);
+                _requestReConfigure = true;
+                return true;
+        }
+    }
+
+    private void ActualRender(UpdateInfo info, TexturePtr swapChainTexture)
+    {
         _swapchainView = swapChainTexture.CreateView(
             TextureFormat.Bgra8Unorm,
             TextureViewDimension.Dimension2D, TextureAspect.All,
@@ -227,9 +283,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
             pass.End();
             guard.Queue.Submit(cmd.Finish());
         }
-
-        using var present = Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Presenting");
-        surface.Present();
     }
 
     [SuppressMessage("ReSharper.DPA", "DPA0002: Excessive memory allocations in SOH",
