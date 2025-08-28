@@ -51,6 +51,17 @@ public class Instrumentation : IDisposable
         IEnumerable<KeyValuePair<string, object?>>? tags = null, DateTimeOffset startTime = default)
         => Instance?.StartActivity(name: name, kind: kind, tags: tags, startTime: startTime);
 
+    [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
+    public static void RecordEvent(string name, IEnumerable<KeyValuePair<string, object?>>? tags = null,
+        DateTimeOffset timestamp = default)
+        => Activity.Current?.AddEvent(new ActivityEvent(name, timestamp: timestamp,
+            tags: tags is not null ? new ActivityTagsCollection(tags) : null));
+
+    [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
+    public static void RecordFunction([CallerMemberName] string name = "", [CallerFilePath] string file = "", [CallerLineNumber] i32 line = 0)
+        => Activity.Current?.AddEvent(new ActivityEvent(name,
+            tags: [new KeyValuePair<string, object?>("location", $"{file}:{line}")]));
+
     public void Dispose()
     {
         this.ActivitySource.Dispose();

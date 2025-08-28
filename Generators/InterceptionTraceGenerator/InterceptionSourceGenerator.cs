@@ -91,7 +91,6 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             var invocation = (InvocationExpressionSyntax)node.Node;
 
             var semanticModel = node.SemanticModel;
-            var model = compilation.GetSemanticModel(invocation.SyntaxTree);
             if (ModelExtensions.GetSymbolInfo(semanticModel, invocation).Symbol is not IMethodSymbol methodSymbol)
                 continue;
             if (methodSymbol.IsGenericMethod) continue;
@@ -148,6 +147,7 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
                 usings.Add(usingDirectiveSyntax.Name!.ToString());
             }
 
+            var location = invocation.GetLocation().GetLineSpan();
             var returnType = methodSymbol.ReturnType;
             var methodName = methodSymbol.Name;
             var parameters = methodSymbol.Parameters;
@@ -178,8 +178,9 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
                 sb.Append("readonly ");
 
             sb.AppendLine($"{returnType} {methodName}{GetRandomName()}({prefix} {paramList}) {{");
+            //sb.AppendLine($"        using var __trace__ = Instrumentation.NamedTrace(\"{methodSymbol.ContainingType!.ToDisplayString()}.{methodName}\");");
             sb.AppendLine(
-                $"        using var __trace__ = Instrumentation.NamedTrace(\"{methodSymbol.ContainingType!.ToDisplayString()}.{methodName}\");");
+                $""""        Instrumentation.RecordFunction("""{methodName} ({methodSymbol.ContainingType})""", """{location.Path}""", {location.StartLinePosition.Line});"""");
             sb.Append("        ");
             if (returnType.SpecialType != SpecialType.System_Void)
                 sb.Append("return ");
