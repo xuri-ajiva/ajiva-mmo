@@ -17,12 +17,20 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
     private static readonly string[] ExcludedClasses = ["Common.Instrumentation"];
     private static readonly string[] ExcludedNamespaces = ["System.Diagnostics", "Interception"];
     private static readonly string[] ExcludedAttributes = ["ExcludeFromInterception", "CompilerGenerated"];
+    private static readonly string[] TracingAttributes = ["TraceInterception", "Trace"];
 
     private static bool CheckAttributes(AttributeData arg) =>
-        arg.AttributeClass is not null && CheckAttributName(arg.AttributeClass.Name);
+        arg.AttributeClass is not null && CheckAttributeName(arg.AttributeClass.Name);
 
-    private static bool CheckAttributName(string name) => ExcludedAttributes.Contains(name) ||
-                                                          ExcludedAttributes.Contains(name.Replace("Attribute", ""));
+    private static bool CheckAttributeName(string name) => ExcludedAttributes.Contains(name) ||
+                                                           ExcludedAttributes.Contains(name.Replace("Attribute", ""));
+
+    private static bool CheckTracingAttributeName(string name) => TracingAttributes.Contains(name) ||
+                                                                  TracingAttributes.Contains(name.Replace("Attribute",
+                                                                      ""));
+
+    private static bool HasTracingAttribute(AttributeData arg) =>
+        arg.AttributeClass is not null && CheckTracingAttributeName(arg.AttributeClass.Name);
 
     [Experimental("RSEXPERIMENTAL002")]
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -36,6 +44,9 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
              namespace {Namespace};
              [AttributeUsage(AttributeTargets.All, Inherited = false, AllowMultiple = false)]
              public sealed partial class ExcludeFromInterception : Attribute;
+
+             [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
+             public sealed partial class TraceInterception : Attribute;
              """));
 
         var provider = context.SyntaxProvider
@@ -59,7 +70,7 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
 
         foreach (var syntax in containingClass.AttributeLists)
         {
-            if (syntax.Attributes.Any(attribute => CheckAttributName(attribute.Name.ToString())))
+            if (syntax.Attributes.Any(attribute => CheckAttributeName(attribute.Name.ToString())))
             {
                 return false;
             }
@@ -93,8 +104,8 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             var semanticModel = node.SemanticModel;
             if (ModelExtensions.GetSymbolInfo(semanticModel, invocation).Symbol is not IMethodSymbol methodSymbol)
                 continue;
+
             if (methodSymbol.IsGenericMethod) continue;
-            if (methodSymbol.IsStatic) continue;
             if (methodSymbol.IsExtensionMethod) continue;
             if (methodSymbol.IsVirtual) continue;
             if (methodSymbol.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal
@@ -115,20 +126,33 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             if (receiverType.GetAttributes().Any(CheckAttributes))
                 continue;
 
+            // Check for tracing attributes on method or containing type
+            bool shouldTrace = methodSymbol.GetAttributes().Any(HasTracingAttribute) ||
+                               receiverType.GetAttributes().Any(HasTracingAttribute);
+
+            // Check containing methods and types for exclusion, but allow generics now
+            bool shouldSkip = false;
             foreach (var containingSyntax in invocation.Ancestors().OfType<MethodDeclarationSyntax>())
             {
                 if (containingSyntax.AttributeLists.SelectMany(x => x.Attributes)
-                    .Select(x => x.Name.ToString()).Any(CheckAttributName))
-                    goto superbreak; // Skip calls within methods with ExcludeFromInterception
-                if (containingSyntax?.TypeParameterList != null)
-                    goto superbreak; // Skip calls within generic methods
+                        .Select(x => x.Name.ToString()).Any(CheckAttributeName) ||
+                    containingSyntax.TypeParameterList != null)
+                {
+                    shouldSkip = true;
+                    break;
+                }
             }
 
             foreach (var containingSyntax in invocation.Ancestors().OfType<TypeDeclarationSyntax>())
             {
                 if (containingSyntax?.TypeParameterList != null)
-                    goto superbreak; // Skip calls within generic methods
+                {
+                    shouldSkip = true;
+                    break;
+                }
             }
+
+            if (shouldSkip) continue;
 
             usings.Add(methodSymbol.ContainingNamespace.ToDisplayString());
             foreach (var usingDirectiveSyntax in invocation.SyntaxTree.GetRoot().ChildNodes()
@@ -154,17 +178,25 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
 
             if (parameters.Any(x => x.IsThis)) continue; // skip extension methods for now
 
-            //Debugger.Launch();
-            var prefix = methodSymbol.ReceiverType!.IsValueType
-                ? methodSymbol.ReceiverType.IsReadOnly || methodSymbol.IsReadOnly
-                    ? "in this"
-                    : "ref this"
-                : "this";
+            string prefix = "";
+            if (!methodSymbol.IsStatic)
+            {
+                prefix = methodSymbol.ReceiverType!.IsValueType
+                    ? methodSymbol.ReceiverType.IsReadOnly || methodSymbol.IsReadOnly
+                        ? "in this"
+                        : "ref this"
+                    : "this";
+            }
+
+
             var paramList = string.Join(", ",
-            [
-                $"{methodSymbol.ReceiverType} __target__",
-                ..parameters.Select(p => p.ToString())
-            ]);
+                !methodSymbol.IsStatic
+                    ?
+                    [
+                        $"{methodSymbol.ReceiverType!.ToDisplayString()} __target__",
+                        ..parameters.Select(p => p.ToDisplayString())
+                    ]
+                    : parameters.Select(p => p.ToDisplayString()));
 
             sb.AppendLine();
             sb.Append("    ");
@@ -177,10 +209,21 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             if (methodSymbol.ReturnsByRefReadonly)
                 sb.Append("readonly ");
 
-            sb.AppendLine($"{returnType} {methodName}{GetRandomName()}({prefix} {paramList}) {{");
-            //sb.AppendLine($"        using var __trace__ = Instrumentation.NamedTrace(\"{methodSymbol.ContainingType!.ToDisplayString()}.{methodName}\");");
+            sb.AppendLine(
+                $"{returnType.ToDisplayString()} {methodName}{GetRandomName(interceptableLocation)}({prefix} {paramList}) {{");
+
+
+            // Always record function
             sb.AppendLine(
                 $""""        Instrumentation.RecordFunction("""{methodName} ({methodSymbol.ContainingType})""", """{location.Path}""", {location.StartLinePosition.Line});"""");
+
+            // Add tracing if attribute is present
+            if (shouldTrace)
+            {
+                sb.AppendLine(
+                    $"        using var __trace__ = Instrumentation.NamedTrace(\"{methodSymbol.ContainingType!.ToDisplayString()}.{methodName}\");");
+            }
+
             sb.Append("        ");
             if (returnType.SpecialType != SpecialType.System_Void)
                 sb.Append("return ");
@@ -188,12 +231,13 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
                 sb.Append("ref ");
             if (methodSymbol.ReturnsByRefReadonly)
                 sb.Append("readonly ");
-            sb.AppendLine($"__target__.{methodName}({string.Join(", ", parameters.Select(ArgName))});");
-            sb.AppendLine("    }");
 
-            superbreak:
-            {
-            }
+            if (methodSymbol.IsStatic)
+                sb.AppendLine(
+                    $"{methodSymbol.ContainingType!.ToDisplayString()}.{methodName}({string.Join(", ", parameters.Select(ArgName))});");
+            else
+                sb.AppendLine($"__target__.{methodName}({string.Join(", ", parameters.Select(ArgName))});");
+            sb.AppendLine("    }");
         }
 
         sb.AppendLine("}");
@@ -201,7 +245,6 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             usings.Select(x => $"using {x};").Aggregate((a, b) => a + "\n" + b) + "\n" +
             sb);
     }
-
 
     private static string ArgName(IParameterSymbol p)
     {
@@ -215,9 +258,108 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             _ => "" //throw new ArgumentOutOfRangeException()
         };
     }
-
-    private static string GetRandomName()
+    /*List<(string name, VarianceKind varianceKind, string? constrians)> typeArgs = [];
+    List<string> tmp = [];
+    private void TryResolveTypes()
     {
-        return "_" + Guid.NewGuid().ToString("N");
+        /*
+            typeArgs.Clear();
+            ISymbol sym = methodSymbol;
+            while (sym != null)
+            {
+                switch (sym)
+                {
+                    case INamedTypeSymbol
+                    {
+                        TypeParameters: { Length: > 0 } typeParameterSyntaxes
+                    }:
+                        foreach (var p in typeParameterSyntaxes)
+                        {
+                            if (typeArgs.Any(x => x.name == p.Name)) continue;
+                            tmp.Clear();
+
+                            if (p.HasUnmanagedTypeConstraint) tmp.Add("unmanaged");
+                            else if (p.HasReferenceTypeConstraint) tmp.Add("class");
+                            else if (p.HasValueTypeConstraint) tmp.Add("struct");
+                            else if (p.HasNotNullConstraint) tmp.Add("notnull");
+                            if (p.HasConstructorConstraint) tmp.Add("new()");
+                            if (p.ConstraintTypes.Length > 0)
+                            {
+                                tmp.AddRange(p.ConstraintTypes.Select(x => x.ToDisplayString()));
+                            }
+
+                            var constraint = tmp.Count > 0 ? string.Join(", ", tmp) : null;
+                            typeArgs.Add((p.Name, p.Variance, constraint));
+                        }
+
+                        break;
+                    case INamespaceSymbol:
+                        sym = null;
+                        continue;
+                }
+
+                sym = sym.ContainingSymbol;
+            }
+
+
+            foreach (var containingSyntax in invocation.Ancestors())
+            {
+                switch (containingSyntax)
+                {
+                    case MethodDeclarationSyntax
+                    {
+                        TypeParameterList.Parameters: { Count: > 0 } typeParameterSyntaxes,
+                        ConstraintClauses: var clauseSyntaxes
+                    }:
+                        foreach (var p in typeParameterSyntaxes)
+                        {
+                            if (typeArgs.Any(x => x.name == p.Identifier.Text)) continue;
+                            var constraint = clauseSyntaxes.FirstOrDefault(x =>
+                                x.Name.Identifier.Text == p.Identifier.Text);
+                            typeArgs.Add((p.Identifier.Text, p.VarianceKeyword.VarianceKindFromToken(),
+                                constraint?.Constraints.ToFullString()));
+                        }
+
+                        break;
+                    case TypeDeclarationSyntax
+                    {
+                        TypeParameterList.Parameters: { Count: > 0 } typeParameterSyntaxes,
+                        ConstraintClauses: var clauseSyntaxes
+                    }:
+                        foreach (var p in typeParameterSyntaxes)
+                        {
+                            if (typeArgs.Any(x => x.name == p.Identifier.Text)) continue;
+                            var constraint = clauseSyntaxes.FirstOrDefault(x =>
+                                x.Name.Identifier.Text == p.Identifier.Text);
+                            typeArgs.Add((p.Identifier.Text, p.VarianceKeyword.VarianceKindFromToken(),
+                                constraint?.Constraints.ToFullString()));
+                        }
+
+                        break;
+                }
+            }
+
+
+            var genericTypeArgs = "";
+            if (typeArgs is { Count: > 0 })
+            {
+                genericTypeArgs = "<" + string.Join(", ", typeArgs.Select(x => x.name)) + ">";
+            }
+
+            var genericConstraints = "";
+            if (typeArgs.Any(x => x.constrians is not null))
+            {
+                genericConstraints = "\n        " +
+                                     string.Join("\n        ",
+                                         typeArgs.Where(x => x.constrians is not null).Select(x =>
+                                             $"where {x.name} : {x.constrians}"));
+            }
+
+    }
+ */   
+    [Experimental("RSEXPERIMENTAL002")]
+    private static string GetRandomName(InterceptableLocation interceptableLocation)
+    {
+        return interceptableLocation.Data.Replace("=", "").Replace("/", "_").Replace("+", "_").Replace("-", "_");
     }
 }
