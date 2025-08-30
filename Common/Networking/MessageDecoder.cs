@@ -40,6 +40,7 @@ public class MessageDecoder
         if (newData.Length >= needed)
         {
             // We have enough to complete the message
+            ResizeBufferIfNeeded(_nextMessageLength, _partialLength);
             newData[..needed].CopyTo(_partialBuffer.AsSpan(_partialLength));
             ProcessData(_partialBuffer.AsSpan(0, _nextMessageLength), _nextMessageLength, handler);
             _partialLength = 0;
@@ -140,13 +141,24 @@ public class MessageDecoder
 
         // Ensure buffer is large enough
         var newLength = _partialLength + data.Length;
-        if (newLength > _partialBuffer.Length)
-        {
-            Array.Resize(ref _partialBuffer, Math.Max(_partialBuffer.Length * 2, newLength));
-        }
+        ResizeBufferIfNeeded(newLength, _partialLength);
 
         data.CopyTo(_partialBuffer.AsSpan(_partialLength));
 
         _partialLength += data.Length;
+    }
+
+    private void ResizeBufferIfNeeded(i32 newLength, i32 preserveLength)
+    {
+        if (_partialBuffer.Length >= newLength) return;
+
+        var newSize = Math.Max(_partialBuffer.Length * 2, newLength);
+        var newBuffer = new u8[newSize];
+        if (preserveLength > 0)
+        {
+            Array.Copy(_partialBuffer, newBuffer, preserveLength);
+        }
+
+        _partialBuffer = newBuffer;
     }
 }
