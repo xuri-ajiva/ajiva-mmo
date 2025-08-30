@@ -103,6 +103,7 @@ public class Instanced3dDeferredRenderer(
         _logger.LogDebug("Done");
     }
 
+    [TraceInterception]
     [MemberNotNull(nameof(_compositorPipeline), nameof(_pbrPipeline), nameof(_samplingPipeline),
         nameof(_transparentPipeline))]
     private void CreatePipelines()
@@ -144,19 +145,33 @@ public class Instanced3dDeferredRenderer(
         _sceneLights.Animate(info.DeltaTime);
     }
 
+    [TraceInterception]
     public void Render(UpdateInfo info, RenderTarget target, Extent3D sceneViewport)
     {
-        using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Internal);
-        var queue = target.QueuePtr;
+        UniformUpdate(info, target, sceneViewport);
+
+        PrepareDrawEntities();
+
+        UpdateDrawEntities(info);
+
+        UpdateScene(target.QueuePtr, _dynamicMeshes);
+
+        DeferredMeshDraw(target, sceneViewport);
+    }
+
+
+    [TraceInterception]
+    internal void UniformUpdate(UpdateInfo info, RenderTarget target, Extent3D sceneViewport)
+    {
         _camera.AspectRatio = sceneViewport.Width / (f32)sceneViewport.Height;
-        _pbrPipeline!.WriteGBufferSceneUniforms(queue, new PbrGBufferShader.SceneUniform
+        _pbrPipeline!.WriteGBufferSceneUniforms(target.QueuePtr, new PbrGBufferShader.SceneUniform
         {
             ViewRef = _camera.ViewMatrix,
             ProjectionRef = _camera.ProjectionMatrix,
             CameraPositionRef = _camera.Position,
             Time = info.TotalTime
         });
-        _transparentPipeline!.WriteUniformBuffer(queue, new WboitAccumShader.SceneUniform
+        _transparentPipeline!.WriteUniformBuffer(target.QueuePtr, new WboitAccumShader.SceneUniform
         {
             ViewProjectionRef = _camera.ViewProjectionMatrix,
             CameraPositionRef = _camera.Position,
@@ -168,17 +183,21 @@ public class Instanced3dDeferredRenderer(
             _sceneRenderCollection = _scene.RenderableMeshes;
             foreach (var buffer in _scene.RenderableMeshes.OpaqueMeshes)
             {
-                WriteBuffer(queue, buffer);
+                WriteBuffer(target.QueuePtr, buffer);
                 _pbrPipeline.RecreateMaterialBindGroup(buffer);
             }
 
             foreach (var buffer in _scene.RenderableMeshes.TransparentMeshes)
             {
-                WriteBuffer(queue, buffer);
+                WriteBuffer(target.QueuePtr, buffer);
                 _transparentPipeline.RecreateBindGroup(buffer);
             }
         }
+    }
 
+    [TraceInterception]
+    internal void PrepareDrawEntities()
+    {
         var ecs = _gameLogic.World;
         if (_renderableMeshVersion != _gameLogic.RenderEntityVersion)
         {
@@ -214,7 +233,12 @@ public class Instanced3dDeferredRenderer(
                 }
             }
         }
+    }
 
+    [TraceInterception]
+    internal void UpdateDrawEntities(UpdateInfo info)
+    {
+        var ecs = _gameLogic.World;
         //UpdateScene(queue, _sceneRenderCollection.StaticMeshes);
         float sFrame = 1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFames);
         var index = 0;
@@ -235,14 +259,12 @@ public class Instanced3dDeferredRenderer(
             for (var i = 0; i < entities.Count; i++)
             {
                 var entity = entities[i];
-                if (ecs.HasPosition(entity))
+                if (ecs.TryGetPosition(entity, out var pos) &&
+                    ecs.TryGetRotation(entity, out var rot) &&
+                    ecs.TryGetScale(entity, out var scale))
                 {
-                    var currentTransform =
-                        dynamicMesh.InstanceInfos[i].GetTransform();
-
-                    var blended = SmoothStep(currentTransform, ecs.GetScale(entity).Value,
-                        ecs.GetRotation(entity).Value, ecs.GetPosition(entity).Value, sFrame);
-
+                    var currentTransform = dynamicMesh.InstanceInfos[i].GetTransform();
+                    var blended = SmoothStep(currentTransform, scale.Value, rot.Value, pos.Value, sFrame);
                     dynamicMesh.InstanceInfos[i].SetTransform(blended);
                 }
                 else
@@ -250,40 +272,6 @@ public class Instanced3dDeferredRenderer(
                     dynamicMesh.InstanceInfos[i].SetTransform(default);
                 }
             }
-        }
-
-        UpdateScene(queue, _dynamicMeshes);
-
-        _lightsBuffer.QueuedWrite(_sceneLights.LightData, queue);
-
-        if (_pbrPipeline.BeginGBufferPass() is { } pass)
-        {
-            foreach (var meshBuffer in _sceneRenderCollection.OpaqueMeshes)
-            {
-                _pbrPipeline.DrawMesh(pass, meshBuffer);
-            }
-
-            foreach (var meshBuffer1 in _dynamicMeshes.OpaqueMeshes)
-            {
-                _pbrPipeline.DrawMesh(pass, meshBuffer1);
-            }
-
-            queue.Submit(_pbrPipeline.EndGBufferPass(pass));
-        }
-
-        if (_transparentPipeline.BeginRenderPass(sceneViewport) is { } transparentPass)
-        {
-            foreach (var instances in _sceneRenderCollection.TransparentMeshes)
-            {
-                _transparentPipeline.DrawMesh(transparentPass, instances);
-            }
-
-            foreach (var instances in _dynamicMeshes.TransparentMeshes)
-            {
-                _transparentPipeline.DrawMesh(transparentPass, instances);
-            }
-
-            queue.Submit(_transparentPipeline.EndRenderPass(transparentPass));
         }
     }
 
@@ -309,6 +297,7 @@ public class Instanced3dDeferredRenderer(
                Matrix4x4.CreateTranslation(newPos);
     }
 
+    [TraceInterception]
     private void UpdateScene(QueuePtr queue, RenderableMeshCollection dynamicMeshes)
     {
         foreach (var buffer in dynamicMeshes.OpaqueMeshes)
@@ -321,6 +310,42 @@ public class Instanced3dDeferredRenderer(
         {
             WriteBuffer(queue, buffer);
             _transparentPipeline!.RecreateBindGroup(buffer);
+        }
+
+        _lightsBuffer.QueuedWrite(_sceneLights.LightData, queue);
+    }
+
+    [TraceInterception]
+    internal void DeferredMeshDraw(RenderTarget target, Extent3D sceneViewport)
+    {
+        if (_pbrPipeline.BeginGBufferPass() is { } pass)
+        {
+            foreach (var meshBuffer in _sceneRenderCollection.OpaqueMeshes)
+            {
+                _pbrPipeline.DrawMesh(pass, meshBuffer);
+            }
+
+            foreach (var meshBuffer1 in _dynamicMeshes.OpaqueMeshes)
+            {
+                _pbrPipeline.DrawMesh(pass, meshBuffer1);
+            }
+
+            target.QueuePtr.Submit(_pbrPipeline.EndGBufferPass(pass));
+        }
+
+        if (_transparentPipeline.BeginRenderPass(sceneViewport) is { } transparentPass)
+        {
+            foreach (var instances in _sceneRenderCollection.TransparentMeshes)
+            {
+                _transparentPipeline.DrawMesh(transparentPass, instances);
+            }
+
+            foreach (var instances in _dynamicMeshes.TransparentMeshes)
+            {
+                _transparentPipeline.DrawMesh(transparentPass, instances);
+            }
+
+            target.QueuePtr.Submit(_transparentPipeline.EndRenderPass(transparentPass));
         }
     }
 
@@ -342,6 +367,7 @@ public class Instanced3dDeferredRenderer(
         buffer.InstanceBuffer.QueuedWrite(data, queue);
     }
 
+    [TraceInterception]
     public void Render(UpdateInfo info, RenderTarget target)
     {
         if (_isSceneViewHovered)

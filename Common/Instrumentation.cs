@@ -59,8 +59,7 @@ public class Instrumentation : IDisposable
 
     [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
     public static void RecordFunction([CallerMemberName] string name = "", [CallerFilePath] string file = "", [CallerLineNumber] i32 line = 0)
-        => Activity.Current?.AddEvent(new ActivityEvent(name,
-            tags: [new KeyValuePair<string, object?>("location", $"{file}:{line}")]));
+        => Activity.Current?.AddEvent(new ActivityEvent(name/*, tags: [new KeyValuePair<string, object?>("location", $"{file}:{line}")]*/));
 
     public void Dispose()
     {

@@ -64,7 +64,7 @@ public class SpatialGrid(u32 chunkSize)
     private readonly Dictionary<ChunkCoord, SpatialChunk> chunks = new();
     private readonly u32 _chunkSize = chunkSize;
     
-    [ExcludeFromInterception]
+//   [ExcludeFromInterception]
     public ChunkCoord GetChunkCoord(Vector3 position, i32 level)
     {
         i32 x = (i32)Math.Floor(position.X / _chunkSize);

@@ -3,7 +3,7 @@ using NetworkPackets;
 
 namespace Common.Networking;
 
-public class QStream(QuicStream stream, i32 bufferSize = 64 * 1024)
+public class QStream(QuicStream stream, i32 bufferSize = 16 * 1024 * 1024)
 {
     private readonly MessageDecoder _decoder = new();
     private readonly ResizableRingBuffer _writeBuffer = new(bufferSize);

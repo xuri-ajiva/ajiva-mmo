@@ -70,38 +70,26 @@ public class QConnection(QuicConnection connection, QStream primary, QStream sec
         _threads.Add(thread);
     }
 
-    private void RunTaskLoop(Func<ValueTask> loopFunc)
-    {
-        _ = Task.Run(async () =>
-        {
-            while (!ctx.IsCancellationRequested)
-            {
-                try
-                {
-                    await loopFunc();
-                }
-                catch (Exception e)
-                {
-                    // TODO Handle some how etc
-                    Debug.WriteLine(e);
-                }
-            }
-        }, ctx.Token);
-    }
-
     private Action<ReadOnlySpan<u8>> Wrap(IUniversalMessageHandler<QConnection> handler) =>
         span => handler.AutoHandle(span, this);
 
+    private int chanel = 0;
+
     public void Send(SerializedMessage message, u8 streamId = 0)
     {
-        using var @lock = primary.EnterLock();
-        primary.WriteLength(message.Length);
+        SendToChannel(message, ++chanel % 2 == 0 ? primary : secondary);
+    }
+
+    private static void SendToChannel(SerializedMessage message, QStream qStream)
+    {
+        using var @lock = qStream.EnterLock();
+        qStream.WriteLength(message.Length);
         foreach (var memory in message)
         {
-            primary.WriteData(memory.Span);
+            qStream.WriteData(memory.Span);
         }
 
-        primary.SignalDataAvailable();
+        qStream.SignalDataAvailable();
     }
 
     public void Send(SerializedMessage message)

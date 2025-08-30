@@ -31,7 +31,7 @@ public class QClient
     public bool IsNotConnected => !IsConnected;
     public QConnection? Connection { get; private set; }
 
-    [ExcludeFromInterception]
+   [ExcludeFromInterception]
     public async ValueTask ConnectAsync(IUniversalMessageHandler<QConnection> handler, string? ipEndpoint = null,
         CancellationToken token = default)
     {

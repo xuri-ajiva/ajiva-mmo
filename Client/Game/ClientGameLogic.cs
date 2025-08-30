@@ -134,7 +134,6 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, ILogger<ClientGa
     /// <summary>
     /// Get the network ID for an ECS entity (for sending updates to server)
     /// </summary>
-    [ExcludeFromInterception]
     public u32? GetNetworkId(EntityId ecsEntity)
     {
         return _ecsToNetwork.TryGetValue(ecsEntity, out var networkId) ? networkId : null;

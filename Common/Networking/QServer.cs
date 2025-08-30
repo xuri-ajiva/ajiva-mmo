@@ -7,7 +7,6 @@ using NetworkPackets;
 
 
 namespace Common.Networking;
-#pragma warning disable CA1416
 
 public interface QServerEventListener
 {
@@ -23,7 +22,7 @@ public class QServer(
     private QuicListener? _server;
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentBag<QConnection> _connections = [];
-    private Task? _listenTask, _updateTask;
+    private Task? _listenTask;
 
     public void SendToAll(SerializedMessage message)
     {
@@ -44,7 +43,6 @@ public class QServer(
     public void Start(IUniversalMessageHandler<QConnection> handler, QServerEventListener eventListener)
     {
         _listenTask = RunListener(handler, eventListener);
-        _updateTask = UpdateClients(handler, eventListener);
     }
 
     public async ValueTask DisposeAsync()
@@ -52,37 +50,9 @@ public class QServer(
         await _cts.CancelAsync();
         if (_listenTask is not null)
             await _listenTask;
-        if (_updateTask is not null)
-            await _updateTask;
         if (_server is not null)
             await _server.DisposeAsync();
         _cts.Dispose();
-    }
-
-    [ExcludeFromInterception]
-    public async Task UpdateClients(IUniversalMessageHandler<QConnection> handler, QServerEventListener eventListener)
-    {
-        /*try
-        {
-            while (!_cts.IsCancellationRequested)
-            {
-                foreach (var connection in _connections)
-                {
-                    try
-                    {
-                        await connection.Update(handler);
-                    }
-                    catch (Exception e)
-                    {
-                        logger.LogError(e, "Error updating client {Connection}", connection.Connection);
-                    }
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            logger.LogError(e, "Error in listener");
-        }*/
     }
 
     private async Task RunListener(IUniversalMessageHandler<QConnection> handler, QServerEventListener? eventListener)
@@ -118,4 +88,3 @@ public class QServer(
         }
     }
 }
-#pragma warning restore CA1416

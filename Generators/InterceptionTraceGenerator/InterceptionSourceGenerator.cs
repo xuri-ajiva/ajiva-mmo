@@ -221,7 +221,7 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             if (shouldTrace)
             {
                 sb.AppendLine(
-                    $"        using var __trace__ = Instrumentation.NamedTrace(\"{methodSymbol.ContainingType!.ToDisplayString()}.{methodName}\");");
+                    $""""        using var __trace__ = Instrumentation.NamedTrace("""{methodName} ({methodSymbol.ContainingType})""");"""");
             }
 
             sb.Append("        ");
@@ -258,6 +258,7 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             _ => "" //throw new ArgumentOutOfRangeException()
         };
     }
+
     /*List<(string name, VarianceKind varianceKind, string? constrians)> typeArgs = [];
     List<string> tmp = [];
     private void TryResolveTypes()
@@ -356,7 +357,7 @@ public class InterceptionSourceGenerator : IIncrementalGenerator
             }
 
     }
- */   
+ */
     [Experimental("RSEXPERIMENTAL002")]
     private static string GetRandomName(InterceptableLocation interceptableLocation)
     {

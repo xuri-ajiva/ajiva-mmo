@@ -278,7 +278,6 @@ public class PbrPipeline : IDisposable
         return pass;
     }
 
-    [ExcludeFromInterception]
     public void DrawMesh(RenderPassEncoderPtr pass, PbrInstancedMeshBuffer instance)
     {
         if (instance.InstanceInfos.Length == 0) return;
