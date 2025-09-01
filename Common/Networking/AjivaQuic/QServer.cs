@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using NetworkPackets;
 
 
-namespace Common.Networking;
+namespace Common.Networking.AjivaQuic;
 
 public interface QServerEventListener
 {

@@ -6,6 +6,7 @@ using Common;
 using Common.Config;
 using Common.Ecs;
 using Common.Networking;
+using Common.Networking.AjivaQuic;
 using NetworkPackets;
 
 namespace Client.Networking;

@@ -1,9 +1,10 @@
 ﻿using System.Diagnostics.Metrics;
 using System.Net.Quic;
+using Common.Networking.AjivaQuic;
 using Interception;
 using NetworkPackets;
 
-namespace Common.Networking;
+namespace Common.Networking.AjivaQuic;
 
 public class QStream
 {

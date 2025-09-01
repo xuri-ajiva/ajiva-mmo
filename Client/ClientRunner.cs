@@ -14,6 +14,7 @@ using Client.Wgsl;
 using Common;
 using Common.Config;
 using Common.Networking;
+using Common.Networking.AjivaQuic;
 
 namespace Client;
 

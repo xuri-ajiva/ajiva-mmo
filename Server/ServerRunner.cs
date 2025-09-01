@@ -7,6 +7,7 @@ using System.Security.Cryptography.X509Certificates;
 using Common;
 using Common.Config;
 using Common.Networking;
+using Common.Networking.AjivaQuic;
 using Server;
 
 namespace Server;

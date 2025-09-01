@@ -2,7 +2,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-namespace Common.Networking;
+namespace Common.Networking.AjivaQuic;
 
 internal static class CertificateHelper
 {

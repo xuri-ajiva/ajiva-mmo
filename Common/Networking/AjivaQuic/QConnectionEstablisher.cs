@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Net.Quic;
 
-namespace Common.Networking;
+namespace Common.Networking.AjivaQuic;
 
 public static class QConnectionEstablisher
 {

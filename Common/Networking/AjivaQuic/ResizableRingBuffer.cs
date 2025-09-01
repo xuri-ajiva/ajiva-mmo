@@ -1,6 +1,6 @@
 ﻿using Serilog;
 
-namespace Common.Networking;
+namespace Common.Networking.AjivaQuic;
 
 public class ResizableRingBuffer
 {

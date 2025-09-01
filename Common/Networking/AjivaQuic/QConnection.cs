@@ -5,7 +5,7 @@ using Interception;
 using NetworkPackets;
 using Serilog;
 
-namespace Common.Networking;
+namespace Common.Networking.AjivaQuic;
 
 public class QConnection(
     QuicConnection connection,

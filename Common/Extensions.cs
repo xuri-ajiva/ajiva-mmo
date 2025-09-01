@@ -1,8 +1,7 @@
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
-using Common.Networking;
+using Common.Networking.AjivaQuic;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

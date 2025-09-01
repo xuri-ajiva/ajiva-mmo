@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using NetworkPackets;
 
-namespace Common.Networking;
+namespace Common.Networking.AjivaQuic;
 
 public class MessageDecoder
 {
