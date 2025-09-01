@@ -1,4 +1,6 @@
-﻿namespace Common.Networking;
+﻿using Serilog;
+
+namespace Common.Networking;
 
 public class ResizableRingBuffer
 {
@@ -80,9 +82,9 @@ public class ResizableRingBuffer
         if (available >= additionalRequired)
             return true;
         
-        /*// check size fo max of 20mb
+        // check size fo max of 20mb
         if (_buffer.Length > 20 * 1024 * 1024)
-            return false;*/
+            Log.Warning("ResizableRingBuffer({buffer}) exceeded 20MB, current size: {Size} bytes", this, _buffer.Length);
 
         i32 used = DataAvailable();
         i32 newSize = _buffer.Length;

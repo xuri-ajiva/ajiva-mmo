@@ -32,7 +32,7 @@ public class QClient
     public QConnection? Connection { get; private set; }
 
    [ExcludeFromInterception]
-    public async ValueTask ConnectAsync(IUniversalMessageHandler<QConnection> handler, string? ipEndpoint = null,
+    public async ValueTask ConnectAsync(IUniversalMessageHandler<QConnection> handler, Instrumentation instrumentation, string? ipEndpoint = null,
         CancellationToken token = default)
     {
         if (State != ConnectionState.Disconnected) return;
@@ -46,8 +46,8 @@ public class QClient
         {
             State = ConnectionState.Connecting;
             var connection = await QuicConnection.ConnectAsync(_options, _cts.Token);
-            Connection = await QConnectionEstablisher.Client(connection, _cts.Token);
-            Connection?.Update(handler);
+            Connection = await QConnectionEstablisher.Client(connection, instrumentation, _cts.Token);
+            Connection?.StartLoops(handler, instrumentation);
 
             State = ConnectionState.Connected;
         }

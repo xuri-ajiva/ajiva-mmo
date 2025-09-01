@@ -57,7 +57,7 @@ public class ClientNetworkManager(
     {
         if (client.IsNotConnected)
         {
-            Task.Run(() => client.ConnectAsync(this, address));
+            Task.Run(() => client.ConnectAsync(this, instrumentation, address));
         }
     }
 
@@ -103,11 +103,11 @@ public class ClientNetworkManager(
             try
             {
                 span?.AddEvent(new ActivityEvent("Connecting to server", DateTimeOffset.Now));
-                await Task.Delay(1000);
+                await Task.Delay(1000, cancellationToken);
                 logger.LogInformation("Connecting client to server on {ServerAddress}",
                     clientConfiguration.AutoConnectAddress);
-                await client.ConnectAsync(this,
-                    clientConfiguration.AutoConnectAddress.Replace("localhost", "127.0.0.1"));
+                await client.ConnectAsync(this, instrumentation,
+                    clientConfiguration.AutoConnectAddress.Replace("localhost", "127.0.0.1"), cancellationToken);
                 while (client.State == ConnectionState.Connecting)
                 {
                     await Task.Delay(100, cancellationToken);

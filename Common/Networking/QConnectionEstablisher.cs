@@ -5,7 +5,8 @@ namespace Common.Networking;
 
 public static class QConnectionEstablisher
 {
-    public static async Task<QConnection> Client(QuicConnection connection, CancellationToken token)
+    public static async Task<QConnection> Client(QuicConnection connection, Instrumentation instrumentation,
+        CancellationToken token)
     {
         var primary = await connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, token);
         await HandShakeSend(token, primary);
@@ -15,7 +16,8 @@ public static class QConnectionEstablisher
         await HandShakeSend(token, secondary);
         HandShakeReceive(secondary);
 
-        return new QConnection(connection, new QStream(primary), new QStream(secondary),
+        return new QConnection(connection, new QStream(primary, instrumentation),
+            new QStream(secondary, instrumentation), instrumentation,
             CancellationTokenSource.CreateLinkedTokenSource(token));
     }
 
@@ -32,7 +34,8 @@ public static class QConnectionEstablisher
         Debug.Assert(a == 69);
     }
 
-    public static async Task<QConnection> Server(QuicConnection connection, CancellationToken token)
+    public static async Task<QConnection> Server(QuicConnection connection, Instrumentation instrumentation,
+        CancellationToken token)
     {
         try
         {
@@ -46,7 +49,8 @@ public static class QConnectionEstablisher
             HandShakeReceive(secondary);
             await HandShakeSend(token, secondary);
 
-            return new QConnection(connection, new QStream(primary), new QStream(secondary),
+            return new QConnection(connection, new QStream(primary, instrumentation),
+                new QStream(secondary, instrumentation), instrumentation,
                 CancellationTokenSource.CreateLinkedTokenSource(token));
         }
         finally

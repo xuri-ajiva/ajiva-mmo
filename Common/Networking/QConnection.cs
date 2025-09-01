@@ -1,30 +1,50 @@
 ﻿using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Net.Quic;
 using Interception;
 using NetworkPackets;
+using Serilog;
 
 namespace Common.Networking;
 
-public class QConnection(QuicConnection connection, QStream primary, QStream secondary, CancellationTokenSource ctx)
+public class QConnection(
+    QuicConnection connection,
+    QStream primary,
+    QStream secondary,
+    Instrumentation instrumentation,
+    CancellationTokenSource ctx)
     : IQConnection, IAsyncDisposable
 {
     private readonly List<Thread> _threads = [];
+    private Counter<i64> _inPackets, _outPackets, _outDropedPackets;
 
     [ExcludeFromInterception]
-    public void Update(IUniversalMessageHandler<QConnection> handler)
+    public void StartLoops(IUniversalMessageHandler<QConnection> handler, Instrumentation instrumentation)
     {
-        RunThreadLoop(() => primary.Flush(ctx.Token));
-        RunThreadLoop(() => secondary.Flush(ctx.Token));
-        RunThreadLoop(() => primary.ReadMessages(Wrap(handler)));
-        RunThreadLoop(() => secondary.ReadMessages(Wrap(handler)));
+        _inPackets = instrumentation.Meter.CreateCounter<i64>("QConnection_InPackets", "count",
+            "Number of incoming packets");
+        _outPackets = instrumentation.Meter.CreateCounter<i64>("QConnection_OutPackets", "count",
+            "Number of outgoing packets");
+        _outDropedPackets = instrumentation.Meter.CreateCounter<i64>("QConnection_OutDropedPackets", "count",
+            "Number of droped outgoing packets due to full buffer");
+
+
+        RunThreadLoop([TraceInterception]() => primary.Flush(ctx.Token), instrumentation);
+        RunThreadLoop(() => secondary.Flush(ctx.Token), instrumentation);
+        RunThreadLoop([TraceInterception]() => primary.ReadMessages(Wrap(handler)), instrumentation);
+        RunThreadLoop(() => secondary.ReadMessages(Wrap(handler)), instrumentation);
     }
 
-    private void RunThreadLoop(Action action)
+    private void RunThreadLoop(Action action, Instrumentation instrumentation)
     {
         var thread = new Thread(() =>
         {
+            //Instrumentation.Instance = instrumentation;
+            var mater = instrumentation.Meter.CreateHistogram<double>("QConnection_Loop_Duration",
+                "ms", "Duration of one loop in QConnection thread");
             while (!ctx.IsCancellationRequested)
             {
+                var sw = Stopwatch.StartNew();
                 try
                 {
                     action();
@@ -61,6 +81,11 @@ public class QConnection(QuicConnection connection, QStream primary, QStream sec
                     // TODO Handle some how etc
                     Debug.WriteLine(e);
                 }
+                finally
+                {
+                    sw.Stop();
+                    mater.Record(sw.Elapsed.TotalMilliseconds);
+                }
             }
         })
         {
@@ -70,18 +95,33 @@ public class QConnection(QuicConnection connection, QStream primary, QStream sec
         _threads.Add(thread);
     }
 
-    private Action<ReadOnlySpan<u8>> Wrap(IUniversalMessageHandler<QConnection> handler) =>
-        span => handler.AutoHandle(span, this);
+    private Action<ReadOnlySpan<u8>> Wrap(IUniversalMessageHandler<QConnection> handler)
+    {
+        return span =>
+        {
+            _inPackets.Add(1);
+            handler.AutoHandle(span, this);
+        };
+    }
 
     private int chanel = 0;
 
     public void Send(SerializedMessage message, u8 streamId = 0)
     {
-        SendToChannel(message, ++chanel % 2 == 0 ? primary : secondary);
+        SendToChannel(message, primary); //++chanel % 2 == 0 ? primary : secondary);
     }
 
-    private static void SendToChannel(SerializedMessage message, QStream qStream)
+    private void SendToChannel(SerializedMessage message, QStream qStream)
     {
+        if (qStream.FreeBytes() < (i32)message.Length)
+        {
+            _outDropedPackets.Add(1);
+            return;
+        }
+
+        _outPackets.Add(1);
+
+
         using var @lock = qStream.EnterLock();
         qStream.WriteLength(message.Length);
         foreach (var memory in message)

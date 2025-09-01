@@ -107,28 +107,21 @@ public class MessageDecoder
                 _bufferState = BufferState.PartialLength;
                 return false;
             case BufferState.PartialLength:
-                var needed = BitPackingHelper.MaxVarLength - _partialLength;
-                var toCopy = Math.Min(needed, data.Length);
+                var originalPartialLength = _partialLength;
+                var toCopy = Math.Min(BitPackingHelper.MaxVarLength - _partialLength, data.Length);
                 data[..toCopy].CopyTo(_partialBuffer.AsSpan(_partialLength));
                 _partialLength += toCopy;
-                if (_partialLength < BitPackingHelper.MaxVarLength)
+                if (_partialBuffer.AsSpan(0, _partialLength)
+                    .TryReadVarU64(out var tmp2, out lengthBytesRead))
                 {
-                    lengthBytesRead = toCopy;
-                    return false;
+                    _nextMessageLength = (i32)tmp2;
+                    lengthBytesRead -= originalPartialLength;
+                    _partialLength = 0;
+                    _bufferState = BufferState.EmptyBuffer;
+                    return true;
                 }
-
-                _nextMessageLength = (i32)_partialBuffer.AsSpan(0, _partialLength)
-                    .ReadVarU64(out lengthBytesRead);
-                lengthBytesRead -= toCopy;
-                if (lengthBytesRead < 0)
-                {
-                    throw new UnreachableException(
-                        "how did we end up here?, we where suppose to read length value if it is fully in the buffer");
-                }
-
-                _partialLength = 0;
-                _bufferState = BufferState.EmptyBuffer;
-                return true;
+                lengthBytesRead = toCopy;
+                return false;
             case BufferState.PartialMessage:
             default:
                 throw new Exception("State");

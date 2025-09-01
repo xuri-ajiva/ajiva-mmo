@@ -58,11 +58,28 @@ public class Instrumentation : IDisposable
             tags: tags is not null ? new ActivityTagsCollection(tags) : null));
 
     [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
-    public static void RecordFunction([CallerMemberName] string name = "", [CallerFilePath] string file = "", [CallerLineNumber] i32 line = 0)
-        => Activity.Current?.AddEvent(new ActivityEvent(name/*, tags: [new KeyValuePair<string, object?>("location", $"{file}:{line}")]*/));
+    public static void RecordFunction([CallerMemberName] string name = "", [CallerFilePath] string file = "",
+        [CallerLineNumber] i32 line = 0)
+        => Activity.Current?.AddEvent(
+            new ActivityEvent(name /*, tags: [new KeyValuePair<string, object?>("location", $"{file}:{line}")]*/));
 
     public void Dispose()
     {
         this.ActivitySource.Dispose();
+    }
+
+    public readonly ref struct HistogramScope(Histogram<f64> instrument) : IDisposable
+    {
+        private readonly i64 _ts = Stopwatch.GetTimestamp();
+
+        public void Dispose()
+        {
+            instrument.Record(Stopwatch.GetElapsedTime(_ts).TotalMilliseconds);
+        }
+    }
+
+    public static HistogramScope Measure(Histogram<f64> inMeter) 
+    {
+        return new HistogramScope(inMeter);
     }
 }

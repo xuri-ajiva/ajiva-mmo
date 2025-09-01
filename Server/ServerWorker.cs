@@ -18,7 +18,8 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
     private readonly Instrumentation _instrumentation;
     private readonly ServerGameLogic _serverGameLogic;
 
-    public ServerWorker(ILogger<ServerWorker> logger, QServer server, Instrumentation instrumentation, ServerGameLogic serverGameLogic)
+    public ServerWorker(ILogger<ServerWorker> logger, QServer server, Instrumentation instrumentation,
+        ServerGameLogic serverGameLogic)
     {
         _logger = logger;
         _server = server;
@@ -104,6 +105,8 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
 
     public void OnClientConnected(QConnection connection)
     {
+        Instrumentation.Instance = _instrumentation;
+        using var activity = Instrumentation.NamedTrace("ClientConnected", ActivityKind.Server);
         _logger.LogInformation("Client connected: {Client}", connection);
         // _serverGameLogic.SendWorldState(connection);
         _serverGameLogic.CreatePlayerEntity(connection);

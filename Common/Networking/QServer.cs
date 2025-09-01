@@ -17,7 +17,8 @@ public interface QServerEventListener
 
 public class QServer(
     QuicListenerOptions options,
-    ILogger<QServer> logger) : IAsyncDisposable, IQServer
+    ILogger<QServer> logger,
+    Instrumentation instrumentation) : IAsyncDisposable, IQServer
 {
     private QuicListener? _server;
     private readonly CancellationTokenSource _cts = new();
@@ -70,10 +71,10 @@ public class QServer(
                     var connection = await _server.AcceptConnectionAsync(_cts.Token);
                     endPoint = connection.RemoteEndPoint;
                     logger.LogInformation("Connection accepted {Connection}", connection);
-                    var qConnection = await QConnectionEstablisher.Server(connection, _cts.Token);
-                    eventListener?.OnClientConnected(qConnection);
+                    var qConnection = await QConnectionEstablisher.Server(connection, instrumentation, _cts.Token);
+                    qConnection.StartLoops(handler, instrumentation);
                     _connections.Add(qConnection);
-                    qConnection.Update(handler);
+                    eventListener?.OnClientConnected(qConnection);
                 }
                 catch (Exception e)
                 {
