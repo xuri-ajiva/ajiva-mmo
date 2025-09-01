@@ -207,7 +207,7 @@ public class Instanced3dDeferredRenderer(
             _entitiesByMesh.Clear();
             foreach (var ent in ecs.GetEntitiesWithRenderMesh())
             {
-                var renderable = ecs.GetRenderMesh(ent);
+                if (!ecs.TryGetRenderMesh(ent, out var renderable)) continue;
                 if (!_entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
                 {
                     list = [];
@@ -221,7 +221,7 @@ public class Instanced3dDeferredRenderer(
             foreach (var mesh in _dynamicMeshes.OpaqueMeshes) mesh.Dispose();
             _dynamicMeshes.OpaqueMeshes.Clear();
             // Create a mesh buffer for each mesh
-            foreach (var (meshId, enitites) in _entitiesByMesh)
+            foreach (var (_, enitites) in _entitiesByMesh)
             {
                 if (enitites.Count > 0)
                 {
@@ -470,6 +470,13 @@ public class Instanced3dDeferredRenderer(
         {
             ImGui.InputFloat("SmoothingFames", ref _smoothingFames, 0.1f, 1f);
             ImGui.Text($"SFrame: {1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFames)}");
+            ImGui.Text("Rendering Stats:");
+            ImGui.Text($"Opaque Instancing: {_dynamicMeshes.OpaqueMeshes.Count}");
+            ImGui.Text($"Opaque Total Instances: {_dynamicMeshes.OpaqueMeshes.Sum(x => x._instanceInfos.Count)}");
+            if (ImGui.Button("ReInitialize Renderable Meshes"))
+            {
+                _renderableMeshVersion--;
+            }
 
             if (ImGui.Button("Trace Renderer"))
             {

@@ -76,7 +76,7 @@ public class ClientNetworkManager(
     /// <summary>
     /// Send entity update to server (called by player input system)
     /// </summary>
-    public void SendEntityUpdate(u32 networkEntityId, Vector3 position, Quaternion rotation, Vector3 scale)
+    public void SendEntityUpdate(EntityId networkEntityId, Vector3 position, Quaternion rotation, Vector3 scale)
     {
         if (!IsConnected) return;
 
@@ -167,8 +167,18 @@ public class ClientNetworkManager(
 
     public void Handle(EntityAssignedPacket message, QConnection connection)
     {
-        gameLogic.SetLocalPlayerEntityId(message.EntityId);
-        logger.LogInformation("Assigned local player entity ID: {EntityId}", message.EntityId);
+        gameLogic.SetLocalPlayerEntityId(message.Id);
+        logger.LogInformation("Assigned local player entity ID: {EntityId}", message.Id);
+    }
+
+    public void Handle(ChunkUpdatePacket message, QConnection connection)
+    {
+        gameLogic.HandleChunkUpdate(message);
+    }
+
+    public void Handle(ChunkUnloadPacket message, QConnection connection)
+    {
+        gameLogic.HandleChunkUnload(message);
     }
 
     public Task StartedAsync(CancellationToken cancellationToken) => RunAutoConnect(cancellationToken);

@@ -1,4 +1,6 @@
-﻿using System.Numerics;
+﻿using System.Collections.Concurrent;
+using System.Numerics;
+using Common.Ecs;
 using Interception;
 using MemoryPack;
 
@@ -6,49 +8,20 @@ namespace Common.SpacialPartitioning;
 
 [ExcludeFromInterception]
 [MemoryPackable]
-public partial struct ChunkCoord(i32 x, i32 y, i32 z, i32 level) : IEquatable<ChunkCoord>
-{
-    public i32 X = x;
-    public i32 Y = y;
-    public i32 Z = z;
-    public i32 Level = level;
-
-    // Override Equals and GetHashCode for dictionary keys
-    public override bool Equals(object? obj) => obj is ChunkCoord other && Equals(other);
-
-    public bool Equals(ChunkCoord other) => X == other.X && Y == other.Y && Z == other.Z && Level == other.Level;
-
-    public static bool operator ==(ChunkCoord left, ChunkCoord right) => left.Equals(right);
-
-    public static bool operator !=(ChunkCoord left, ChunkCoord right) => !(left == right);
-
-    public override i32 GetHashCode()
-    {
-        // Combine the hash codes of all four fields efficiently
-        unchecked
-        {
-            i32 hash = 17;
-            hash = hash * 31 + X;
-            hash = hash * 31 + Y;
-            hash = hash * 31 + Z;
-            hash = hash * 31 + Level;
-            return hash;
-        }
-    }
-}
+public readonly partial record struct ChunkCoord(i32 X, i32 Y, i32 Z, i32 Level);
 
 public class SpatialChunk
 {
-    public HashSet<i32> Entities = new();
+    public readonly HashSet<EntityId> Entities = new();
     public bool IsDirty = false;
 
-    public void Add(i32 entityId)
+    public void Add(EntityId entityId)
     {
         Entities.Add(entityId);
         MarkDirty();
     }
 
-    public void Remove(i32 entityId)
+    public void Remove(EntityId entityId)
     {
         Entities.Remove(entityId);
         MarkDirty();
@@ -61,32 +34,35 @@ public class SpatialChunk
 
 public class SpatialGrid(u32 chunkSize)
 {
-    private readonly Dictionary<ChunkCoord, SpatialChunk> chunks = new();
+    private readonly ConcurrentDictionary<ChunkCoord, SpatialChunk> _chunks = new();
     private readonly u32 _chunkSize = chunkSize;
-    
+
 //   [ExcludeFromInterception]
     public ChunkCoord GetChunkCoord(Vector3 position, i32 level)
     {
-        i32 x = (i32)Math.Floor(position.X / _chunkSize);
-        i32 y = (i32)Math.Floor(position.Y / _chunkSize);
-        i32 z = (i32)Math.Floor(position.Z / _chunkSize);
+        var x = (i32)Math.Floor(position.X / _chunkSize);
+        var y = (i32)Math.Floor(position.Y / _chunkSize);
+        var z = (i32)Math.Floor(position.Z / _chunkSize);
         return new ChunkCoord(x, y, z, level);
     }
 
-    public void MoveEntity(i32 entityId, Vector3 oldPos, i32 oldLevel, Vector3 newPos, i32 newLevel)
+    public SpatialChunk GetChunkData(ChunkCoord chunkCoord) =>
+        _chunks.TryGetValue(chunkCoord, out var chunk) ? chunk : new SpatialChunk();
+
+    public void MoveEntity(EntityId entityId, Vector3 oldPos, i32 oldLevel, Vector3 newPos, i32 newLevel)
     {
         var oldChunk = GetChunkCoord(oldPos, oldLevel);
         var newChunk = GetChunkCoord(newPos, newLevel);
 
         if (!oldChunk.Equals(newChunk))
         {
-            if (chunks.TryGetValue(oldChunk, out var oldSpatialChunk))
+            if (_chunks.TryGetValue(oldChunk, out var oldSpatialChunk))
                 oldSpatialChunk.Remove(entityId);
 
-            if (!chunks.TryGetValue(newChunk, out var newSpatialChunk))
+            if (!_chunks.TryGetValue(newChunk, out var newSpatialChunk))
             {
                 newSpatialChunk = new SpatialChunk();
-                chunks[newChunk] = newSpatialChunk;
+                _chunks[newChunk] = newSpatialChunk;
             }
 
             newSpatialChunk.Add(entityId);
@@ -94,19 +70,19 @@ public class SpatialGrid(u32 chunkSize)
         else
         {
             // Entity stayed in the same chunk - optionally mark dirty if needed
-            if (chunks.TryGetValue(newChunk, out var spatialChunk))
+            if (_chunks.TryGetValue(newChunk, out var spatialChunk))
                 spatialChunk.MarkDirty();
         }
     }
 
     public IEnumerable<(ChunkCoord chunkCoord, SpatialChunk chunk)> GetDirtyChunks()
     {
-        return from kvp in chunks where kvp.Value.IsDirty select (kvp.Key, kvp.Value);
+        return from kvp in _chunks where kvp.Value.IsDirty select (kvp.Key, kvp.Value);
     }
 
     public void ClearDirtyFlags()
     {
-        foreach (var chunk in chunks.Values)
+        foreach (var chunk in _chunks.Values)
             chunk.ClearDirty();
     }
 }

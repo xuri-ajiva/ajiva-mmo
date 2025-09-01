@@ -73,7 +73,7 @@ public class PlayerInputSystem : IHostedService
 
             // Send to server
             _networkManager.SendEntityUpdate(
-                networkId.Value,
+                networkId!.Value,
                 cameraPosition,
                 cameraRotation,
                 currentScale.Value

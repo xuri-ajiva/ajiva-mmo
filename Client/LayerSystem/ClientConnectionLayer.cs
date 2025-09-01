@@ -34,7 +34,7 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
     public void RenderUi(UpdateInfo info)
     {
         ImGui.Begin("Client Connection");
-        
+
         // Connection status and controls
         ImGui.Text($"Status: {networkManager.State.ToString()}");
         ImGui.SameLine();
@@ -42,7 +42,7 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
         ImGui.Text($"RenderVersion: {gameLogic.RenderEntityVersion}");
         ImGui.SameLine();
         ImGui.Text($"EnitityCount: {gameLogic.EntityCount}");
-        
+
         if (networkManager.IsNotConnected)
         {
             ImGui.InputText("Address", ref _address, 100);
@@ -77,13 +77,18 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
                     ImGui.Text($"Player Position: {pos.Value}");
                 }
             }
+            else
+            {
+                ImGui.Text("Local Player ECS ID: <none>");
+            }
         }
 
         ImGui.Separator();
 
         // Entity list
         ImGui.Text("Entities (first 200):");
-        if (ImGui.BeginTable("entityTable", 6, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable))
+        if (ImGui.BeginTable("entityTable", 6,
+                ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.Resizable))
         {
             ImGui.TableSetupColumn("ECS", ImGuiTableColumnFlags.WidthFixed, 50);
             ImGui.TableSetupColumn("Net", ImGuiTableColumnFlags.WidthFixed, 50);

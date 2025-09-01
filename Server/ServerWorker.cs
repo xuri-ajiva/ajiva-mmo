@@ -105,10 +105,10 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
     public void OnClientConnected(QConnection connection)
     {
         _logger.LogInformation("Client connected: {Client}", connection);
-        _serverGameLogic.SendWorldState(connection);
+        // _serverGameLogic.SendWorldState(connection);
         _serverGameLogic.CreatePlayerEntity(connection);
     }
-    
+
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {

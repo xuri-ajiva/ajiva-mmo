@@ -68,6 +68,15 @@ public partial struct RenderMesh : IComponent
     public u32 EntityId;
 }
 
+// Client-only render asset component - maps entity type to renderable asset
+[EcsComponent(ComponentScope.Client, ComponentSync.None, ComponentFlags.Dense)]
+public partial struct RenderAsset : IComponent
+{
+    public string AssetPath; // e.g., "meshes/crate.obj", "meshes/player.obj"
+    public string MaterialPath; // e.g., "materials/wood.mat", "materials/metal.mat"
+    public bool IsLoaded;
+}
+
 // Client-side prediction component
 [EcsComponent(ComponentScope.Client, ComponentSync.None, ComponentFlags.Dense)]
 public partial struct PredictedPosition : IComponent

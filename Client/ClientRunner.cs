@@ -2,6 +2,7 @@
 using System.Net.Quic;
 using System.Net.Security;
 using Ajiva.Ecs;
+using Client.Assets;
 using Client.Game;
 using Client.LayerSystem;
 using Client.Networking;
@@ -28,6 +29,9 @@ public class ClientRunner
         services.AddSingleton<ModelHelper>();
         services.AddSingleton<Scene>();
         services.AddSingleton<ICamera, FreeCamera>();
+        
+        // Asset management
+        services.AddSingleton<EntityAssetRegistry>();
 
         // EcsV2 Game Logic
         services.AddSingleton<ClientGameLogic>();
