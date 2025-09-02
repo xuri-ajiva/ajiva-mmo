@@ -207,6 +207,7 @@ public class Instanced3dDeferredRenderer(
             _entitiesByMesh.Clear();
             foreach (var ent in ecs.GetEntitiesWithRenderMesh())
             {
+                if (ent == _gameLogic.LocalPlayerEntityId) continue; // Dont Render Local Player
                 if (!ecs.TryGetRenderMesh(ent, out var renderable)) continue;
                 if (!_entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
                 {
@@ -459,8 +460,8 @@ public class Instanced3dDeferredRenderer(
     }
 
     f32 textureSize = 128f;
-    private i32 maxConcurrentLoads = 1;
-    private Dictionary<u32, List<EntityId>> _entitiesByMesh = [];
+    private i32 maxConcurrentLoads = 4;
+    private readonly Dictionary<u32, List<EntityId>> _entitiesByMesh = [];
 
     [ExcludeFromInterception]
     public void RenderUi(UpdateInfo info)
