@@ -1,14 +1,19 @@
-﻿namespace Common.Ecs;
+﻿using System.Runtime.CompilerServices;
 
-public readonly struct EntityId(i32 value) : IEquatable<EntityId>
+namespace Common.Ecs;
+
+public readonly record struct EntityId(i32 Value) : IComparable<EntityId>
 {
-    public readonly i32 Value = value;
-
-    public bool Equals(EntityId other) => Value == other.Value;
-    public override bool Equals(object? obj) => obj is EntityId other && Equals(other);
-    public override i32 GetHashCode() => Value;
-    public static bool operator ==(EntityId left, EntityId right) => left.Equals(right);
-    public static bool operator !=(EntityId left, EntityId right) => !(left == right);
-    
     public override string ToString() => $"Entity({Value})";
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public i32 CompareTo(EntityId other) => Value.CompareTo(other.Value);
+}
+
+public readonly record struct NetEntId(i32 Value)
+{
+    public override string ToString() => $"NetEnt({Value})";
+
+    public static explicit operator EntityId(NetEntId netEntId) => new(netEntId.Value);
+    public static explicit operator NetEntId(EntityId entityId) => new(entityId.Value);
 }

@@ -57,7 +57,6 @@ public partial struct SpatialData : IComponent
 {
     public ChunkCoord CurrentChunk;
     public ChunkCoord PreviousChunk;
-    public bool HasMoved;
 }
 
 // Client-only rendering components
