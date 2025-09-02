@@ -1,11 +1,12 @@
-﻿using System.Diagnostics;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Ajiva.Ecs;
 using Client.Assets;
 using Client.Renderer;
 using Common.Ecs;
 using Common.Networking;
-using Interception;
+using Common.SpacialPartitioning;
 
 namespace Client.Game;
 
@@ -13,22 +14,33 @@ namespace Client.Game;
 /// Client-side game logic using EcsV2 with simple entity management.
 /// No spatial partitioning needed since server pre-filters entities within range.
 /// </summary>
-public class ClientGameLogic(ClientEcsWorld world, Scene scene, EntityAssetRegistry assetRegistry, ILogger<ClientGameLogic> logger)
+public class ClientGameLogic(
+    ClientEcsWorld world,
+    Scene scene,
+    EntityAssetRegistry assetRegistry,
+    ILogger<ClientGameLogic> logger)
 {
     private readonly Scene _scene = scene;
+    private SpatialGrid? _grid;
     private readonly EntityAssetRegistry _assetRegistry = assetRegistry;
-    private readonly Dictionary<EntityId, EntityId> _networkToEcs = new();
-    private readonly Dictionary<EntityId, EntityId> _ecsToNetwork = new();
+    private readonly Dictionary<NetEntId, EntityId> _networkToEcs = new();
+    private readonly Dictionary<EntityId, NetEntId> _ecsToNetwork = new();
     private readonly ClientEcsWorld _world = world;
     public u64 RenderEntityVersion { get; private set; } = 0;
 
-    public EntityId? LocalPlayerNetworkId { get; private set; }
+    public NetEntId? LocalPlayerNetworkId { get; private set; }
     public EntityId? LocalPlayerEntityId { get; private set; }
 
     public ClientEcsWorld World => _world;
     public int EntityCount => _networkToEcs.Count;
 
-    public void SetLocalPlayerEntityId(EntityId networkEntityId)
+    private void IncrementRenderVersion([CallerMemberName] string caller = "")
+    {
+        logger.LogDebug("Incrementing RenderEntityVersion due to {Caller}", caller);
+        RenderEntityVersion++;
+    }
+
+    public void SetLocalPlayerEntityId(NetEntId networkEntityId)
     {
         LocalPlayerNetworkId = networkEntityId;
 
@@ -55,7 +67,7 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, EntityAssetRegis
 
         World.AddRotation(entity, new Rotation { Value = packet.Transform.Rotation });
         World.AddPosition(entity, new Position { Value = packet.Transform.Position });
-        
+
         World.AddEntityType(entity, new EntityType { TypeId = packet.TypeId });
 
         // Add render components based on entity type using asset registry
@@ -91,8 +103,8 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, EntityAssetRegis
         {
             // Fallback: use transform scale and basic render mesh
             World.AddScale(entity, new Scale { Value = packet.Transform.Scale });
-            World.AddRenderMesh(entity, new RenderMesh 
-            { 
+            World.AddRenderMesh(entity, new RenderMesh
+            {
                 MeshId = packet.TypeId,
                 EntityId = (u32)entity.Value
             });
@@ -104,7 +116,7 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, EntityAssetRegis
             LocalPlayerEntityId = entity;
         }
 
-        RenderEntityVersion++;
+        IncrementRenderVersion();
     }
 
     public void HandleEntityUpdate(EntityUpdatePacket packet)
@@ -155,48 +167,72 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, EntityAssetRegis
     public void HandleBeginWorldState(BeginWorldStatePacket packet)
     {
         ClearWorld();
-        RenderEntityVersion++;
+        IncrementRenderVersion();
+    }
+
+    private void ClearWorld()
+    {
+        // Clear all mappings
+        _networkToEcs.Clear();
+        _ecsToNetwork.Clear();
+
+        // Reset local player
+        LocalPlayerEntityId = null;
+        LocalPlayerNetworkId = null;
+        _grid = null;
+        _world.ClearAllEntities();
+
+        // Note: EcsWorld doesn't have a clear method, so we'd need to implement that
+        // For now, just create a new world
+        // TODO: Add ClearAll method to EcsWorld generator
+        IncrementRenderVersion();
+    }
+
+    public NetEntId? GetNetworkId(EntityId ecsEntity)
+    {
+        return _ecsToNetwork.TryGetValue(ecsEntity, out var networkId) ? networkId : null;
+    }
+
+    public IEnumerable<EntityId> GetAllEntities()
+    {
+        return World.GetEntitiesWithPosition();
+    }
+
+
+    public void LoadLevel(string levelName)
+    {
+        _scene.LoadLevel(levelName);
     }
 
     public void HandleChunkUpdate(ChunkUpdatePacket packet)
     {
-        logger.LogTrace("Chunk update received: {ChunkCoord} with {EntityCount} entities", 
-            packet.Coord, packet.Data.EntityIds.Length);
+        logger.LogTrace("Chunk update received: {ChunkCoord} with {Type}", packet.Coord, packet.Data.GetType());
 
-        // Process all entities in the chunk
-        for (int i = 0; i < packet.Data.EntityIds.Length; i++)
+        if (!GridCheck()) return;
+        if (!_grid.TryGetChunk(packet.Coord, out var chunk)) return;
+        switch (packet.Data)
         {
-            var networkId = packet.Data.EntityIds[i];
-            var transform = packet.Data.Transforms[i];
-            var typeId = packet.Data.EntityTypes[i];
-            
-            // Check if entity already exists
-            if (_networkToEcs.TryGetValue(networkId, out var existingEntity))
-            {
-                // Update existing entity
-                UpdateEntityTransform(existingEntity, transform);
-            }
-            else
-            {
-                // Create new entity
-                CreateEntityFromChunkData(networkId, transform, typeId);
-            }
-        }
+            case ChunkData<PositionChunkData> posUpdate:
+                foreach (var (id, delta) in chunk.Entities.Zip(posUpdate.Data))
+                {
+                    if (World.HasPosition(id))
+                    {
+                        ref var position = ref World.GetPosition(id);
+                        position.Value = delta.Restore(packet.Coord, _grid.GridInfo);
+                    }
+                }
 
-        RenderEntityVersion++;
+                break;
+        }
     }
 
     public void HandleChunkUnload(ChunkUnloadPacket packet)
     {
         logger.LogTrace("Chunk unload received: {ChunkCoord}", packet.ChunkCoord);
-        
-        // Note: We don't have a direct way to find entities by chunk coordinate
-        // For now, we'll rely on individual entity destroyed packets
-        // In a more advanced implementation, we could track entity -> chunk mappings
-        foreach (var entityId in packet.EntityIds)
+        var anyRemoved = false;
+        foreach (var entityId in packet.NetEntIds)
         {
             if (!_networkToEcs.Remove(entityId, out var ecsEntity)) continue;
-            
             // Clean up mappings
             _ecsToNetwork.Remove(ecsEntity);
 
@@ -208,199 +244,113 @@ public class ClientGameLogic(ClientEcsWorld world, Scene scene, EntityAssetRegis
             }
 
             World.DeleteEntity(ecsEntity);
+            anyRemoved = true;
         }
-        
-        RenderEntityVersion++;
+
+        if (anyRemoved)
+            IncrementRenderVersion();
     }
 
-    private void CreateEntityFromChunkData(EntityId networkId, Transform transform, u32 typeId)
+    public void HandleChunkDelta(ChunkDeltaPacket message)
     {
-        var entity = World.CreateEntity();
+        logger.LogTrace("Chunk delta received: {ChunkCoord} with {NewCount} new and {RemovedCount} removed entities",
+            message.Coord, message.NewIds.Count, message.RemovedIds.Count);
 
-        // Store network <-> ECS mapping
-        _networkToEcs[networkId] = entity;
-        _ecsToNetwork[entity] = networkId;
+        if (!GridCheck()) return;
+        if (!_grid.TryGetChunk(message.Coord, out var chunk)) return;
 
-        // Add components
-        World.AddPosition(entity, new Position
+        if (message.NewIds is { Count: > 0 } newIds)
         {
-            Value = transform.Position,
-            Level = 0 // Assuming level 0 for now
-        });
-
-        World.AddRotation(entity, new Rotation
-        {
-            Value = transform.Rotation
-        });
-
-        World.AddEntityType(entity, new EntityType
-        {
-            TypeId = typeId
-        });
-
-        // Add render components based on entity type
-        if (_assetRegistry.GetAssetDefinition(typeId) is { } assetDef)
-        {
-            // Apply asset-specific scale if defined, otherwise use transform scale
-            var finalScale = assetDef.Scale == default ? transform.Scale : assetDef.Scale;
-            World.AddScale(entity, new Scale { Value = finalScale });
-
-            // Apply position offset if defined
-            var finalPosition = transform.Position + assetDef.PositionOffset;
-            if (assetDef.PositionOffset != default)
+            foreach (var netEntId in newIds)
             {
-                // Update position with offset
-                ref var pos = ref World.GetPosition(entity);
-                pos.Value = finalPosition;
+                if (_networkToEcs.TryGetValue(netEntId, out var id))
+                {
+                    chunk.Entities.Add(id);
+                }
+                else
+                {
+                    HandleEntityCreated(new EntityCreatedPacket(netEntId, TryGetTransform(netEntId), 1));
+                }
             }
+        }
 
-            // Add RenderAsset component for asset streaming
-            World.AddRenderAsset(entity, new RenderAsset
+        if (message.RemovedIds is { Count: > 0 } removedIds)
+        {
+            foreach (var entId in removedIds)
             {
-                AssetPath = assetDef.MeshPath,
-                MaterialPath = assetDef.MaterialPath,
-                IsLoaded = false // Will be set to true when ResourceManager loads it
-            });
+                if (!_networkToEcs.TryGetValue(entId, out var local)) continue;
+                //HandleEntityDestroyed(new EntityDestroyedPacket(entId));
+                chunk.Entities.Remove(local);
+            }
+        }
 
-            // Add RenderMesh component 
-            World.AddRenderMesh(entity, new RenderMesh
-            {
-                MeshId = typeId,
-                EntityId = (u32)entity.Value // Store reference to entity for rendering
-            });
+        //IncrementRenderVersion();
+    }
 
-            logger.LogTrace("Entity {NetworkId} assigned render assets: mesh={MeshPath}, material={MaterialPath}", 
-                networkId, assetDef.MeshPath, assetDef.MaterialPath);
+    private Transform TryGetTransform(NetEntId entId)
+    {
+        if (!_networkToEcs.TryGetValue(entId, out var entity)) return new Transform();
+
+        if (!_world.TryGetPosition(entity, out var pos))
+            pos = default;
+        if (!_world.TryGetRotation(entity, out var rot))
+            rot = default;
+        if (!_world.TryGetScale(entity, out var scl))
+            scl = default;
+
+        return new Transform
+        {
+            Position = pos.Value,
+            Rotation = rot.Value,
+            Scale = scl.Value == Vector3.Zero ? Vector3.One : scl.Value
+        };
+    }
+
+    public void HandleChunkLoad(ChunkLoadPacket message)
+    {
+        var entityCount = message.NetEntIds.Count;
+        logger.LogTrace("Chunk load received: {ChunkCoord} with {EntityCount} entities",
+            message.Coord, entityCount);
+        if (!GridCheck()) return;
+        if (entityCount == 0)
+        {
+            if (!_grid.TryGetChunk(message.Coord, out var data) || data is not { Entities.Count: > 0 }) return;
+            data.Entities.Clear();
+            IncrementRenderVersion();
         }
         else
         {
-            // Use transform scale as fallback
-            World.AddScale(entity, new Scale { Value = transform.Scale });
-            
-            logger.LogWarning("No asset definition found for entity type {TypeId} (entity {NetworkId})", 
-                typeId, networkId);
-            
-            // Fallback: create a basic render mesh with TypeId
-            World.AddRenderMesh(entity, new RenderMesh
+            var data = _grid.GetChunkData(message.Coord);
+            var beforeCount = data.Entities.Count;
+            if (beforeCount > 0)
+                data.Entities.Clear();
+
+            foreach (var entId in message.NetEntIds)
             {
-                MeshId = typeId,
-                EntityId = (u32)entity.Value
-            });
-        }
-
-        // Check if this is our local player
-        if (LocalPlayerNetworkId == networkId)
-        {
-            LocalPlayerEntityId = entity;
-        }
-    }
-
-    private void UpdateEntityTransform(EntityId entity, Transform transform)
-    {
-        // Update transform components
-        if (World.HasPosition(entity))
-        {
-            ref var position = ref World.GetPosition(entity);
-            position.Value = transform.Position;
-        }
-
-        if (World.HasRotation(entity))
-        {
-            ref var rotation = ref World.GetRotation(entity);
-            rotation.Value = transform.Rotation;
-        }
-
-        if (World.HasScale(entity))
-        {
-            ref var scale = ref World.GetScale(entity);
-            scale.Value = transform.Scale;
-        }
-    }
-
-    private void ClearWorld()
-    {
-        // Clear all mappings
-        _networkToEcs.Clear();
-        _ecsToNetwork.Clear();
-
-        // Reset local player
-        LocalPlayerEntityId = null;
-
-        // Note: EcsWorld doesn't have a clear method, so we'd need to implement that
-        // For now, just create a new world
-        // TODO: Add ClearAll method to EcsWorld generator
-        RenderEntityVersion++;
-    }
-
-    /// <summary>
-    /// Get the network ID for an ECS entity (for sending updates to server)
-    /// </summary>
-    public EntityId? GetNetworkId(EntityId ecsEntity)
-    {
-        return _ecsToNetwork.TryGetValue(ecsEntity, out var networkId) ? networkId : null;
-    }
-
-    /// <summary>
-    /// Get the ECS entity for a network ID
-    /// </summary>
-    public EntityId? GetEcsEntity(EntityId networkId)
-    {
-        return _networkToEcs.TryGetValue(networkId, out var ecsEntity) ? ecsEntity : null;
-    }
-
-    /// <summary>
-    /// Get all entities for rendering/UI
-    /// </summary>
-    public IEnumerable<EntityId> GetAllEntities()
-    {
-        return World.GetEntitiesWithPosition();
-    }
-
-    /// <summary>
-    /// Find nearest entity to a position (for selection, etc.)
-    /// Simple linear search since client only has ~100 entities max
-    /// </summary>
-    public EntityId? FindNearestEntity(Vector3 position, float maxDistance = float.MaxValue)
-    {
-        EntityId? nearest = null;
-        float nearestDist = maxDistance;
-
-        foreach (var entityId in World.GetEntitiesWithPosition())
-        {
-            var entityPos = World.GetPosition(entityId);
-            var dist = Vector3.Distance(position, entityPos.Value);
-
-            if (dist < nearestDist)
-            {
-                nearest = entityId;
-                nearestDist = dist;
+                HandleEntityCreated(new EntityCreatedPacket(entId, new Transform(), 1));
+                data.Entities.Add(_networkToEcs[entId]);
             }
-        }
 
-        return nearest;
+            if (beforeCount > 0)
+                IncrementRenderVersion();
+        }
     }
 
-    /// <summary>
-    /// Get entities within a radius (for area effects, etc.)
-    /// </summary>
-    public IEnumerable<EntityId> GetEntitiesInRadius(Vector3 center, float radius)
+    [MemberNotNullWhen(true, nameof(_grid))]
+    private bool GridCheck()
     {
-        var radiusSquared = radius * radius;
-
-        foreach (var entityId in World.GetEntitiesWithPosition())
+        if (_grid is null)
         {
-            var entityPos = World.GetPosition(entityId);
-            var distSquared = Vector3.DistanceSquared(center, entityPos.Value);
-
-            if (distSquared <= radiusSquared)
-            {
-                yield return entityId;
-            }
+            logger.LogWarning("Spatial grid not initialized. Cannot process chunk load.");
+            return false;
         }
+
+        return true;
     }
 
-    public void LoadLevel(string levelName)
+    public void InitializeSpacialGrid(SpacialGridInfo gridInfo)
     {
-        _scene.LoadLevel(levelName);
+        ClearWorld();
+        _grid = new SpatialGrid(gridInfo);
     }
 }

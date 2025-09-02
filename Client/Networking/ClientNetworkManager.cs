@@ -77,7 +77,7 @@ public class ClientNetworkManager(
     /// <summary>
     /// Send entity update to server (called by player input system)
     /// </summary>
-    public void SendEntityUpdate(EntityId networkEntityId, Vector3 position, Quaternion rotation, Vector3 scale)
+    public void SendEntityUpdate(NetEntId networkEntityId, Vector3 position, Quaternion rotation, Vector3 scale)
     {
         if (!IsConnected) return;
 
@@ -163,7 +163,8 @@ public class ClientNetworkManager(
     public void Handle(LoadLevelPacket message, QConnection connection)
     {
         logger.LogInformation("Loading level: {LevelName}", message.LevelName);
-        gameLogic.LoadLevel(message.LevelName);
+        //gameLogic.LoadLevel(message.LevelName);
+        gameLogic.InitializeSpacialGrid(message.GridInfo);
     }
 
     public void Handle(EntityAssignedPacket message, QConnection connection)
@@ -175,6 +176,16 @@ public class ClientNetworkManager(
     public void Handle(ChunkUpdatePacket message, QConnection connection)
     {
         gameLogic.HandleChunkUpdate(message);
+    }
+    
+    public void Handle(ChunkLoadPacket message, QConnection userData)
+    {
+        gameLogic.HandleChunkLoad(message);
+    }
+
+    public void Handle(ChunkDeltaPacket message, QConnection userData)
+    {
+        gameLogic.HandleChunkDelta(message);
     }
 
     public void Handle(ChunkUnloadPacket message, QConnection connection)
