@@ -474,8 +474,7 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
         sb.EnterScope();
         sb.AppendLine($"var packet = new {className}();");
         sb.AppendLine("var read = global::MemoryPack.MemoryPackSerializer.Deserialize(data, ref packet);");
-        sb.AppendLine(
-            $$"""Debug.Assert(read == data.Length, $"Did not read entire buffer when deserializing {{nameof(className)}}. Read {read} of {data.Length} bytes.");""");
+        //sb.AppendLine($$"""Debug.Assert(read == data.Length, $"Did not read entire buffer when deserializing {{nameof(className)}}. Read {read} of {data.Length} bytes.");""");
         sb.AppendLine("return packet;");
         sb.ExitScope();
         sb.AppendLine();

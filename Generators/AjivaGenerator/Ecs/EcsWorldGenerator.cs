@@ -17,6 +17,7 @@ internal static class EcsWorldGenerator
         var sourceCode = BuildEcsWorldClass(components, className);
         context.AddSource($"{className}.g.cs", SourceText.From(sourceCode, Encoding.UTF8));
     }
+
     private static string BuildEcsWorldClass(ImmutableArray<ComponentInfo> components, string className)
     {
         var sb = new StringBuilder();
@@ -495,5 +496,38 @@ internal static class EcsWorldGenerator
             sb.AppendLine();
         }
 
+        // ClearAllEntities
+        sb.AppendLine("    /// <summary>Clears all entities and components</summary>");
+        sb.AppendLine("    public void ClearAllEntities()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        _nextEntityId = 1;");
+        sb.AppendLine("        _freeEntityIds.Clear();");
+        foreach (var component in components)
+        {
+            if (component.Flags.HasFlag(ComponentFlags.Dense))
+            {
+                sb.AppendLine($"        Array.Clear(_data_{component.Name}, 0, _data_{component.Name}.Length);");
+                sb.AppendLine($"        _set_{component.Name}.SetAll(false);");
+
+                if (component.Flags.HasFlag(ComponentFlags.DirtyTracked))
+                {
+                    sb.AppendLine($"        _dirty_{component.Name}.SetAll(false);");
+                }
+            }
+            else // Sparse
+            {
+                sb.AppendLine($"        _data_{component.Name}.Clear();");
+                sb.AppendLine($"        _set_{component.Name}.Clear();");
+
+                if (component.Flags.HasFlag(ComponentFlags.DirtyTracked))
+                {
+                    sb.AppendLine($"        _dirty_{component.Name}.Clear();");
+                }
+            }
+        }
+
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine();
     }
 }
