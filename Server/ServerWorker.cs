@@ -110,7 +110,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
         using var activity = Instrumentation.NamedTrace("ClientConnected", ActivityKind.Server);
         _logger.LogInformation("Client connected: {Client}", connection);
         // _serverGameLogic.SendWorldState(connection);
-        _serverGameLogic.CreatePlayerEntity(connection);
+        _serverGameLogic.SetupPlayer(connection);
     }
 
 
