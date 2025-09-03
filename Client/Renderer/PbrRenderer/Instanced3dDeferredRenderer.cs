@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using Client.Game;
 using Client.LayerSystem;
+using Client.Renderer.Instancing;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
@@ -23,30 +24,27 @@ public class Instanced3dDeferredRenderer(
     ILogger<Instanced3dDeferredRenderer> logger,
     IShaderManager shaderManager,
     RendererApi api,
-    ClientGameLogic gameLogic,
     ResourceManager loader,
     ICamera camera,
     Scene scene,
+    IRenderableInstanceCollectionBuilder renderBuilder,
     PeriodicUpdater periodicUpdater) : IRenderLayer, IUiRenderLayer, IAjivaLayer
 {
     private readonly ILogger<Instanced3dDeferredRenderer> _logger = logger;
     private readonly IShaderManager _shaderManager = shaderManager;
     private readonly RendererApi _api = api;
     private readonly ResourceManager _loader = loader;
-    private readonly ClientGameLogic _gameLogic = gameLogic;
+    private readonly Scene _scene = scene;
+    private readonly IRenderableInstanceCollectionBuilder _renderBuilder = renderBuilder;
+    private readonly ICamera _camera = camera;
 
-    private readonly RenderableMeshCollection _dynamicMeshes = new();
-    private u64 _transformVersion;
-    private u64 _renderableMeshVersion;
-    private u64 _sceneVersion;
-    private RenderableMeshCollection? _sceneRenderCollection = null;
-    private Scene _scene = scene;
+    private readonly RenderableInstanceCollection _dynamicInstances = new();
+    private RenderableInstanceCollection? _sceneRenderCollection;
 
     private GBuffer? _sceneGBuffer;
     private RenderTexture? _finalSceneTexture;
     private SceneLights _sceneLights = null!;
     private AjivaBuffer<PbrDeferredLightingShader.LightData> _lightsBuffer;
-    private readonly ICamera _camera = camera;
 
     public ref bool Enabled => ref _enabled;
 
@@ -150,11 +148,11 @@ public class Instanced3dDeferredRenderer(
     {
         UniformUpdate(info, target, sceneViewport);
 
-        PrepareDrawEntities();
+        _renderBuilder.PrepareDrawEntities(_dynamicInstances);
 
-        UpdateDrawEntities(info);
+        _renderBuilder.UpdateDrawEntities(info, _dynamicInstances);
 
-        UpdateScene(target.QueuePtr, _dynamicMeshes);
+        UpdateScene(target.QueuePtr, _dynamicInstances);
 
         DeferredMeshDraw(target, sceneViewport);
     }
@@ -178,16 +176,16 @@ public class Instanced3dDeferredRenderer(
             Time = info.TotalTime
         });
 
-        if (_sceneRenderCollection != _scene.RenderableMeshes || _sceneRenderCollection == null)
+        if (_sceneRenderCollection != _scene.RenderableInstances || _sceneRenderCollection == null)
         {
-            _sceneRenderCollection = _scene.RenderableMeshes;
-            foreach (var buffer in _scene.RenderableMeshes.OpaqueMeshes)
+            _sceneRenderCollection = _scene.RenderableInstances;
+            foreach (var buffer in _scene.RenderableInstances.OpaqueMeshes)
             {
                 WriteBuffer(target.QueuePtr, buffer);
                 _pbrPipeline.RecreateMaterialBindGroup(buffer);
             }
 
-            foreach (var buffer in _scene.RenderableMeshes.TransparentMeshes)
+            foreach (var buffer in _scene.RenderableInstances.TransparentMeshes)
             {
                 WriteBuffer(target.QueuePtr, buffer);
                 _transparentPipeline.RecreateBindGroup(buffer);
@@ -195,119 +193,17 @@ public class Instanced3dDeferredRenderer(
         }
     }
 
-    [TraceInterception]
-    internal void PrepareDrawEntities()
-    {
-        var ecs = _gameLogic.World;
-        if (_renderableMeshVersion != _gameLogic.RenderEntityVersion)
-        {
-            _renderableMeshVersion = _gameLogic.RenderEntityVersion;
-
-            // Group entities by mesh
-            _entitiesByMesh.Clear();
-            foreach (var ent in ecs.GetEntitiesWithRenderMesh())
-            {
-                if (ent == _gameLogic.LocalPlayerEntityId) continue; // Dont Render Local Player
-                if (!ecs.TryGetRenderMesh(ent, out var renderable)) continue;
-                if (!_entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
-                {
-                    list = [];
-                    _entitiesByMesh[renderable.MeshId] = list;
-                }
-
-                list.Add(ent);
-            }
-
-            // Clear the old dynamic meshes
-            foreach (var mesh in _dynamicMeshes.OpaqueMeshes) mesh.Dispose();
-            _dynamicMeshes.OpaqueMeshes.Clear();
-            // Create a mesh buffer for each mesh
-            foreach (var (_, enitites) in _entitiesByMesh)
-            {
-                if (enitites.Count > 0)
-                {
-                    var dynamicMesh = new PbrInstancedMeshBuffer(_loader.DefaultPbrCubeMesh,
-                        ModelHelper.PbrMaterialExamples.WornLeather(),
-                        _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
-                            BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"));
-                    _dynamicMeshes.OpaqueMeshes.Add(dynamicMesh);
-                }
-            }
-        }
-    }
 
     [TraceInterception]
-    internal void UpdateDrawEntities(UpdateInfo info)
+    private void UpdateScene(QueuePtr queue, RenderableInstanceCollection dynamicInstances)
     {
-        var ecs = _gameLogic.World;
-        //UpdateScene(queue, _sceneRenderCollection.StaticMeshes);
-        float sFrame = 1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFames);
-        var index = 0;
-        foreach (var (_, entities) in _entitiesByMesh)
-        {
-            var dynamicMesh = _dynamicMeshes.OpaqueMeshes[index++];
-            if (dynamicMesh._instanceInfos.Count < entities.Count)
-            {
-                dynamicMesh._instanceInfos.AddRange(Enumerable.Repeat(new PbrGBufferShader.Instance(),
-                    entities.Count - dynamicMesh._instanceInfos.Count));
-            }
-            else if (dynamicMesh._instanceInfos.Count > entities.Count)
-            {
-                dynamicMesh._instanceInfos.RemoveRange(entities.Count,
-                    dynamicMesh._instanceInfos.Count - entities.Count);
-            }
-
-            for (var i = 0; i < entities.Count; i++)
-            {
-                var entity = entities[i];
-                if (ecs.TryGetPosition(entity, out var pos) &&
-                    ecs.TryGetRotation(entity, out var rot) &&
-                    ecs.TryGetScale(entity, out var scale))
-                {
-                    var currentTransform = dynamicMesh.InstanceInfos[i].GetTransform();
-                    var blended = SmoothStep(currentTransform, scale.Value, rot.Value, pos.Value, sFrame);
-                    dynamicMesh.InstanceInfos[i].SetTransform(blended);
-                }
-                else
-                {
-                    dynamicMesh.InstanceInfos[i].SetTransform(default);
-                }
-            }
-        }
-    }
-
-    private f32 _smoothingFames = 10f;
-
-    public static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, float t)
-    {
-        if (current == default)
-            return Matrix4x4.CreateScale(tarScale) *
-                   Matrix4x4.CreateFromQuaternion(tarRot) *
-                   Matrix4x4.CreateTranslation(tarPos);
-        // Decompose matrices into components
-        Matrix4x4.Decompose(current, out Vector3 curScale, out Quaternion curRot, out Vector3 curPos);
-
-        // Interpolate position, scale, and rotation
-        Vector3 newPos = Vector3.Lerp(curPos, tarPos, t);
-        Vector3 newScale = Vector3.Lerp(curScale, tarScale, t);
-        Quaternion newRot = Quaternion.Slerp(curRot, tarRot, t);
-
-        // Recompose
-        return Matrix4x4.CreateScale(newScale) *
-               Matrix4x4.CreateFromQuaternion(newRot) *
-               Matrix4x4.CreateTranslation(newPos);
-    }
-
-    [TraceInterception]
-    private void UpdateScene(QueuePtr queue, RenderableMeshCollection dynamicMeshes)
-    {
-        foreach (var buffer in dynamicMeshes.OpaqueMeshes)
+        foreach (var buffer in dynamicInstances.OpaqueMeshes)
         {
             WriteBuffer(queue, buffer);
             _pbrPipeline!.RecreateMaterialBindGroup(buffer);
         }
 
-        foreach (var buffer in dynamicMeshes.TransparentMeshes)
+        foreach (var buffer in dynamicInstances.TransparentMeshes)
         {
             WriteBuffer(queue, buffer);
             _transparentPipeline!.RecreateBindGroup(buffer);
@@ -326,7 +222,7 @@ public class Instanced3dDeferredRenderer(
                 _pbrPipeline.DrawMesh(pass, meshBuffer);
             }
 
-            foreach (var meshBuffer1 in _dynamicMeshes.OpaqueMeshes)
+            foreach (var meshBuffer1 in _dynamicInstances.OpaqueMeshes)
             {
                 _pbrPipeline.DrawMesh(pass, meshBuffer1);
             }
@@ -341,7 +237,7 @@ public class Instanced3dDeferredRenderer(
                 _transparentPipeline.DrawMesh(transparentPass, instances);
             }
 
-            foreach (var instances in _dynamicMeshes.TransparentMeshes)
+            foreach (var instances in _dynamicInstances.TransparentMeshes)
             {
                 _transparentPipeline.DrawMesh(transparentPass, instances);
             }
@@ -459,9 +355,8 @@ public class Instanced3dDeferredRenderer(
         ImGui.PopStyleVar();
     }
 
-    f32 textureSize = 128f;
-    private i32 maxConcurrentLoads = 4;
-    private readonly Dictionary<u32, List<EntityId>> _entitiesByMesh = [];
+    private f32 _textureSize = 128f;
+    private i32 _maxConcurrentLoads = 4;
 
     [ExcludeFromInterception]
     public void RenderUi(UpdateInfo info)
@@ -469,14 +364,15 @@ public class Instanced3dDeferredRenderer(
         using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Internal);
         if (ImGui.Begin("Controls"))
         {
-            ImGui.InputFloat("SmoothingFames", ref _smoothingFames, 0.1f, 1f);
-            ImGui.Text($"SFrame: {1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFames)}");
+            ImGui.InputFloat("SmoothingFrames", ref _renderBuilder.SmoothingFrames, 0.1f, 1f);
+            ImGui.Text(
+                $"SFrame: {1f - MathF.Pow(0.01f, info.DeltaTime * _renderBuilder.SmoothingFrames)}");
             ImGui.Text("Rendering Stats:");
-            ImGui.Text($"Opaque Instancing: {_dynamicMeshes.OpaqueMeshes.Count}");
-            ImGui.Text($"Opaque Total Instances: {_dynamicMeshes.OpaqueMeshes.Sum(x => x._instanceInfos.Count)}");
+            ImGui.Text($"Opaque Instancing: {_dynamicInstances.OpaqueMeshes.Count}");
+            ImGui.Text($"Opaque Total Instances: {_dynamicInstances.OpaqueMeshes.Sum(x => x._instanceInfos.Count)}");
             if (ImGui.Button("ReInitialize Renderable Meshes"))
             {
-                _renderableMeshVersion--;
+                _renderBuilder.RequestReBuild();
             }
 
             if (ImGui.Button("Trace Renderer"))
@@ -519,9 +415,9 @@ public class Instanced3dDeferredRenderer(
                 ImGui.Text("No object under mouse");
             }
 
-            if (_selectedObjectId != 0 && _selectedObjectId <= _dynamicMeshes.OpaqueMeshes.Count)
+            if (_selectedObjectId != 0 && _selectedObjectId <= _dynamicInstances.OpaqueMeshes.Count)
             {
-                var selectedBuffer = _dynamicMeshes.OpaqueMeshes[(i32)_selectedObjectId - 1];
+                var selectedBuffer = _dynamicInstances.OpaqueMeshes[(i32)_selectedObjectId - 1];
 
                 var y = ImGui.GetCursorPosY();
                 ImGui.Text("Textures");
@@ -617,7 +513,7 @@ public class Instanced3dDeferredRenderer(
 
             ImGui.Columns(1);
             var hi = 0;
-            foreach (var buffer in _dynamicMeshes.OpaqueMeshes)
+            foreach (var buffer in _dynamicInstances.OpaqueMeshes)
             {
                 for (var i = 0; i < buffer.InstanceInfos.Length && i < 100; i++)
                 {
@@ -638,24 +534,24 @@ public class Instanced3dDeferredRenderer(
 
         if (ImGui.Begin("ResourceLoader"))
         {
-            var current = maxConcurrentLoads;
-            ImGui.SliderInt("Max Concurrent Loads", ref maxConcurrentLoads, 1, 64);
-            if (current != maxConcurrentLoads)
-                _loader.UpdateMaxConcurrentLoads(maxConcurrentLoads);
+            var current = _maxConcurrentLoads;
+            ImGui.SliderInt("Max Concurrent Loads", ref _maxConcurrentLoads, 1, 64);
+            if (current != _maxConcurrentLoads)
+                _loader.UpdateMaxConcurrentLoads(_maxConcurrentLoads);
 
             if (ImGui.CollapsingHeader("Textures"))
             {
-                ImGui.SliderFloat("Size", ref textureSize, 16, 1024);
+                ImGui.SliderFloat("Size", ref _textureSize, 16, 1024);
                 const f32 padding = 10f;
                 var avail = ImGui.GetContentRegionAvail();
-                var imagesPerRow = Math.Max(1, (i32)(avail.X / (textureSize + padding)));
+                var imagesPerRow = Math.Max(1, (i32)(avail.X / (_textureSize + padding)));
                 var imageCount = 0;
 
                 ImGui.Text("Default Textures");
 
                 void RenderTexture(IntPtr texture)
                 {
-                    ImGui.Image(texture, new Vector2(textureSize, textureSize));
+                    ImGui.Image(texture, new Vector2(_textureSize, _textureSize));
                     imageCount++;
                     if (imageCount % imagesPerRow != 0)
                     {
@@ -707,7 +603,7 @@ public class Instanced3dDeferredRenderer(
         _sceneGBuffer?.Release();
         _finalSceneTexture?.Release();
 
-        _dynamicMeshes.Dispose();
+        _dynamicInstances.Dispose();
 
         _compositorPipeline?.Dispose();
         _pbrPipeline?.Dispose();
@@ -718,7 +614,7 @@ public class Instanced3dDeferredRenderer(
         _sceneGBuffer = null;
         _finalSceneTexture = null;
 
-        _dynamicMeshes.Dispose();
+        _dynamicInstances.Dispose();
         _compositorPipeline = null;
         _pbrPipeline = null;
         _lightsBuffer = null!;

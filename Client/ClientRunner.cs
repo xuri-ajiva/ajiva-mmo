@@ -8,6 +8,7 @@ using Client.LayerSystem;
 using Client.Networking;
 using Client.Platform;
 using Client.Renderer;
+using Client.Renderer.Instancing;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
@@ -29,12 +30,13 @@ public class ClientRunner
         services.AddSingleton<PlatformSystem>();
         services.AddSingleton<ModelHelper>();
         services.AddSingleton<Scene>();
+        services.AddSingleton<IRenderableInstanceCollectionBuilder, UnifiedRenderableInstanceCollectionBuilder>();
         services.AddSingleton<ICamera, FreeCamera>();
         
         // Asset management
         services.AddSingleton<EntityAssetRegistry>();
 
-        // EcsV2 Game Logic
+        // Ecs Game Logic
         services.AddSingleton<ClientGameLogic>();
         services.AddSingleton<ClientEcsWorld>();
         services.AddService<PlayerInputSystem>();

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Client.Renderer.Instancing;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
@@ -12,26 +13,26 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
     private readonly ResourceManager _loader = loader;
     private readonly ModelHelper _modelHelper = modelHelper;
 
-    public RenderableMeshCollection RenderableMeshes { get; set; } = new();
+    public RenderableInstanceCollection RenderableInstances { get; set; } = new();
     public u64 Version { get; private set; }
 
     public void LoadLevel(string levelName)
     {
         // For now, we'll just load the Sponza model regardless of the level name.
         // In the future, we can use a dictionary or other mechanism to map level names to model paths.
-        var oldCollection = RenderableMeshes;
-        var newCollection = new RenderableMeshCollection();
+        var oldCollection = RenderableInstances;
+        var newCollection = new RenderableInstanceCollection();
         newCollection.OpaqueMeshes.AddRange(CreateModelBuffers("resources/Sponza/Meshes/Sponza_Modular.FBX",
             "Sponza_Modular"));
         newCollection.TransparentMeshes.AddRange(CreateTransparentCubes());
-        RenderableMeshes = newCollection;
+        RenderableInstances = newCollection;
         oldCollection.Dispose();
         Version++;
     }
 
     public void UnloadLevel()
     {
-        RenderableMeshes.Dispose();
+        RenderableInstances.Dispose();
         Version++;
     }
 

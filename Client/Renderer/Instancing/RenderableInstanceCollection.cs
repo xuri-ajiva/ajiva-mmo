@@ -1,8 +1,8 @@
 using Client.Renderer.PbrRenderer;
 
-namespace Client.Renderer
+namespace Client.Renderer.Instancing
 {
-    public class RenderableMeshCollection : IDisposable
+    public class RenderableInstanceCollection : IDisposable
     {
         public List<PbrInstancedMeshBuffer> OpaqueMeshes { get; set; } = [];
         public List<OitInstancedMeshBuffer> TransparentMeshes { get; set; } = [];
