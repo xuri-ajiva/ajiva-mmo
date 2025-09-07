@@ -428,7 +428,9 @@ public class ServerGameLogic
 
     public void SendLoadChunk(QConnection connection, ChunkCoord chunkCoord)
     {
-        new ChunkLoadPacket(chunkCoord, _spatialGrid.GetChunkData(chunkCoord).Entities
+        var chunk = _spatialGrid.GetChunkData(chunkCoord);
+        using var _ = chunk.UseLock();
+        new ChunkLoadPacket(chunkCoord, chunk.Entities
             .Select(x => (NetEntId)x).ToList()).Send(connection);
     }
 
@@ -544,7 +546,7 @@ public class ServerGameLogic
         }
 
         ChunkData<PositionChunkData> positions = new([]);
-
+        using var _ = chunk.UseLock();
         foreach (var entityId in chunk.Entities)
         {
             if (!_world.TryGetPosition(entityId, out var position))

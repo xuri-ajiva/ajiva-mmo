@@ -127,4 +127,9 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     {
         _renderableMeshVersion = 0;
     }
+
+    public string Stats()
+    {
+        return $"Groups: {_entitiesByMesh.Count}, Meshes: {string.Join(", ", _entitiesByMesh.Select(kv => kv.Value.Count))}";
+    }
 }

@@ -15,21 +15,25 @@ public readonly partial record struct SpacialGridInfo(ChunkCoord ChunkSize);
 [MemoryPackable]
 public readonly partial record struct ChunkCoord(i32 X, i32 Y, i32 Z, i32 Level)
 {
-    public i32 PosDistanceTo(ChunkCoord playerChunk) => Math.Abs(X - playerChunk.X) + Math.Abs(Y - playerChunk.Y) + Math.Abs(Z - playerChunk.Z);
+    public i32 PosDistanceTo(ChunkCoord playerChunk) =>
+        Math.Abs(X - playerChunk.X) + Math.Abs(Y - playerChunk.Y) + Math.Abs(Z - playerChunk.Z);
 }
 
 public record SpatialChunk(SortedSet<EntityId> Entities)
 {
+    private Lock _lock = new();
     public bool IsDirty;
 
     public void Add(EntityId entityId)
     {
+        using var _ = UseLock();
         Entities.Add(entityId);
         MarkDirty();
     }
 
     public void Remove(EntityId entityId)
     {
+        using var _ = UseLock();
         Entities.Remove(entityId);
         MarkDirty();
     }
@@ -37,6 +41,11 @@ public record SpatialChunk(SortedSet<EntityId> Entities)
     public void MarkDirty() => IsDirty = true;
 
     public void ClearDirty() => IsDirty = false;
+
+    public Lock.Scope UseLock()
+    {
+        return _lock.EnterScope();
+    }
 }
 
 public class SpatialGrid(SpacialGridInfo spacialGridInfo)
@@ -55,10 +64,15 @@ public class SpatialGrid(SpacialGridInfo spacialGridInfo)
         return new ChunkCoord(x, y, z, level);
     }
 
+    public ConcurrentDictionary<ChunkCoord, SpatialChunk> Chunks => _chunks;
+
     public SpatialChunk GetChunkData(ChunkCoord chunkCoord) =>
         _chunks.GetOrAdd(chunkCoord, _ => new SpatialChunk([]));
 
     public bool HasChunk(ChunkCoord chunkCoord) => _chunks.ContainsKey(chunkCoord);
+
+    public bool TryDeleteChunk(ChunkCoord chunkCoord, [MaybeNullWhen(false)] out SpatialChunk value) =>
+        _chunks.TryRemove(chunkCoord, out value);
 
     public bool TryGetChunk(ChunkCoord chunkCoord, [MaybeNullWhen(false)] out SpatialChunk chunk) =>
         _chunks.TryGetValue(chunkCoord, out chunk);
@@ -89,7 +103,7 @@ public class SpatialGrid(SpacialGridInfo spacialGridInfo)
 
     public IEnumerable<(ChunkCoord chunkCoord, SpatialChunk chunk)> GetDirtyChunks()
     {
-        return from kvp in _chunks where kvp.Value.IsDirty select (kvp.Key, kvp.Value);
+        return _chunks.Where(kvp => kvp.Value.IsDirty).Select(kvp => (kvp.Key, kvp.Value));
     }
 
     public void ClearDirtyFlags()

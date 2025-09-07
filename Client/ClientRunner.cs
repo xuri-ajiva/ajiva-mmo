@@ -30,7 +30,7 @@ public class ClientRunner
         services.AddSingleton<PlatformSystem>();
         services.AddSingleton<ModelHelper>();
         services.AddSingleton<Scene>();
-        services.AddSingleton<IRenderableInstanceCollectionBuilder, UnifiedRenderableInstanceCollectionBuilder>();
+        services.AddSingleton<IRenderableInstanceCollectionBuilder, ChunkedRenderableInstanceCollectionBuilder>();
         services.AddSingleton<ICamera, FreeCamera>();
         
         // Asset management

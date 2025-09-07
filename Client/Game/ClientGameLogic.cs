@@ -21,18 +21,19 @@ public class ClientGameLogic(
     ILogger<ClientGameLogic> logger)
 {
     private readonly Scene _scene = scene;
-    private SpatialGrid? _grid;
     private readonly EntityAssetRegistry _assetRegistry = assetRegistry;
     private readonly Dictionary<NetEntId, EntityId> _networkToEcs = new();
     private readonly Dictionary<EntityId, NetEntId> _ecsToNetwork = new();
-    private readonly ClientEcsWorld _world = world;
     public u64 RenderEntityVersion { get; private set; } = 0;
 
     public NetEntId? LocalPlayerNetworkId { get; private set; }
     public EntityId? LocalPlayerEntityId { get; private set; }
 
-    public ClientEcsWorld World => _world;
-    public int EntityCount => _networkToEcs.Count;
+    public ClientEcsWorld World { get; } = world;
+
+    public SpatialGrid? Grid { get; private set; }
+
+    public i32 EntityCount => _networkToEcs.Count;
 
     private void IncrementRenderVersion([CallerMemberName] string caller = "")
     {
@@ -179,8 +180,8 @@ public class ClientGameLogic(
         // Reset local player
         LocalPlayerEntityId = null;
         LocalPlayerNetworkId = null;
-        _grid = null;
-        _world.ClearAllEntities();
+        Grid = null;
+        World.ClearAllEntities();
 
         // Note: EcsWorld doesn't have a clear method, so we'd need to implement that
         // For now, just create a new world
@@ -209,46 +210,65 @@ public class ClientGameLogic(
         logger.LogTrace("Chunk update received: {ChunkCoord} with {Type}", packet.Coord, packet.Data.GetType());
 
         if (!GridCheck()) return;
-        if (!_grid.TryGetChunk(packet.Coord, out var chunk)) return;
+        if (!Grid.TryGetChunk(packet.Coord, out var chunk)) return;
         switch (packet.Data)
         {
             case ChunkData<PositionChunkData> posUpdate:
-                foreach (var (id, delta) in chunk.Entities.Zip(posUpdate.Data))
+                using (var _ = chunk.UseLock())
                 {
-                    if (World.HasPosition(id))
+                    foreach (var (id, delta) in chunk.Entities.Zip(posUpdate.Data))
                     {
+                        if (!World.HasPosition(id)) continue;
                         ref var position = ref World.GetPosition(id);
-                        position.Value = delta.Restore(packet.Coord, _grid.GridInfo);
+                        position.Value = delta.Restore(packet.Coord, Grid.GridInfo);
                     }
+
+                    break;
                 }
 
-                break;
+            default:
+                return;
         }
+
+        chunk.MarkDirty();
     }
 
     public void HandleChunkUnload(ChunkUnloadPacket packet)
     {
         logger.LogTrace("Chunk unload received: {ChunkCoord}", packet.ChunkCoord);
+        if (!GridCheck()) return;
         var anyRemoved = false;
+        if (Grid.TryDeleteChunk(packet.ChunkCoord, out var chunk))
+        {
+            anyRemoved = true;
+            using var _ = chunk.UseLock();
+            foreach (var entity in chunk.Entities)
+            {
+                anyRemoved |= TryDelEntity(entity);
+            }
+
+            chunk.Entities.Clear();
+        }
+
         foreach (var entityId in packet.NetEntIds)
         {
             if (!_networkToEcs.Remove(entityId, out var ecsEntity)) continue;
-            // Clean up mappings
-            _ecsToNetwork.Remove(ecsEntity);
-
-            // Clear local player reference if this was our entity
-            if (LocalPlayerNetworkId == entityId)
-            {
-                LocalPlayerEntityId = null;
-                LocalPlayerNetworkId = null;
-            }
-
-            World.DeleteEntity(ecsEntity);
-            anyRemoved = true;
+            anyRemoved |= TryDelEntity(ecsEntity);
         }
 
         if (anyRemoved)
             IncrementRenderVersion();
+    }
+
+    private bool TryDelEntity(EntityId entity)
+    {
+        if (!_ecsToNetwork.Remove(entity, out var netEntId)) return false;
+        _networkToEcs.Remove(netEntId);
+        World.DeleteEntity(entity);
+        // Clear local player reference if this was our entity
+        if (LocalPlayerEntityId == entity) LocalPlayerEntityId = null;
+        if (LocalPlayerNetworkId == netEntId) LocalPlayerNetworkId = null;
+        return true;
     }
 
     public void HandleChunkDelta(ChunkDeltaPacket message)
@@ -257,8 +277,8 @@ public class ClientGameLogic(
             message.Coord, message.NewIds.Count, message.RemovedIds.Count);
 
         if (!GridCheck()) return;
-        if (!_grid.TryGetChunk(message.Coord, out var chunk)) return;
-
+        if (!Grid.TryGetChunk(message.Coord, out var chunk)) return;
+        using var _ = chunk.UseLock();
         if (message.NewIds is { Count: > 0 } newIds)
         {
             foreach (var netEntId in newIds)
@@ -284,6 +304,7 @@ public class ClientGameLogic(
             }
         }
 
+        chunk.MarkDirty();
         //IncrementRenderVersion();
     }
 
@@ -291,11 +312,11 @@ public class ClientGameLogic(
     {
         if (!_networkToEcs.TryGetValue(entId, out var entity)) return new Transform();
 
-        if (!_world.TryGetPosition(entity, out var pos))
+        if (!World.TryGetPosition(entity, out var pos))
             pos = default;
-        if (!_world.TryGetRotation(entity, out var rot))
+        if (!World.TryGetRotation(entity, out var rot))
             rot = default;
-        if (!_world.TryGetScale(entity, out var scl))
+        if (!World.TryGetScale(entity, out var scl))
             scl = default;
 
         return new Transform
@@ -314,32 +335,36 @@ public class ClientGameLogic(
         if (!GridCheck()) return;
         if (entityCount == 0)
         {
-            if (!_grid.TryGetChunk(message.Coord, out var data) || data is not { Entities.Count: > 0 }) return;
-            data.Entities.Clear();
+            if (!Grid.TryGetChunk(message.Coord, out var chunk) || chunk is not { Entities.Count: > 0 }) return;
+            using var _ = chunk.UseLock();
+            chunk.Entities.Clear();
             IncrementRenderVersion();
+            chunk.MarkDirty();
         }
         else
         {
-            var data = _grid.GetChunkData(message.Coord);
-            var beforeCount = data.Entities.Count;
+            var chunk = Grid.GetChunkData(message.Coord);
+            using var _ = chunk.UseLock();
+            var beforeCount = chunk.Entities.Count;
             if (beforeCount > 0)
-                data.Entities.Clear();
+                chunk.Entities.Clear();
 
             foreach (var entId in message.NetEntIds)
             {
                 HandleEntityCreated(new EntityCreatedPacket(entId, new Transform(), 1));
-                data.Entities.Add(_networkToEcs[entId]);
+                chunk.Entities.Add(_networkToEcs[entId]);
             }
 
             if (beforeCount > 0)
                 IncrementRenderVersion();
+            chunk.MarkDirty();
         }
     }
 
-    [MemberNotNullWhen(true, nameof(_grid))]
+    [MemberNotNullWhen(true, nameof(Grid))]
     private bool GridCheck()
     {
-        if (_grid is null)
+        if (Grid is null)
         {
             logger.LogWarning("Spatial grid not initialized. Cannot process chunk load.");
             return false;
@@ -351,6 +376,6 @@ public class ClientGameLogic(
     public void InitializeSpacialGrid(SpacialGridInfo gridInfo)
     {
         ClearWorld();
-        _grid = new SpatialGrid(gridInfo);
+        Grid = new SpatialGrid(gridInfo);
     }
 }

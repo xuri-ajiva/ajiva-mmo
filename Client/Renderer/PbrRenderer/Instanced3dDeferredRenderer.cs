@@ -370,6 +370,7 @@ public class Instanced3dDeferredRenderer(
             ImGui.Text("Rendering Stats:");
             ImGui.Text($"Opaque Instancing: {_dynamicInstances.OpaqueMeshes.Count}");
             ImGui.Text($"Opaque Total Instances: {_dynamicInstances.OpaqueMeshes.Sum(x => x._instanceInfos.Count)}");
+            ImGui.TextWrapped($"Instance Builder: {_renderBuilder.Stats()}");
             if (ImGui.Button("ReInitialize Renderable Meshes"))
             {
                 _renderBuilder.RequestReBuild();
@@ -515,6 +516,7 @@ public class Instanced3dDeferredRenderer(
             var hi = 0;
             foreach (var buffer in _dynamicInstances.OpaqueMeshes)
             {
+                if(hi > 50) break;
                 for (var i = 0; i < buffer.InstanceInfos.Length && i < 100; i++)
                 {
                     ref var instance = ref buffer.InstanceInfos[i];
