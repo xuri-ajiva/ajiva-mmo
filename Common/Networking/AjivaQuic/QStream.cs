@@ -6,7 +6,7 @@ using NetworkPackets;
 
 namespace Common.Networking.AjivaQuic;
 
-public class QStream
+public class QStream : IDisposable
 {
     private readonly Instrumentation _instrumentation;
     private readonly MessageDecoder _decoder = new();
@@ -14,11 +14,14 @@ public class QStream
     private readonly u8[] _readBuffer;
     private readonly SemaphoreSlim _dataAvailableSignal = new(1, 1);
     private readonly QuicStream _stream;
+    private readonly QConnection _qConnection;
     private readonly Histogram<f64> _inMeter, _outMeter;
 
-    public QStream(QuicStream stream, Instrumentation instrumentation, i32 bufferSize = 128 * 1024 * 1024)
+    public QStream(QuicStream stream, QConnection qConnection, Instrumentation instrumentation,
+        i32 bufferSize = 64 * 1024 * 1024)
     {
         _stream = stream;
+        _qConnection = qConnection;
         _instrumentation = instrumentation;
         _writeBuffer = new ResizableRingBuffer(bufferSize);
         _readBuffer = new u8[bufferSize];
@@ -28,12 +31,12 @@ public class QStream
             "Duration of Flush call");
     }
 
-    [TraceInterception]
-    public void ReadMessages(Action<ReadOnlySpan<u8>> handler)
+    [ExcludeFromInterception]
+    public void ReadMessages(IUniversalMessageHandler<QConnection> handler)
     {
         using var record = Instrumentation.Measure(_inMeter);
         var bytesRead = _stream.Read(_readBuffer);
-        _decoder.DecodeMessages(_readBuffer.AsSpan(0, bytesRead), handler);
+        _decoder.DecodeMessages(_readBuffer.AsSpan(0, bytesRead), handler, _qConnection);
     }
 
     [TraceInterception]
@@ -42,7 +45,8 @@ public class QStream
         using var record = Instrumentation.Measure(_outMeter);
         while (_writeBuffer.DataAvailable() > 0)
         {
-            _stream.Write(_writeBuffer.ConsumePart().Span);
+            var part = _writeBuffer.ConsumePart();
+            _stream.Write(part.Span);
             _stream.Flush();
         }
 
@@ -86,5 +90,16 @@ public class QStream
         {
             /* ignore race */
         }
+    }
+
+    public void Close()
+    {
+        _stream.Close();
+    }
+
+    public void Dispose()
+    {
+        _dataAvailableSignal.Dispose();
+        _stream.Dispose();
     }
 }

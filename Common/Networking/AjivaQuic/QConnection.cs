@@ -9,8 +9,7 @@ namespace Common.Networking.AjivaQuic;
 
 public class QConnection(
     QuicConnection connection,
-    QStream primary,
-    QStream secondary,
+    List<QStream> streams,
     Instrumentation instrumentation,
     CancellationTokenSource ctx)
     : IQConnection, IAsyncDisposable
@@ -28,11 +27,11 @@ public class QConnection(
         _outDropedPackets = instrumentation.Meter.CreateCounter<i64>("QConnection_OutDropedPackets", "count",
             "Number of droped outgoing packets due to full buffer");
 
-
-        RunThreadLoop([TraceInterception]() => primary.Flush(ctx.Token), instrumentation);
-        RunThreadLoop(() => secondary.Flush(ctx.Token), instrumentation);
-        RunThreadLoop([TraceInterception]() => primary.ReadMessages(Wrap(handler)), instrumentation);
-        RunThreadLoop(() => secondary.ReadMessages(Wrap(handler)), instrumentation);
+        foreach (var qStream in streams)
+        {
+            RunThreadLoop([TraceInterception]() => qStream.Flush(ctx.Token), instrumentation);
+            RunThreadLoop([TraceInterception]() => qStream.ReadMessages(handler), instrumentation);
+        }
     }
 
     private void RunThreadLoop(Action action, Instrumentation instrumentation)
@@ -94,42 +93,42 @@ public class QConnection(
         thread.Start();
         _threads.Add(thread);
     }
-
-    private Action<ReadOnlySpan<u8>> Wrap(IUniversalMessageHandler<QConnection> handler)
-    {
-        return span =>
-        {
-            _inPackets.Add(1);
-            handler.AutoHandle(span, this);
-        };
-    }
-
-    private int chanel = 0;
-
+    
     public void Send(SerializedMessage message, u8 streamId = 0)
     {
-        SendToChannel(message, primary); //++chanel % 2 == 0 ? primary : secondary);
+        SendToChannel(message, streams[0]); //++chanel % 2 == 0 ? primary : secondary);
     }
 
     private void SendToChannel(SerializedMessage message, QStream qStream)
     {
-        if (qStream.FreeBytes() < (i32)message.Length)
+        try
         {
-            _outDropedPackets.Add(1);
-            return;
+            var spaceNeeded = (i32)message.Length + BitPackingHelper.MaxVarLength;
+            if (qStream.FreeBytes() < spaceNeeded)
+            {
+                _outDropedPackets.Add(1);
+                return;
+            }
+
+            using var @lock = qStream.EnterLock();
+            if (qStream.FreeBytes() < spaceNeeded)
+            {
+                _outDropedPackets.Add(1);
+                return;
+            }
+            
+            qStream.WriteLength(message.Length);
+            foreach (var memory in message)
+            {
+                qStream.WriteData(memory.Span);
+            }
+
+            _outPackets.Add(1);
         }
-
-        _outPackets.Add(1);
-
-
-        using var @lock = qStream.EnterLock();
-        qStream.WriteLength(message.Length);
-        foreach (var memory in message)
+        finally
         {
-            qStream.WriteData(memory.Span);
+            qStream.SignalDataAvailable();
         }
-
-        qStream.SignalDataAvailable();
     }
 
     public void Send(SerializedMessage message)
@@ -141,11 +140,18 @@ public class QConnection(
     {
         await ctx.CancelAsync();
         await connection.DisposeAsync();
+        foreach (var qStream in streams)
+        {
+            qStream.Close();
+        }
         foreach (var thread in _threads)
         {
             thread.Join();
         }
-
+        foreach (var qStream in streams)
+        {
+            qStream.Dispose();
+        }
         ctx.Dispose();
         _threads.Clear();
     }
