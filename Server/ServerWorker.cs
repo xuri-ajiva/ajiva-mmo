@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
@@ -18,6 +19,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
     private readonly QServer _server;
     private readonly Instrumentation _instrumentation;
     private readonly ServerGameLogic _serverGameLogic;
+    private readonly ConcurrentQueue<EntityUpdatePacket> _entityUpdateQueue = new();
 
     public ServerWorker(ILogger<ServerWorker> logger, QServer server, Instrumentation instrumentation,
         ServerGameLogic serverGameLogic)
@@ -27,16 +29,21 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
         _instrumentation = instrumentation;
         _serverGameLogic = serverGameLogic;
         _stoppingCts = new CancellationTokenSource();
-        /*_serverTickTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "ServerUpdate",
-                histogram: _instrumentation.Meter.CreateHistogram<f64>("server.update.duration",
-                    unit: "ms", description: "Duration of server update"),
-                lockedAction: _ => _server.UpdateClients(), tps: 10f) // 100 ms interval equivalent
-        );*/
         _serverUpdateTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "GameTick",
             histogram: _instrumentation.Meter.CreateHistogram<f64>("server.tick.duration",
                 unit: "ms", description: "Duration of server tick"),
-            lockedAction: delta => _serverGameLogic.Update(delta), tps: 30f)
+            lockedAction: LockedAction, tps: 30f)
         );
+    }
+
+    private void LockedAction(f32 delta)
+    {
+        while (_entityUpdateQueue.TryDequeue(out var packet))
+        {
+            _serverGameLogic.HandleEntityUpdate(packet);
+        }
+
+        _serverGameLogic.Update(delta);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -49,13 +56,13 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
 
 
     private void RunLoop(CancellationToken token, string loopName, Histogram<f64> histogram, Action<f32> lockedAction,
-        f32 tps, u32 traceIntervallSeconds = 10)
+        f32 tps, u32 traceIntervalSeconds = 10)
     {
-        f32 traceIntervallElapsed = 0;
+        f32 traceIntervalElapsed = 0;
         var lastUpdate = Stopwatch.GetTimestamp();
         while (!token.IsCancellationRequested)
         {
-            if (traceIntervallElapsed > traceIntervallSeconds) Instrumentation.Instance = _instrumentation;
+            if (traceIntervalElapsed > traceIntervalSeconds) Instrumentation.Instance = _instrumentation;
 
             using var activity = Instrumentation.Instance?.StartActivity(ActivityKind.Server);
 
@@ -82,13 +89,13 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
             using var wait = Instrumentation.Instance?.StartNamedActivity("Waiting",
                 tags: [new KeyValuePair<string, object?>("sleepTime", sleepTime)]);
             Thread.Sleep(Math.Max(1, (i32)(sleepTime * 1000)));
-            if (traceIntervallElapsed > traceIntervallSeconds)
+            if (traceIntervalElapsed > traceIntervalSeconds)
             {
                 Instrumentation.Instance = null;
-                traceIntervallElapsed = 0;
+                traceIntervalElapsed = 0;
             }
 
-            traceIntervallElapsed += delta;
+            traceIntervalElapsed += delta;
         }
     }
 
@@ -124,7 +131,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
         try
         {
             // Signal cancellation to the executing method
-            await _stoppingCts!.CancelAsync();
+            await _stoppingCts.CancelAsync();
         }
         finally
         {
@@ -135,7 +142,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
 
     public void Handle(EntityUpdatePacket message, QConnection connection)
     {
-        _serverGameLogic.HandleEntityUpdate(message);
+        _entityUpdateQueue.Enqueue(message);
     }
 
     public void MessageNotHandled(string messageType, QConnection connection)

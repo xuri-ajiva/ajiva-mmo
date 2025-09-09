@@ -18,10 +18,6 @@ public class ServerRunner
     {
         var services = builder.Services;
 
-
-        var authenticationOptions = new SslServerAuthenticationOptions();
-        authenticationOptions.ApplicationProtocols ??= [new SslApplicationProtocol("ice-rpc")];
-
         services.AddSingleton(config);
 
         // networking
