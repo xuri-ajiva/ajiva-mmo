@@ -1,0 +1,28 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Generators/">
+    <Project Path="Generators/AjivaGenerator/AjivaGenerator.csproj" />
+    <Project Path="Generators/InterceptionTraceGenerator/InterceptionTraceGenerator.csproj" />
+    <Project Path="Generators/Tests/Generator.Tests.csproj" />
+    <Project Path="Generators/WgslBuiltInGenerator/WgslBuiltInGenerator.csproj" />
+    <Project Path="Generators/WgslGenerator/WgslGenerator.csproj" />
+  </Folder>
+  <Folder Name="/Libs/">
+    <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/Silk.NET.WebGPU.Extensions.ImGui/Silk.NET.WebGPU.Extensions.ImGui.csproj" />
+    <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/Silk.NET.WebGPU.Safe/Silk.NET.WebGPU.Safe.csproj" />
+  </Folder>
+  <Folder Name="/Safe/">
+    <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/CodeGeneration/TemplatingLibrary/TemplatingLibrary.csproj" />
+    <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/CodeGeneration/WebGPU.Yml/WebGPU.Yml.csproj" />
+    <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/CodeGeneration/WrapperCodeGenExperiments/WrapperCodeGenExperiments.csproj" />
+    <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/Silk.NET.WebGPU.Safe.CodeGenTemplates/Silk.NET.WebGPU.Safe.CodeGenTemplates.csproj" />
+  </Folder>
+  <Project Path="ajiva-mmo.AppHost/ajiva-mmo.AppHost.csproj" />
+  <Project Path="Client/Client.csproj" />
+  <Project Path="Common/Common.csproj" />
+  <Project Path="Server/Server.csproj" />
+</Solution>
