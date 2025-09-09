@@ -23,15 +23,13 @@ public class ServerGameLogic
 
     private readonly Dictionary<QConnection, EntityId> _playerEntities = new();
     private readonly Dictionary<QConnection, HashSet<ChunkCoord>> _loadedChunks = new();
-    private EntityId _rotatingEntity;
-    private readonly List<EntityId> _bouncingEntities = [];
-    private readonly List<EntityId> _slidingEntities = [];
-    private string? _levelName;
     private const int MaxSendRangeChunks = 10; //  Range in chunks (4 chunks = 4*32 = 128 world units)
     private const int MinSendRangeChunks = 4; // Minimum range in chunks
     private int _currentSendRangeChunks = MinSendRangeChunks;
     private int _rangeStep;
     private const int MaxRangeSteps = 100;
+
+    private DemoLevel _level;
 
     private void UpdateSendRange()
     {
@@ -44,117 +42,10 @@ public class ServerGameLogic
     {
         _server = server;
         _logger = logger;
-        LoadLevel("Sponza");
+        _level = new DemoLevel(_world, _spatialGrid);
+        _level.LoadLevel("Sponza");
     }
 
-    private void LoadLevel(string levelName)
-    {
-        _levelName = levelName;
-        _playerEntities.Clear();
-        _loadedChunks.Clear();
-        _world.ClearAllEntities();
-
-        // Create a rotating box
-        _rotatingEntity = _world.CreateEntity();
-        _world.AddPosition(_rotatingEntity, new Position
-        {
-            Value = new Vector3(0, 1, 5),
-            Level = 0
-        });
-        _world.AddRotation(_rotatingEntity, new Rotation
-        {
-            Value = Quaternion.Identity
-        });
-        _world.AddScale(_rotatingEntity, new Scale
-        {
-            Value = Vector3.One
-        });
-        _world.AddVelocity(_rotatingEntity, new Velocity
-        {
-            Linear = Vector3.Zero,
-            Angular = new Vector3(0, 1, 0) // Rotate around Y axis
-        });
-        _world.AddEntityType(_rotatingEntity, new EntityType { TypeId = 1 }); // Type 1 for rotating box
-
-        // Add to spatial grid
-        var pos = _world.GetPosition(_rotatingEntity);
-        var chunk = _spatialGrid.GetChunkCoord(pos.Value, pos.Level);
-        _world.AddSpatialData(_rotatingEntity, new SpatialData
-        {
-            CurrentChunk = chunk with { Z = chunk.Z + 1 },
-            PreviousChunk = chunk,
-        });
-
-        // Create some static test entities
-        for (var i = 0; i < 200; i++)
-        {
-            for (var j = 0; j < 200; j++)
-            {
-                var entity = _world.CreateEntity();
-                var position = new Vector3(i * 2, MathF.Floor(( /*f32.Cos(i * 0.1f) + */f32.Sin(j * 0.05f) + 2) * 3),
-                    j * 2);
-
-                _world.AddPosition(entity, new Position
-                {
-                    Value = position,
-                    Level = 0
-                });
-                _world.AddRotation(entity, new Rotation
-                {
-                    Value = Quaternion.Identity
-                });
-                _world.AddScale(entity, new Scale
-                {
-                    Value = new Vector3(0.5f)
-                });
-                _world.AddEntityType(entity, new EntityType { TypeId = 1 });
-                _world.AddVelocity(entity, new Velocity
-                {
-                    Linear = Vector3.Zero,
-                    Angular = Vector3.Zero
-                });
-
-                // Add to spatial grid
-                chunk = _spatialGrid.GetChunkCoord(position, 0);
-                _world.AddSpatialData(entity, new SpatialData
-                {
-                    CurrentChunk = chunk with { Z = chunk.Z + 1 },
-                    PreviousChunk = chunk,
-                });
-                _bouncingEntities.Add(entity);
-            }
-        }
-
-        /*for (var i = 0; i < 0; i++)
-        {
-            var entity = _world.CreateEntity();
-            var position = new Vector3(-i * 2, 5, -i * 2 + 10);
-
-            _world.AddPosition(entity, new Position
-            {
-                Value = position,
-                Level = 0
-            });
-            _world.AddRotation(entity, new Rotation
-            {
-                Value = Quaternion.Identity
-            });
-            _world.AddScale(entity, new Scale
-            {
-                Value = new Vector3(0.5f)
-            });
-            _world.AddEntityType(entity, new EntityType { TypeId = 1 });
-
-            // Add to spatial grid
-            chunk = _spatialGrid.GetChunkCoord(position, 0);
-            _world.AddSpatialData(entity, new SpatialData
-            {
-                CurrentChunk = chunk with { Z = chunk.Z + 1 },
-                PreviousChunk = chunk,
-            });
-            _slidingEntities.Add(entity);
-        }*/
-    }
 
     public void SetupPlayer(QConnection connection)
     {
@@ -163,9 +54,9 @@ public class ServerGameLogic
         {
             _semaphorePlayer.Wait();
             // Send level load info
-            new LoadLevelPacket(_levelName ?? "", _spatialGrid.GridInfo).Send(connection);
 
             entity = _world.CreateEntity();
+            _level.SetupPlayer(connection, entity);
             var spawnPosition = new Vector3(0, 1, 0);
 
             _world.AddPosition(entity, new Position
@@ -225,12 +116,7 @@ public class ServerGameLogic
 
         UpdateSendRange();
 
-        RotateEntity(deltaTime);
-
-        // Update bouncing entities
-        UpdateBouncing(deltaTime);
-
-        UpdateSliding(deltaTime);
+        _level.Update(deltaTime);
 
         // Update spatial partitioning for moved entities
         using (var act = Instrumentation.NamedTrace("SpatialPartitioning"))
@@ -261,117 +147,6 @@ public class ServerGameLogic
         }
     }
 
-    private f32 _progress;
-
-    private void UpdateSliding(f32 deltaTime)
-    {
-        var speed = 0.1f; // cycles per second (1 = full square per second)
-        var squareSize = 10f; // size of square
-        // Advance progress
-        _progress = (_progress + speed * deltaTime) % 1f;
-        using var act = Instrumentation.NamedTrace("Sliding");
-        foreach (var entityId in _slidingEntities)
-        {
-            if (!_world.HasPosition(entityId) || !_world.HasScale(entityId) || !_world.HasRotation(entityId))
-                continue;
-
-            var progress = (_progress + (entityId.Value % 8) * 0.25f) % 1.0f;
-
-            // Determine position along square perimeter
-            Vector3 pos;
-            if (progress < 0.25f) // bottom edge → right
-            {
-                var t = progress / 0.25f;
-                pos = new Vector3(Lerp(-squareSize, squareSize, t), 0, -squareSize);
-            }
-            else if (progress < 0.5f) // right edge → up
-            {
-                var t = (progress - 0.25f) / 0.25f;
-                pos = new Vector3(squareSize, 0, Lerp(-squareSize, squareSize, t));
-            }
-            else if (progress < 0.75f) // top edge → left
-            {
-                var t = (progress - 0.5f) / 0.25f;
-                pos = new Vector3(Lerp(squareSize, -squareSize, t), 0, squareSize);
-            }
-            else // left edge → down
-            {
-                var t = (progress - 0.75f) / 0.25f;
-                pos = new Vector3(-squareSize, 0, Lerp(squareSize, -squareSize, t));
-            }
-
-            // Example: scale changes from 0.5x at left to 2x at right
-            var scaleFactor = Lerp(0.5f, 2f, (pos.X + squareSize) / (squareSize * 2));
-
-            // Update ECS components
-            ref var position = ref _world.GetPosition(entityId);
-            position.Value = pos;
-
-            ref var scale = ref _world.GetScale(entityId);
-            scale.Value = new Vector3(scaleFactor);
-
-            ref var rotation = ref _world.GetRotation(entityId);
-            rotation.Value = Quaternion.Identity; // keep upright
-
-            if (_world.HasSpatialData(entityId))
-            {
-                _spatialGrid.GetChunkData(_world.GetSpatialData(entityId).CurrentChunk).MarkDirty();
-            }
-        }
-    }
-
-    private void UpdateBouncing(f32 deltaTime)
-    {
-        using var act = Instrumentation.NamedTrace("Bouncing");
-        foreach (var entityId in _bouncingEntities)
-        {
-            if (!_world.HasPosition(entityId) || !_world.HasVelocity(entityId)) continue;
-
-            ref var position = ref _world.GetPosition(entityId);
-            ref var velocity = ref _world.GetVelocity(entityId);
-
-            // simple bounce logic
-            if (position.Value.Y <= 0)
-            {
-                velocity.Linear.Y = -velocity.Linear.Y; // Reverse Y velocity on hit
-                position.Value.Y = 0; // Reset to ground level
-            }
-            else
-            {
-                velocity.Linear.Y -= 9.81f * deltaTime; // Apply gravity
-            }
-
-            velocity.Linear.Y = Math.Clamp(velocity.Linear.Y, -20f, 20f);
-
-            // Update position based on velocity
-            position.Value += velocity.Linear * deltaTime;
-
-            if (_world.HasSpatialData(entityId))
-            {
-                _spatialGrid.GetChunkData(_world.GetSpatialData(entityId).CurrentChunk).MarkDirty();
-            }
-        }
-    }
-
-    private void RotateEntity(f32 deltaTime)
-    {
-        if (!_world.HasVelocity(_rotatingEntity)) return;
-
-        using var act = Instrumentation.NamedTrace("Velocity");
-        ref var rotation = ref _world.GetRotation(_rotatingEntity);
-        var velocity = _world.GetVelocity(_rotatingEntity);
-
-        // Apply angular velocity
-        var angularRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, velocity.Angular.Y * deltaTime);
-        rotation.Value *= angularRotation;
-        //rotation.Value = Quaternion.Normalize(rotation.Value);
-        if (_world.HasSpatialData(_rotatingEntity))
-        {
-            _spatialGrid.GetChunkData(_world.GetSpatialData(_rotatingEntity).CurrentChunk).MarkDirty();
-        }
-    }
-
-    private static T Lerp<T>(T a, T b, T t) where T : INumber<T> => a + (b - a) * t;
 
     [TraceInterception]
     public void UpdateSpatialPartitioning()
@@ -382,7 +157,7 @@ public class ServerGameLogic
             if (!_world.HasSpatialData(entityId)) continue;
 
             var position = _world.GetPosition(entityId);
-            ref var spatialData = ref _world.GetSpatialData(entityId);
+            var spatialData = _world.GetSpatialData(entityId);
 
             var currentChunk = _spatialGrid.GetChunkCoord(position.Value, position.Level);
 
@@ -391,6 +166,7 @@ public class ServerGameLogic
                 spatialData.PreviousChunk = spatialData.CurrentChunk;
                 spatialData.CurrentChunk = currentChunk;
                 _spatialGrid.MoveEntity(entityId, spatialData.PreviousChunk, spatialData.CurrentChunk);
+                _world.UpdateSpatialData(entityId) = spatialData;
             }
         }
     }
@@ -454,9 +230,13 @@ public class ServerGameLogic
         var entity = (EntityId)message.Id;
         if (!_world.HasPosition(entity)) return;
 
-        _world.GetPosition(entity).Value = message.Transform.Position;
-        _world.GetRotation(entity).Value = message.Transform.Rotation;
-        _world.GetScale(entity).Value = message.Transform.Scale;
+        _world.UpdatePosition(entity).Value = message.Transform.Position;
+        _world.UpdateRotation(entity).Value = message.Transform.Rotation;
+        _world.UpdateScale(entity).Value = message.Transform.Scale;
+        if (_world.HasSpatialData(entity))
+        {
+            _spatialGrid.GetChunkData(_world.GetSpatialData(entity).CurrentChunk).MarkDirty();
+        }
     }
 
     public void RemovePlayer(QConnection connection) => DoLocked(() => InternalRemovePlayer(connection));
@@ -547,8 +327,11 @@ public class ServerGameLogic
             new ChunkDeltaPacket(chunkCoord, addedIds, removedIds).Serialize(ref writer, false);
         }
 
-        ChunkData<PositionChunkData> positions = new([]);
+        ChunkData<PositionChunkData> positions = new([], null);
+        ChunkData<RotationChunkData> rotations = new([], []);
+        ChunkData<ScaleChunkData> scales = new([], []);
         using var _ = chunk.UseLock();
+        u8 i = 0;
         foreach (var entityId in chunk.Entities)
         {
             if (!_world.TryGetPosition(entityId, out var position))
@@ -556,11 +339,35 @@ public class ServerGameLogic
 
             positions.Data.Add(PositionChunkData.QuantizeFor(chunkCoord, _spatialGrid.GridInfo, position.Value));
 
-            if (!_world.HasPosition(entityId) || !_world.HasRotation(entityId) || !_world.HasScale(entityId))
-                continue;
+            //if (_world.HasDirtyRotation(entityId))
+            {
+                var rotation = _world.GetRotation(entityId);
+                rotations.Data.Add(RotationChunkData.Quantize(rotation.Value));
+                rotations.IndexOverride!.Add(i);
+                _world.ClearRotationDirty(entityId);
+            }
+
+            //if (_world.HasDirtyScale(entityId))
+            {
+                var scale = _world.GetScale(entityId);
+                scales.Data.Add(new ScaleChunkData(scale.Value));
+                scales.IndexOverride!.Add(i);
+                _world.ClearScaleDirty(entityId);
+            }
+
+            i++;
         }
 
         new ChunkUpdatePacket(chunkCoord, positions).Serialize(ref writer);
+        if (rotations.Data.Count > 0)
+        {
+            new ChunkUpdatePacket(chunkCoord, rotations).Serialize(ref writer);
+        }
+
+        if (scales.Data.Count > 0)
+        {
+            new ChunkUpdatePacket(chunkCoord, scales).Serialize(ref writer);
+        }
 
         return serializer;
     }
