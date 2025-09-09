@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
-using AjivaGenerator.Shared; // Assuming this contains NetworkPacketGenerationHelper and NetworkGeneratorRules
+// Assuming this contains NetworkPacketGenerationHelper and NetworkGeneratorRules
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;

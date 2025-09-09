@@ -1,7 +1,6 @@
 ﻿using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using Interception;
 using MemoryPack;
 using NetworkPackets;
 using Serilog;
@@ -22,13 +21,12 @@ public class MessageDecoder(Instrumentation instrumentation)
     private i32 _nextMessageLength;
     private BufferState _bufferState = BufferState.EmptyBuffer;
 
-    private readonly Counter<i64> _batchPacketsExceptionCounter =
-        instrumentation.Meter.CreateCounter<i64>("MessageDecoder_BatchPacketsException", "count",
-            "Number of exceptions during batch packet processing");
-
-    private readonly Counter<i64> _totalPacketsCounter =
-        instrumentation.Meter.CreateCounter<i64>("MessageDecoder_TotalPackets", "count",
-            "Total number of packets processed");
+    private readonly Counter<i64>? _batchPacketsExceptionCounter =
+            instrumentation.Meter?.CreateCounter<i64>("MessageDecoder_BatchPacketsException", "count",
+                "Number of exceptions during batch packet processing"),
+        _totalPacketsCounter =
+            instrumentation.Meter?.CreateCounter<i64>("MessageDecoder_TotalPackets", "count",
+                "Total number of packets processed");
 
     public void DecodeMessages(ReadOnlySpan<u8> newData, IUniversalMessageHandler<QConnection> handler,
         QConnection connection)
@@ -105,7 +103,7 @@ public class MessageDecoder(Instrumentation instrumentation)
         {
             return;
         }
-        
+
         Debug.Assert(slice.Length == messageLength);
         using var state = MemoryPackReaderOptionalStatePool.Rent(MemoryPackSerializerOptions.Default);
         var reader = new MemoryPackReader(slice, state);
@@ -118,11 +116,11 @@ public class MessageDecoder(Instrumentation instrumentation)
                 pos = reader.Consumed;
 
                 handler.AutoHandle(type, ref reader, connection);
-                _totalPacketsCounter.Add(1);
+                _totalPacketsCounter?.Add(1);
             }
             catch (MemoryPackSerializationException)
             {
-                _batchPacketsExceptionCounter.Add(1);
+                _batchPacketsExceptionCounter?.Add(1);
                 return;
             }
             catch (Exception ex)
@@ -195,6 +193,7 @@ public class MessageDecoder(Instrumentation instrumentation)
         {
             Array.Copy(_partialBuffer, newBuffer, preserveLength);
         }
+
         ArrayPool<u8>.Shared.Return(_partialBuffer);
         _partialBuffer = newBuffer;
     }

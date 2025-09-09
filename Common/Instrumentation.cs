@@ -24,7 +24,7 @@ public class Instrumentation : IDisposable
     }
 
     public ActivitySource ActivitySource { get; }
-    public Meter Meter { get; }
+    public Meter? Meter { get; }
 
     [DebuggerStepThrough, DebuggerHidden, DebuggerNonUserCode]
     public Activity? StartActivity(ActivityKind? kind = null, IEnumerable<KeyValuePair<string, object?>>? tags = null,
@@ -68,17 +68,17 @@ public class Instrumentation : IDisposable
         this.ActivitySource.Dispose();
     }
 
-    public readonly ref struct HistogramScope(Histogram<f64> instrument) : IDisposable
+    public readonly ref struct HistogramScope(Histogram<f64>? instrument) : IDisposable
     {
         private readonly i64 _ts = Stopwatch.GetTimestamp();
 
         public void Dispose()
         {
-            instrument.Record(Stopwatch.GetElapsedTime(_ts).TotalMilliseconds);
+            instrument?.Record(Stopwatch.GetElapsedTime(_ts).TotalMilliseconds);
         }
     }
 
-    public static HistogramScope Measure(Histogram<f64> inMeter) 
+    public static HistogramScope Measure(Histogram<f64>? inMeter) 
     {
         return new HistogramScope(inMeter);
     }

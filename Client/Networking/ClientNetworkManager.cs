@@ -37,7 +37,7 @@ public class ClientNetworkManager(
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
-        _rttMeter = instrumentation.Meter.CreateHistogram<f64>("client_network_rtt", "ms",
+        _rttMeter = instrumentation.Meter?.CreateHistogram<f64>("client_network_rtt", "ms",
             "Round-trip time to the server");
         return Task.CompletedTask;
     }

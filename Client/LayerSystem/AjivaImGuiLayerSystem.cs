@@ -24,7 +24,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
     private readonly RendererApi _api;
     private readonly PeriodicUpdater _periodicUpdater;
 
-    private ImFontPtr _imguiDefaultFont;
     private ImFontPtr _quicksandFont;
     private ImGuiController? _imguiController;
     private AjivaWindow _window = null!;
@@ -139,9 +138,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
 
     private TextureViewPtr? _swapchainView;
     private Vector2D<i32> _lastFramebufferSize = new(0, 0);
-    private bool _lastFrameSuboptimal = false;
     private bool _requestReConfigure = true;
-
 
     public void Render(UpdateInfo info)
     {
@@ -155,7 +152,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         if (framebufferSize.X * framebufferSize.Y == 0)
             return;
 
-        if (_lastFrameSuboptimal || _lastFramebufferSize != framebufferSize)
+        if (_requestReConfigure || _lastFramebufferSize != framebufferSize)
         {
             _lastFramebufferSize = framebufferSize;
 
@@ -175,7 +172,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
         _imguiController!.Update(info.DeltaTime);
         _swapchainView?.Release();
 
-        (var swapChainTexture, _lastFrameSuboptimal, var status) = _window.Surface.GetCurrentTexture();
+        (var swapChainTexture, _requestReConfigure, var status) = _window.Surface.GetCurrentTexture();
         if (!CanContinueRender(status))
             return;
 

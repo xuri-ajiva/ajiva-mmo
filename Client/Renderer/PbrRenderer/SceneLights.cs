@@ -22,9 +22,10 @@ internal class SceneLights
         var c = -MathF.Sin(_time) * 0.5f + 0.5f;
         var d = -MathF.Cos(_time) * 0.5f + 0.5f;
 
+        /*
         var i = 0;
         const f32 circleRadius = 4;
-        /*
+        
         var (sin, cos) = MathF.SinCos(_time + MathF.Tau * 0 / 4f);
         _lightData[i++] = Light(
             x: circleRadius * sin, z: circleRadius * cos,
@@ -73,8 +74,8 @@ internal class SceneLights
             x: 7.5f, y: 0, z: 6,
             col: (1, 1, 1),
             intensity: 2, radius: 10
-        );*/
-
+        );
+        */
 
         ReadOnlySpan<LightData> lights =
         [

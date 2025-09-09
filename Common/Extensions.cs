@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
@@ -120,7 +121,7 @@ public static class Extensions
         var instrumentation = new Instrumentation(serviceName, serviceVersion);
         builder.Services.AddSingleton(instrumentation);
         builder.Services.AddSingleton(_ => instrumentation.ActivitySource);
-        builder.Services.AddSingleton(_ => instrumentation.Meter);
+        //builder.Services.AddSingleton<Meter>(_ => instrumentation.Meter);
 
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource =>

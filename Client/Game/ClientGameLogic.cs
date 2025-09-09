@@ -209,6 +209,7 @@ public class ClientGameLogic(
         if (!Grid.TryGetChunk(packet.Coord, out var chunk)) return;
         switch (packet.Data)
         {
+            // todo make a universal handler that checks if IndexOverride is used
             case ChunkData<PositionChunkData> posUpdate:
                 using (var _ = chunk.UseLock())
                 {
@@ -227,7 +228,7 @@ public class ClientGameLogic(
                     var entEnum = chunk.Entities.GetEnumerator();
                     var entEnumIndex = 0;
                     var i = 0;
-                    foreach (var index in rotUpdate.IndexOverride)
+                    foreach (var index in rotUpdate.IndexOverride!)
                     {
                         while (entEnumIndex < index)
                         {
@@ -251,7 +252,7 @@ public class ClientGameLogic(
                     var entEnum = chunk.Entities.GetEnumerator();
                     var entEnumIndex = 0;
                     var i = 0;
-                    foreach (var index in rotUpdate.IndexOverride)
+                    foreach (var index in rotUpdate.IndexOverride!)
                     {
                         while (entEnumIndex < index)
                         {

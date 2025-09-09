@@ -5,38 +5,30 @@ using NetworkPackets;
 
 namespace Common.Networking.AjivaQuic;
 
-public class QStream : IDisposable
+public class QStream(
+    QuicStream stream,
+    QConnection qConnection,
+    Instrumentation instrumentation,
+    i32 bufferSize = 64 * 1024 * 1024)
+    : IDisposable
 {
-    private readonly Instrumentation _instrumentation;
-    private readonly MessageDecoder _decoder;
-    private readonly ResizableRingBuffer _writeBuffer;
-    private readonly u8[] _readBuffer;
+    private readonly Instrumentation _instrumentation = instrumentation;
+    private readonly MessageDecoder _decoder = new(instrumentation);
+    private readonly ResizableRingBuffer _writeBuffer = new(bufferSize);
+    private readonly u8[] _readBuffer = new u8[bufferSize];
     private readonly SemaphoreSlim _dataAvailableSignal = new(1, 1);
-    private readonly QuicStream _stream;
-    private readonly QConnection _qConnection;
-    private readonly Histogram<f64> _inMeter, _outMeter;
 
-    public QStream(QuicStream stream, QConnection qConnection, Instrumentation instrumentation,
-        i32 bufferSize = 64 * 1024 * 1024)
-    {
-        _decoder = new MessageDecoder(instrumentation);
-        _stream = stream;
-        _qConnection = qConnection;
-        _instrumentation = instrumentation;
-        _writeBuffer = new ResizableRingBuffer(bufferSize);
-        _readBuffer = new u8[bufferSize];
-        _inMeter = instrumentation.Meter.CreateHistogram<f64>("QStream_ReadMessages_Duration_" + stream.Id, "ms",
-            "Duration of ReadMessages call");
-        _outMeter = instrumentation.Meter.CreateHistogram<f64>("QStream_Flush_Duration_" + stream.Id, "ms",
+    private readonly Histogram<f64>? _inMeter = instrumentation.Meter?.CreateHistogram<f64>(
+            "QStream_ReadMessages_Duration_" + stream.Id, "ms", "Duration of ReadMessages call"),
+        _outMeter = instrumentation.Meter?.CreateHistogram<f64>("QStream_Flush_Duration_" + stream.Id, "ms",
             "Duration of Flush call");
-    }
 
     [ExcludeFromInterception]
     public void ReadMessages(IUniversalMessageHandler<QConnection> handler)
     {
         using var record = Instrumentation.Measure(_inMeter);
-        var bytesRead = _stream.Read(_readBuffer);
-        _decoder.DecodeMessages(_readBuffer.AsSpan(0, bytesRead), handler, _qConnection);
+        var bytesRead = stream.Read(_readBuffer);
+        _decoder.DecodeMessages(_readBuffer.AsSpan(0, bytesRead), handler, qConnection);
     }
 
     [TraceInterception]
@@ -46,8 +38,8 @@ public class QStream : IDisposable
         while (_writeBuffer.DataAvailable() > 0)
         {
             var part = _writeBuffer.ConsumePart();
-            _stream.Write(part.Span);
-            _stream.Flush();
+            stream.Write(part.Span);
+            stream.Flush();
         }
 
         _dataAvailableSignal.Wait(token);
@@ -94,12 +86,12 @@ public class QStream : IDisposable
 
     public void Close()
     {
-        _stream.Close();
+        stream.Close();
     }
 
     public void Dispose()
     {
         _dataAvailableSignal.Dispose();
-        _stream.Dispose();
+        stream.Dispose();
     }
 }

@@ -44,7 +44,7 @@ public class Instanced3dDeferredRenderer(
     private GBuffer? _sceneGBuffer;
     private RenderTexture? _finalSceneTexture;
     private SceneLights _sceneLights = null!;
-    private AjivaBuffer<PbrDeferredLightingShader.LightData> _lightsBuffer;
+    private AjivaBuffer<PbrDeferredLightingShader.LightData> _lightsBuffer = null!;
 
     public ref bool Enabled => ref _enabled;
 
@@ -215,9 +215,9 @@ public class Instanced3dDeferredRenderer(
     [TraceInterception]
     internal void DeferredMeshDraw(RenderTarget target, Extent3D sceneViewport)
     {
-        if (_pbrPipeline.BeginGBufferPass() is { } pass)
+        if (_pbrPipeline!.BeginGBufferPass() is { } pass)
         {
-            foreach (var meshBuffer in _sceneRenderCollection.OpaqueMeshes)
+            foreach (var meshBuffer in _sceneRenderCollection!.OpaqueMeshes)
             {
                 _pbrPipeline.DrawMesh(pass, meshBuffer);
             }
@@ -230,9 +230,9 @@ public class Instanced3dDeferredRenderer(
             target.QueuePtr.Submit(_pbrPipeline.EndGBufferPass(pass));
         }
 
-        if (_transparentPipeline.BeginRenderPass(sceneViewport) is { } transparentPass)
+        if (_transparentPipeline!.BeginRenderPass(sceneViewport) is { } transparentPass)
         {
-            foreach (var instances in _sceneRenderCollection.TransparentMeshes)
+            foreach (var instances in _sceneRenderCollection!.TransparentMeshes)
             {
                 _transparentPipeline.DrawMesh(transparentPass, instances);
             }

@@ -47,7 +47,7 @@ public class QClient
             State = ConnectionState.Connecting;
             var connection = await QuicConnection.ConnectAsync(_options, _cts.Token);
             Connection = await QConnectionEstablisher.Client(connection, instrumentation, _cts.Token);
-            Connection?.StartLoops(handler, instrumentation);
+            Connection?.StartLoops(handler);
 
             State = ConnectionState.Connected;
         }

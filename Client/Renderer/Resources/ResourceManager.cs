@@ -15,7 +15,7 @@ namespace Client.Renderer.Resources;
 
 using System;
 
-public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, ModelHelper modelHelper)
+public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
     : IHostedLifecycleService
 {
     public readonly ILogger<ResourceManager> Logger = logger;
@@ -231,7 +231,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
             }
             catch (Exception e)
             {
-                //TODO eneable for production Logger.LogCritical(e, "Failed to load texture {Path}", path);
+                Logger.LogCritical(e, "Failed to load texture {Path}", path);
             }
             finally
             {
@@ -530,7 +530,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger, M
             }
             catch (Exception e)
             {
-                //TODO eneable for production Logger.LogCritical(e, "Failed to load texture {Path}", path);
+                Logger.LogCritical(e, "Failed to load mesh {Path}", path);
             }
             finally
             {

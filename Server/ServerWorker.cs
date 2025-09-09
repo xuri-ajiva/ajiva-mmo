@@ -11,7 +11,7 @@ namespace Server;
 
 public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection>, QServerEventListener
 {
-    private readonly Thread? _serverTickTask, _serverUpdateTask;
+    private readonly Thread? _serverUpdateTask;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly CancellationTokenSource _stoppingCts;
 
@@ -30,7 +30,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
         _serverGameLogic = serverGameLogic;
         _stoppingCts = new CancellationTokenSource();
         _serverUpdateTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "GameTick",
-            histogram: _instrumentation.Meter.CreateHistogram<f64>("server.tick.duration",
+            histogram: _instrumentation.Meter?.CreateHistogram<f64>("server.tick.duration",
                 unit: "ms", description: "Duration of server tick"),
             lockedAction: LockedAction, tps: 30f)
         );
@@ -50,12 +50,11 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
     {
         _server.Start(this, this);
         _serverUpdateTask?.Start();
-        _serverTickTask?.Start();
         return Task.CompletedTask;
     }
 
 
-    private void RunLoop(CancellationToken token, string loopName, Histogram<f64> histogram, Action<f32> lockedAction,
+    private void RunLoop(CancellationToken token, string loopName, Histogram<f64>? histogram, Action<f32> lockedAction,
         f32 tps, u32 traceIntervalSeconds = 10)
     {
         f32 traceIntervalElapsed = 0;
@@ -82,7 +81,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
                 _semaphore.Release();
             }
 
-            histogram.Record(elapsed.TotalMilliseconds);
+            histogram?.Record(elapsed.TotalMilliseconds);
             lastUpdate = now;
 
             var sleepTime = 1f / tps - delta;
@@ -125,7 +124,7 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
     {
         await _server.DisposeAsync();
 
-        if (_serverUpdateTask is null && _serverTickTask is null)
+        if (_serverUpdateTask is null)
             return;
 
         try
@@ -136,7 +135,6 @@ public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection
         finally
         {
             _serverUpdateTask?.Join();
-            _serverTickTask?.Join();
         }
     }
 

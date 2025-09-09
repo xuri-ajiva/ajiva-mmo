@@ -109,7 +109,7 @@ public class SourceGeneratorWithAttributesTests
         }
         else
         {
-            Assert.True(false, "Emit failed");
+            Assert.Fail("Emit failed");
         }
     }
 }

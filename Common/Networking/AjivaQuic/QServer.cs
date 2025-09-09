@@ -72,7 +72,7 @@ public class QServer(
                     endPoint = connection.RemoteEndPoint;
                     logger.LogInformation("Connection accepted {Connection}", connection);
                     var qConnection = await QConnectionEstablisher.Server(connection, instrumentation, _cts.Token);
-                    qConnection.StartLoops(handler, instrumentation);
+                    qConnection.StartLoops(handler);
                     _connections.Add(qConnection);
                     eventListener?.OnClientConnected(qConnection);
                 }
