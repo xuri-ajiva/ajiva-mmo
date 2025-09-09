@@ -7,7 +7,7 @@ namespace Common.Ecs;
 
 // Core transform components - separated for better granularity and MMO optimization
 [EcsComponent(ComponentScope.Shared, ComponentSync.ServerToClient,
-    ComponentFlags.Dense | ComponentFlags.DirtyTracked | ComponentFlags.UnreliableSync)]
+    ComponentFlags.Dense | ComponentFlags.UnreliableSync)]
 public partial struct Position : IComponent
 {
     public Vector3 Value;

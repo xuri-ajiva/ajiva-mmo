@@ -219,12 +219,28 @@ internal static class EcsWorldGenerator
         // Get method (only for dense components to allow ref returns)
         if (component.Flags.HasFlag(ComponentFlags.Dense))
         {
-            sb.AppendLine($"    /// <summary>Gets a reference to the {name} component (dense only)</summary>");
-            sb.AppendLine($"    public ref {name} Get{name}(EntityId id)");
+            sb.AppendLine($"    /// <summary>Gets the {name} component value (dense only)</summary>");
+            sb.AppendLine($"    public {name} Get{name}(EntityId id)");
             sb.AppendLine("    {");
             sb.AppendLine($"        if (!Has{name}(id))");
             sb.AppendLine(
                 $"            throw new InvalidOperationException($\"Entity {{id}} does not have {name} component\");");
+            sb.AppendLine($"        return _data_{name}[id.Value];");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
+            sb.AppendLine($"    /// <summary>Gets a reference to the {name} component for updating (dense only)</summary>");
+            sb.AppendLine($"    public ref {name} Update{name}(EntityId id)");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        if (!Has{name}(id))");
+            sb.AppendLine(
+                $"            throw new InvalidOperationException($\"Entity {{id}} does not have {name} component\");");
+
+            if (component.Flags.HasFlag(ComponentFlags.DirtyTracked))
+            {
+                sb.AppendLine($"        _dirty_{name}[id.Value] = true;");
+            }
+
             sb.AppendLine($"        return ref _data_{name}[id.Value];");
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -277,6 +293,42 @@ internal static class EcsWorldGenerator
         // Dirty tracking methods
         if (component.Flags.HasFlag(ComponentFlags.DirtyTracked))
         {
+            sb.AppendLine($"    /// <summary>Checks if the entity has the {name} component and it is dirty</summary>");
+            sb.AppendLine($"    public bool HasDirty{name}(EntityId id)");
+            sb.AppendLine("    {");
+
+            if (component.Flags.HasFlag(ComponentFlags.Dense))
+            {
+                sb.AppendLine($"        return id.Value < _dirty_{name}.Length && _dirty_{name}[id.Value] && _set_{name}[id.Value];");
+            }
+            else // Sparse
+            {
+                sb.AppendLine($"        return _dirty_{name}.Contains(id.Value) && _set_{name}.Contains(id.Value);");
+            }
+
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
+            sb.AppendLine($"    /// <summary>Marks the {name} component as dirty</summary>");
+            sb.AppendLine($"    public void Mark{name}Dirty(EntityId id)");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        if (Has{name}(id))");
+            sb.AppendLine("        {");
+
+            if (component.Flags.HasFlag(ComponentFlags.Dense))
+            {
+                sb.AppendLine("            EnsureCapacity(id.Value);");
+                sb.AppendLine($"            _dirty_{name}[id.Value] = true;");
+            }
+            else // Sparse
+            {
+                sb.AppendLine($"            _dirty_{name}.Add(id.Value);");
+            }
+
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+
             sb.AppendLine($"    /// <summary>Gets all dirty {name} components</summary>");
             sb.AppendLine($"    public IEnumerable<(EntityId, {name})> GetDirty{name}()");
             sb.AppendLine("    {");
@@ -304,17 +356,20 @@ internal static class EcsWorldGenerator
             sb.AppendLine($"    /// <summary>Clears the dirty flag for {name} component</summary>");
             sb.AppendLine($"    public void Clear{name}Dirty(EntityId id)");
             sb.AppendLine("    {");
+            sb.AppendLine($"        if (Has{name}(id))");
+            sb.AppendLine("        {");
 
             if (component.Flags.HasFlag(ComponentFlags.Dense))
             {
-                sb.AppendLine($"        if (id.Value < _dirty_{name}.Length)");
-                sb.AppendLine($"            _dirty_{name}[id.Value] = false;");
+                sb.AppendLine($"            if (id.Value < _dirty_{name}.Length)");
+                sb.AppendLine($"                _dirty_{name}[id.Value] = false;");
             }
             else // Sparse
             {
-                sb.AppendLine($"        _dirty_{name}.Remove(id.Value);");
+                sb.AppendLine($"            _dirty_{name}.Remove(id.Value);");
             }
 
+            sb.AppendLine("        }");
             sb.AppendLine("    }");
             sb.AppendLine();
 

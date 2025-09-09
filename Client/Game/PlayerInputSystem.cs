@@ -65,11 +65,9 @@ public class PlayerInputSystem : IHostedService
         if (positionChanged || rotationChanged)
         {
             // Update local ECS immediately for responsive feel
-            ref var position = ref _gameLogic.World.GetPosition(localPlayerEntity);
-            ref var rotation = ref _gameLogic.World.GetRotation(localPlayerEntity);
 
-            position.Value = cameraPosition;
-            rotation.Value = cameraRotation;
+            _gameLogic.World.UpdatePosition(localPlayerEntity).Value = cameraPosition;
+            _gameLogic.World.UpdateRotation(localPlayerEntity).Value = cameraRotation;
 
             // Send to server
             _networkManager.SendEntityUpdate(
