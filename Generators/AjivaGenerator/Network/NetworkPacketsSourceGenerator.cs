@@ -286,7 +286,7 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                   writer.PackVarU64(zigzagValue);
               }
           }
-          
+
           """;
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -411,6 +411,8 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
         sb.AppendLine("using NetworkPackets;");
         sb.AppendLine("using System.Buffers;");
         sb.AppendLine("using System.Diagnostics;");
+        sb.AppendLine("using MemoryPack;");
+        sb.AppendLine("using MemoryPack.Internal;");
         sb.AppendLine();
 
         sb.AppendLine($"namespace {namespaceName};");
@@ -438,21 +440,22 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
         // ToMessage Method
         sb.AppendLine("public SerializedMessage ToMessage()");
         sb.EnterScope();
-        sb.AppendLine($"var writer = global::MemoryPack.Internal.ReusableLinkedArrayBufferWriterPool.Rent();");
-        sb.AppendLine("Serialize(writer);");
-        sb.AppendLine("return new SerializedMessage(writer);");
+        sb.AppendLine("var serializer = new SerializedMessage();");
+        sb.AppendLine(
+            "var writer = new MemoryPackWriter<ReusableLinkedArrayBufferWriter>(ref serializer.Writer, serializer.State);");
+        sb.AppendLine("Serialize(ref writer);");
+        sb.AppendLine("return serializer;");
         sb.ExitScope();
         sb.AppendLine();
 
 
         // Serialize Method
-        sb.AppendLine("public void Serialize(global::MemoryPack.Internal.ReusableLinkedArrayBufferWriter writer)");
+        sb.AppendLine(
+            "public void Serialize(scoped ref MemoryPackWriter<ReusableLinkedArrayBufferWriter> writer, bool flush = true)");
         sb.EnterScope();
-        sb.AppendLine("Span<byte> typeSpan = stackalloc byte[BitPackingHelper.MaxVarLength];");
-        sb.AppendLine($"var prefixBytes = BitPackingHelper.PackVarU64(typeSpan, (ulong)PacketType.{className});");
-        sb.AppendLine("writer.Write(typeSpan[..prefixBytes]);");
-        sb.AppendLine("global::MemoryPack.MemoryPackSerializer.Serialize(writer, this);");
-
+        sb.AppendLine($"writer.WriteUnmanaged(PacketType.{className});");
+        sb.AppendLine("writer.WritePackable(in this);");
+        sb.AppendLine("if (flush) writer.Flush();");
         sb.ExitScope();
         sb.AppendLine();
 
@@ -479,7 +482,8 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
         sb.EnterScope();
         sb.AppendLine($"var packet = new {className}();");
         sb.AppendLine("var read = global::MemoryPack.MemoryPackSerializer.Deserialize(data, ref packet);");
-        //sb.AppendLine($$"""Debug.Assert(read == data.Length, $"Did not read entire buffer when deserializing {{nameof(className)}}. Read {read} of {data.Length} bytes.");""");
+        sb.AppendLine(
+            $$"""Debug.Assert(read == data.Length, $"Did not read entire buffer when deserializing {{nameof(className)}}. Read {read} of {data.Length} bytes.");""");
         sb.AppendLine("return packet;");
         sb.ExitScope();
         sb.AppendLine();
@@ -558,37 +562,41 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
 
         // Async HandleMessage Method
         sb.AppendLine(
-            "public static global::System.Threading.Tasks.Task AutoHandleAsync<TUserData>(this IUniversalAsyncMessageHandler<TUserData> handler, global::System.ReadOnlySpan<byte> span, TUserData userData)");
+            "public static global::System.Threading.Tasks.Task AutoHandleAsync<TUserData>(this IUniversalAsyncMessageHandler<TUserData> handler, PacketType packetType, scoped ref global::MemoryPack.MemoryPackReader reader, TUserData userData)");
         sb.EnterScope();
-        sb.AppendLine("var type = (PacketType)span.ConsumeVarU64();");
-        sb.AppendLine("return type switch");
-        sb.EnterScope('{'); // Switch expression scope
+        sb.AppendLine("return packetType switch");
+        sb.EnterScope();
         foreach (var (ns, className, _) in packetDetails)
         {
             sb.AppendLine(
-                $"PacketType.{className} => handler.HandleAsync({ns}.{className}.Deserialize(span), userData),");
+                $"PacketType.{className} => handler.HandleAsync(reader.ReadPackable<{ns}.{className}>(), userData),");
         }
 
-        sb.AppendLine("_ => throw new global::System.ArgumentOutOfRangeException(nameof(type), type, null)");
+        sb.AppendLine(
+            "_ => throw new global::System.ArgumentOutOfRangeException(nameof(packetType), packetType, null)");
         sb.ExitScope(addSemicolon: true); // End switch expression with semicolon
         sb.ExitScope();
         sb.AppendLine();
 
         // Sync HandleMessage Method
         sb.AppendLine(
-            "public static void AutoHandle<TUserData>(this IUniversalMessageHandler<TUserData> handler, global::System.ReadOnlySpan<byte> span, TUserData userData)");
+            "public static void AutoHandle<TUserData>(this IUniversalMessageHandler<TUserData> handler, PacketType packetType, scoped ref global::MemoryPack.MemoryPackReader reader, TUserData userData)");
         sb.EnterScope();
-        sb.AppendLine("var type = (PacketType)span.ConsumeVarU64();");
-        sb.AppendLine("switch (type)");
+        sb.AppendLine("switch (packetType)");
         sb.EnterScope();
         foreach (var (ns, className, _) in packetDetails)
         {
             sb.AppendLine($"case PacketType.{className}:");
             sb.Indent();
-            sb.AppendLine($"handler.Handle({ns}.{className}.Deserialize(span), userData);");
+            sb.AppendLine($"handler.Handle(reader.ReadPackable<{ns}.{className}>(), userData);");
             sb.AppendLine("break;");
             sb.Unindent();
         }
+
+        sb.AppendLine("default:");
+        sb.Indent();
+        sb.AppendLine("throw new global::System.ArgumentOutOfRangeException(nameof(packetType), packetType, null);");
+        sb.Unindent();
 
         sb.ExitScope();
         sb.ExitScope();
@@ -644,10 +652,6 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
             typeSymbol.Locations.FirstOrDefault(), typeName));
         return $"Get<{typeName}>"; // Return a generic as a fallback to avoid breaking compilation
     }
-
-    // Left these here for simplicity as they are not the focus of the refactoring
-    private static ushort FindCoprimeIncrement(ushort count) => 1; // Simplified
-    private static int Gcd(ushort a, ushort b) => 1; // Simplified
 }
 
 /// <summary>
