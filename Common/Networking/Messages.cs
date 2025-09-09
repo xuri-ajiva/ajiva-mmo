@@ -54,12 +54,12 @@ public partial record struct ChunkUnloadPacket(ChunkCoord ChunkCoord, List<NetEn
 [MemoryPackable]
 //[MemoryPackUnion(0, typeof(PositionChunkData))]
 [MemoryPackUnion(0, typeof(ChunkData<PositionChunkData>))]
-[MemoryPackUnion(1, typeof(ChunkData<Vector3>))]
-[MemoryPackUnion(2, typeof(ChunkData<Quaternion>))]
+[MemoryPackUnion(1, typeof(ChunkData<RotationChunkData>))]
+[MemoryPackUnion(2, typeof(ChunkData<ScaleChunkData>))]
 public partial interface IChunkData;
 
 [MemoryPackable]
-public partial record struct PositionChunkData(u16 Qx, u16 Qy, u16 Qz)
+public readonly partial record struct PositionChunkData(u16 Qx, u16 Qy, u16 Qz)
 {
     public static PositionChunkData QuantizeFor(ChunkCoord chunkCoord, SpacialGridInfo info, Vector3 position)
     {
@@ -96,4 +96,35 @@ public partial record struct PositionChunkData(u16 Qx, u16 Qy, u16 Qz)
 }
 
 [MemoryPackable]
-public partial record ChunkData<T>(List<T> Data) : IChunkData;
+public readonly partial record struct RotationChunkData(u16 Qx, u16 Qy, u16 Qz, u16 Qw)
+{
+    public static RotationChunkData Quantize(Quaternion rotation)
+    {
+        // Normalize to ensure valid quaternion
+        rotation = Quaternion.Normalize(rotation);
+
+        // Map from [-1, 1] to [0, 65535]
+        return new RotationChunkData(
+            (u16)Math.Round(((rotation.X + 1) / 2) * u16.MaxValue),
+            (u16)Math.Round(((rotation.Y + 1) / 2) * u16.MaxValue),
+            (u16)Math.Round(((rotation.Z + 1) / 2) * u16.MaxValue),
+            (u16)Math.Round(((rotation.W + 1) / 2) * u16.MaxValue)
+        );
+    }
+
+    public Quaternion Restore()
+    {
+        // Map back from [0, 65535] to [-1, 1]
+        var x = (Qx / (f32)u16.MaxValue) * 2 - 1;
+        var y = (Qy / (f32)u16.MaxValue) * 2 - 1;
+        var z = (Qz / (f32)u16.MaxValue) * 2 - 1;
+        var w = (Qw / (f32)u16.MaxValue) * 2 - 1;
+        return Quaternion.Normalize(new Quaternion(x, y, z, w));
+    }
+}
+
+[MemoryPackable]
+public readonly partial record struct ScaleChunkData(Vector3 Value);
+
+[MemoryPackable]
+public partial record ChunkData<T>(List<T> Data, List<u8>? IndexOverride) : IChunkData;

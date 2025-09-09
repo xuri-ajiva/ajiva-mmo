@@ -12,14 +12,14 @@ public static class QConnectionEstablisher
         await HandShakeSend(token, primary);
         HandShakeReceive(primary);
 
-        var secondary = await connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, token);
+        /*var secondary = await connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, token);
         await HandShakeSend(token, secondary);
-        HandShakeReceive(secondary);
+        HandShakeReceive(secondary);*/
         List<QStream> streams = [];
         var qConnection = new QConnection(connection, streams, instrumentation,
             CancellationTokenSource.CreateLinkedTokenSource(token));
         streams.Add(new QStream(primary, qConnection, instrumentation));
-        streams.Add(new QStream(secondary, qConnection, instrumentation));
+        //streams.Add(new QStream(secondary, qConnection, instrumentation));
         return qConnection;
     }
 
@@ -46,16 +46,16 @@ public static class QConnectionEstablisher
             HandShakeReceive(primary);
             await HandShakeSend(token, primary);
 
-            var secondary = await connection.AcceptInboundStreamAsync(token);
+            /*var secondary = await connection.AcceptInboundStreamAsync(token);
             Debug.Assert(secondary.Type == QuicStreamType.Bidirectional);
             HandShakeReceive(secondary);
-            await HandShakeSend(token, secondary);
+            await HandShakeSend(token, secondary);*/
 
             List<QStream> streams = [];
             var qConnection = new QConnection(connection, streams, instrumentation,
                 CancellationTokenSource.CreateLinkedTokenSource(token));
             streams.Add(new QStream(primary, qConnection, instrumentation));
-            streams.Add(new QStream(secondary, qConnection, instrumentation));
+            //streams.Add(new QStream(secondary, qConnection, instrumentation));
             return qConnection;
         }
         finally

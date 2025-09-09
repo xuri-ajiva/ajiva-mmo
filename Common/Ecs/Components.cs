@@ -81,7 +81,7 @@ public partial struct RenderAsset : IComponent
 public partial struct PredictedPosition : IComponent
 {
     public Vector3 Value;
-    public float Confidence;
+    public f32 Confidence;
 }
 
 // Example/test components
@@ -89,8 +89,8 @@ public partial struct PredictedPosition : IComponent
     ComponentFlags.Dense | ComponentFlags.DirtyTracked | ComponentFlags.ImmediateSync | ComponentFlags.ReliableSync)]
 public partial struct Health : IComponent
 {
-    public int Current;
-    public int Max;
+    public i32 Current;
+    public i32 Max;
 }
 
 

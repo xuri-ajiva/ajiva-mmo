@@ -81,8 +81,7 @@ public class ClientGameLogic(
             // Apply position offset if defined
             if (assetDef.PositionOffset != default)
             {
-                ref var pos = ref World.GetPosition(entity);
-                pos.Value += assetDef.PositionOffset;
+                World.UpdatePosition(entity).Value += assetDef.PositionOffset;
             }
 
             // Add RenderAsset component for asset streaming
@@ -128,20 +127,17 @@ public class ClientGameLogic(
         // Update components
         if (World.HasPosition(entity))
         {
-            ref var position = ref World.GetPosition(entity);
-            position.Value = packet.Transform.Position;
+            World.UpdatePosition(entity).Value = packet.Transform.Position;
         }
 
         if (World.HasRotation(entity))
         {
-            ref var rotation = ref World.GetRotation(entity);
-            rotation.Value = packet.Transform.Rotation;
+            World.UpdateRotation(entity).Value = packet.Transform.Rotation;
         }
 
         if (World.HasScale(entity))
         {
-            ref var scale = ref World.GetScale(entity);
-            scale.Value = packet.Transform.Scale;
+            World.UpdateScale(entity).Value = packet.Transform.Scale;
         }
     }
 
@@ -219,13 +215,60 @@ public class ClientGameLogic(
                     foreach (var (id, delta) in chunk.Entities.Zip(posUpdate.Data))
                     {
                         if (!World.HasPosition(id)) continue;
-                        ref var position = ref World.GetPosition(id);
-                        position.Value = delta.Restore(packet.Coord, Grid.GridInfo);
+                        World.UpdatePosition(id).Value = delta.Restore(packet.Coord, Grid.GridInfo);
                     }
 
                     break;
                 }
 
+            case ChunkData<RotationChunkData> rotUpdate:
+                using (var _ = chunk.UseLock())
+                {
+                    var entEnum = chunk.Entities.GetEnumerator();
+                    var entEnumIndex = 0;
+                    var i = 0;
+                    foreach (var index in rotUpdate.IndexOverride)
+                    {
+                        while (entEnumIndex < index)
+                        {
+                            entEnum.MoveNext();
+                            entEnumIndex++;
+                        }
+
+                        if (!entEnum.MoveNext()) break;
+                        entEnumIndex++;
+                        var id = entEnum.Current;
+                        if (!World.HasRotation(id)) continue;
+                        World.UpdateRotation(id).Value = rotUpdate.Data[i].Restore();
+                        i++;
+                    }
+                }
+
+                break;
+            case ChunkData<ScaleChunkData> rotUpdate:
+                using (var _ = chunk.UseLock())
+                {
+                    var entEnum = chunk.Entities.GetEnumerator();
+                    var entEnumIndex = 0;
+                    var i = 0;
+                    foreach (var index in rotUpdate.IndexOverride)
+                    {
+                        while (entEnumIndex < index)
+                        {
+                            entEnum.MoveNext();
+                            entEnumIndex++;
+                        }
+
+                        if (!entEnum.MoveNext()) break;
+                        entEnumIndex++;
+                        var id = entEnum.Current;
+                        if (!World.HasScale(id)) continue;
+                        World.UpdateScale(id).Value = rotUpdate.Data[i].Value;
+                        i++;
+                    }
+                }
+
+                break;
             default:
                 return;
         }
