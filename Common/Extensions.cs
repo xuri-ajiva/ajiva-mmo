@@ -18,9 +18,9 @@ namespace Common;
 // To learn more about using this project, see https://aka.ms/dotnet/aspire/service-defaults
 public static class Extensions
 {
-    private const ushort DefaultServerPort = 31313;
+    private const u16 DefaultServerPort = 31313;
     private const string ApplicationProtocol = "ajiva-quic";
-    private static List<SslApplicationProtocol> _applicationProtocols = [new(ApplicationProtocol)];
+    private static readonly List<SslApplicationProtocol> ApplicationProtocols = [new(ApplicationProtocol)];
 
     public static IHostApplicationBuilder AddServiceDefaults<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
@@ -54,7 +54,7 @@ public static class Extensions
             var serverOptions = DefaultQuicConnectionOptions<QuicServerConnectionOptions>();
             serverOptions.ServerAuthenticationOptions = new SslServerAuthenticationOptions
             {
-                ApplicationProtocols = _applicationProtocols,
+                ApplicationProtocols = ApplicationProtocols,
                 RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true,
                 ServerCertificate = CertificateHelper.GenerateManualCertificate(),
                 ClientCertificateRequired = false,
@@ -78,7 +78,7 @@ public static class Extensions
                 clientOptions.RemoteEndPoint = endPoint;
             clientOptions.ClientAuthenticationOptions = new SslClientAuthenticationOptions
             {
-                ApplicationProtocols = _applicationProtocols,
+                ApplicationProtocols = ApplicationProtocols,
                 RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true,
                 TargetHost = endPoint?.Address.ToString(),
                 EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls13,
@@ -97,7 +97,7 @@ public static class Extensions
             ListenEndPoint = endPoint ?? new IPEndPoint(IPAddress.IPv6Any, DefaultServerPort),
             ListenBacklog = 100,
             ConnectionOptionsCallback = (connection, info, token) => ValueTask.FromResult(options),
-            ApplicationProtocols = _applicationProtocols
+            ApplicationProtocols = ApplicationProtocols
         };
     }
 

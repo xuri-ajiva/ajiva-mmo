@@ -2,5 +2,5 @@
 
 public class ServerConfiguration
 {
-    public ushort Port { get; set; }
+    public u16 Port { get; set; }
 }

@@ -39,7 +39,7 @@ public class QConnection(
         var thread = new Thread(() =>
         {
             //Instrumentation.Instance = instrumentation;
-            var mater = instrumentation.Meter.CreateHistogram<double>("QConnection_Loop_Duration",
+            var mater = instrumentation.Meter.CreateHistogram<f64>("QConnection_Loop_Duration",
                 "ms", "Duration of one loop in QConnection thread");
             while (!ctx.IsCancellationRequested)
             {

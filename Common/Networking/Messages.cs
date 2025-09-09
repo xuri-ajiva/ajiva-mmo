@@ -59,7 +59,7 @@ public partial record struct ChunkUnloadPacket(ChunkCoord ChunkCoord, List<NetEn
 public partial interface IChunkData;
 
 [MemoryPackable]
-public partial record PositionChunkData(ushort Qx, ushort Qy, ushort Qz)
+public partial record struct PositionChunkData(u16 Qx, u16 Qy, u16 Qz)
 {
     public static PositionChunkData QuantizeFor(ChunkCoord chunkCoord, SpacialGridInfo info, Vector3 position)
     {
@@ -75,9 +75,9 @@ public partial record PositionChunkData(ushort Qx, ushort Qy, ushort Qz)
         // Quantize to [0..65535]
 
         return new PositionChunkData(
-            (ushort)Math.Round((localX / info.ChunkSize.X) * ushort.MaxValue),
-            (ushort)Math.Round((localY / info.ChunkSize.Y) * ushort.MaxValue),
-            (ushort)Math.Round((localZ / info.ChunkSize.Z) * ushort.MaxValue)
+            (u16)Math.Round((localX / info.ChunkSize.X) * u16.MaxValue),
+            (u16)Math.Round((localY / info.ChunkSize.Y) * u16.MaxValue),
+            (u16)Math.Round((localZ / info.ChunkSize.Z) * u16.MaxValue)
         );
     }
 
@@ -88,9 +88,9 @@ public partial record PositionChunkData(ushort Qx, ushort Qy, ushort Qz)
         var baseZ = packetCoord.Z * info.ChunkSize.Z;
 
         // Dequantize back to float in [0..size]
-        var localX = (Qx / (f32)ushort.MaxValue) * info.ChunkSize.X;
-        var localY = (Qy / (f32)ushort.MaxValue) * info.ChunkSize.Y;
-        var localZ = (Qz / (f32)ushort.MaxValue) * info.ChunkSize.Z;
+        var localX = (Qx / (f32)u16.MaxValue) * info.ChunkSize.X;
+        var localY = (Qy / (f32)u16.MaxValue) * info.ChunkSize.Y;
+        var localZ = (Qz / (f32)u16.MaxValue) * info.ChunkSize.Z;
         return new Vector3(baseX + localX, baseY + localY, baseZ + localZ);
     }
 }
