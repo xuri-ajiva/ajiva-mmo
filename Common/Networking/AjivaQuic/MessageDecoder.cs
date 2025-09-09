@@ -1,9 +1,14 @@
-﻿using System.Diagnostics;
+﻿using System.Buffers;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using Interception;
+using MemoryPack;
 using NetworkPackets;
+using Serilog;
 
 namespace Common.Networking.AjivaQuic;
 
-public class MessageDecoder
+public class MessageDecoder(Instrumentation instrumentation)
 {
     private enum BufferState
     {
@@ -12,29 +17,42 @@ public class MessageDecoder
         PartialMessage
     }
 
-    private u8[] _partialBuffer = new u8[1024];
+    private u8[] _partialBuffer = ArrayPool<u8>.Shared.Rent(1024);
     private i32 _partialLength;
     private i32 _nextMessageLength;
     private BufferState _bufferState = BufferState.EmptyBuffer;
 
-    public void DecodeMessages(ReadOnlySpan<u8> newData, Action<ReadOnlySpan<u8>> handler)
+    private readonly Counter<i64> _batchPacketsExceptionCounter =
+        instrumentation.Meter.CreateCounter<i64>("MessageDecoder_BatchPacketsException", "count",
+            "Number of exceptions during batch packet processing");
+
+    private readonly Counter<i64> _totalPacketsCounter =
+        instrumentation.Meter.CreateCounter<i64>("MessageDecoder_TotalPackets", "count",
+            "Total number of packets processed");
+
+    public void DecodeMessages(ReadOnlySpan<u8> newData, IUniversalMessageHandler<QConnection> handler,
+        QConnection connection)
     {
         switch (_bufferState)
         {
-            case BufferState.EmptyBuffer:
-                NormalRead(newData, handler);
-                break;
             case BufferState.PartialLength:
                 TryReadMessageLength(newData, out var lengthBytesRead);
-                NormalRead(newData[lengthBytesRead..], handler);
+                newData = newData[lengthBytesRead..];
                 break;
             case BufferState.PartialMessage:
-                ContinuePartialMessageRead(newData, handler);
+                ContinuePartialMessageRead(newData, handler, connection);
+                return;
+            case BufferState.EmptyBuffer:
                 break;
+            default:
+                throw new ArgumentOutOfRangeException();
         }
+
+        NormalRead(newData, handler, connection);
     }
 
-    private void ContinuePartialMessageRead(ReadOnlySpan<u8> newData, Action<ReadOnlySpan<u8>> handler)
+    private void ContinuePartialMessageRead(ReadOnlySpan<u8> newData, IUniversalMessageHandler<QConnection> handler,
+        QConnection connection)
     {
         var needed = _nextMessageLength - _partialLength;
         if (newData.Length >= needed)
@@ -42,10 +60,10 @@ public class MessageDecoder
             // We have enough to complete the message
             ResizeBufferIfNeeded(_nextMessageLength, _partialLength);
             newData[..needed].CopyTo(_partialBuffer.AsSpan(_partialLength));
-            ProcessData(_partialBuffer.AsSpan(0, _nextMessageLength), _nextMessageLength, handler);
+            ProcessData(_partialBuffer.AsSpan(0, _nextMessageLength), _nextMessageLength, handler, connection);
             _partialLength = 0;
             _bufferState = BufferState.EmptyBuffer;
-            NormalRead(newData[needed..], handler);
+            NormalRead(newData[needed..], handler, connection);
         }
         else
         {
@@ -54,7 +72,8 @@ public class MessageDecoder
         }
     }
 
-    private void NormalRead(ReadOnlySpan<u8> newData, Action<ReadOnlySpan<u8>> handler)
+    private void NormalRead(ReadOnlySpan<u8> newData, IUniversalMessageHandler<QConnection> handler,
+        QConnection connection)
     {
         while (newData.Length > 0)
         {
@@ -66,7 +85,8 @@ public class MessageDecoder
 
             if (newData.Length - lengthBytesRead >= _nextMessageLength)
             {
-                ProcessData(newData.Slice(lengthBytesRead, _nextMessageLength), _nextMessageLength, handler);
+                ProcessData(newData.Slice(lengthBytesRead, _nextMessageLength), _nextMessageLength, handler,
+                    connection);
                 newData = newData[(lengthBytesRead + _nextMessageLength)..];
             }
             else
@@ -78,16 +98,39 @@ public class MessageDecoder
         }
     }
 
-    private void ProcessData(ReadOnlySpan<u8> slice, i32 messageLength, Action<ReadOnlySpan<u8>> handler)
+    private void ProcessData(ReadOnlySpan<u8> slice, i32 messageLength, IUniversalMessageHandler<QConnection> handler,
+        QConnection connection)
     {
         if (messageLength == 0)
         {
             return;
         }
-
+        
         Debug.Assert(slice.Length == messageLength);
-        // Handle the complete message in 'slice'
-        handler.Invoke(slice);
+        using var state = MemoryPackReaderOptionalStatePool.Rent(MemoryPackSerializerOptions.Default);
+        var reader = new MemoryPackReader(slice, state);
+        while (reader.Remaining > 0)
+        {
+            var pos = reader.Consumed;
+            try
+            {
+                var type = reader.ReadUnmanaged<PacketType>();
+                pos = reader.Consumed;
+
+                handler.AutoHandle(type, ref reader, connection);
+                _totalPacketsCounter.Add(1);
+            }
+            catch (MemoryPackSerializationException)
+            {
+                _batchPacketsExceptionCounter.Add(1);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error processing packet of length {Length} at position {Position}", messageLength, pos);
+                return;
+            }
+        }
     }
 
     private bool TryReadMessageLength(ReadOnlySpan<u8> data, out i32 lengthBytesRead)
@@ -120,6 +163,7 @@ public class MessageDecoder
                     _bufferState = BufferState.EmptyBuffer;
                     return true;
                 }
+
                 lengthBytesRead = toCopy;
                 return false;
             case BufferState.PartialMessage:
@@ -146,12 +190,12 @@ public class MessageDecoder
         if (_partialBuffer.Length >= newLength) return;
 
         var newSize = Math.Max(_partialBuffer.Length * 2, newLength);
-        var newBuffer = new u8[newSize];
+        var newBuffer = ArrayPool<u8>.Shared.Rent(newSize);
         if (preserveLength > 0)
         {
             Array.Copy(_partialBuffer, newBuffer, preserveLength);
         }
-
+        ArrayPool<u8>.Shared.Return(_partialBuffer);
         _partialBuffer = newBuffer;
     }
 }

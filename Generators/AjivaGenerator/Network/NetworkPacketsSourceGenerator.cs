@@ -22,7 +22,9 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
         $$"""
           {{AutoGenHeader}}
           using System.Buffers;
-          
+          using MemoryPack;
+          using MemoryPack.Internal;
+
           namespace {{Namespace}};
           [global::System.AttributeUsage(global::System.AttributeTargets.Struct)] // Changed to Struct only
           public class {{AttributeName}} : global::System.Attribute
@@ -42,20 +44,23 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
               public bool TryToMessage(global::System.Span<byte> buffer);    */
           }
 
-          public readonly ref struct SerializedMessage(global::MemoryPack.Internal.ReusableLinkedArrayBufferWriter _writer) : IDisposable
+          public ref struct SerializedMessage() : IDisposable
           {
+              public ReusableLinkedArrayBufferWriter Writer = ReusableLinkedArrayBufferWriterPool.Rent();
+              public MemoryPackWriterOptionalState State = MemoryPackWriterOptionalStatePool.Rent(MemoryPackSerializerOptions.Default);
+
               public void Dispose()
               {
-                  global::MemoryPack.Internal.ReusableLinkedArrayBufferWriterPool.Return(Writer);
+                  ReusableLinkedArrayBufferWriterPool.Return(Writer);
+                  ((IDisposable)State).Dispose();
               }
               
-              public global::MemoryPack.Internal.ReusableLinkedArrayBufferWriter.Enumerator GetEnumerator()
+              public ReusableLinkedArrayBufferWriter.Enumerator GetEnumerator()
               {
-                  return new global::MemoryPack.Internal.ReusableLinkedArrayBufferWriter.Enumerator(_writer);
+                  return new ReusableLinkedArrayBufferWriter.Enumerator(Writer);
               }
               
-              public ulong Length => (ulong)_writer.TotalWritten;
-              public global::MemoryPack.Internal.ReusableLinkedArrayBufferWriter Writer => _writer;
+              public ulong Length => (ulong)Writer.TotalWritten;
           }
 
           public interface IQConnection
@@ -67,7 +72,7 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
           {
               void SendToAll(SerializedMessage message);
           }
-          
+
           /// <summary>
           /// Provides high-performance, allocation-free helper methods for variable-length
           /// bitpacking of 64-bit integers using Varint and ZigZag encoding.
@@ -76,7 +81,7 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
           public static class BitPackingHelper
           {
               public const i32 MaxVarLength = 10;
-          
+
               /// <summary>
               /// Attempts to read a Varint-encoded 64-bit unsigned integer from the start of the span.
               /// This method does not throw an exception on failure.
@@ -89,11 +94,11 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
               {
                   value = 0;
                   var shift = 0;
-          
+
                   for (var i = 0; i < data.Length; i++)
                   {
                       var b = data[i];
-          
+
                       // A 64-bit varint can be at most 10 bytes long.
                       if (i >= MaxVarLength)
                       {
@@ -101,24 +106,24 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                           value = 0;
                           return false; // Malformed: Varint is too long
                       }
-          
+
                       value |= (u64)(b & 0x7F) << shift;
-          
+
                       if ((b & 0x80) == 0)
                       {
                           bytesRead = i + 1;
                           return true; // Successfully decoded
                       }
-          
+
                       shift += 7;
                   }
-          
+
                   // If we exit the loop, it means the data was incomplete.
                   bytesRead = 0;
                   value = 0;
                   return false;
               }
-          
+
               /// <summary>
               /// Attempts to decode a Varint-encoded 64-bit unsigned integer from the span,
               /// advancing the span past the consumed bytes if successful.
@@ -133,11 +138,11 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                       data = data.Slice(bytesRead);
                       return true;
                   }
-          
+
                   return false;
               }
-          
-          
+
+
               /// <summary>
               /// Reads a Varint-encoded 64-bit unsigned integer from the start of the span. Throws on failure.
               /// </summary>
@@ -149,10 +154,10 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                   {
                       return value;
                   }
-          
+
                   throw new InvalidDataException("Malformed or incomplete Varint data.");
               }
-          
+
               /// <summary>
               /// Decodes a Varint-encoded 64-bit unsigned integer from the span, advancing it. Throws on failure.
               /// </summary>
@@ -165,11 +170,11 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                       data = data.Slice(bytesRead);
                       return value;
                   }
-          
+
                   throw new InvalidDataException("Malformed or incomplete Varint data.");
               }
-          
-          
+
+
               /// <summary>
               /// Encodes a 64-bit unsigned integer using Varint encoding into the destination span.
               /// </summary>
@@ -182,16 +187,16 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                       {
                           throw new ArgumentException("Destination span is too small.", nameof(destination));
                       }
-          
+
                       u8 b = (u8)(value & 0x7F);
                       value >>= 7;
                       if (value > 0) b |= 0x80;
                       destination[bytesWritten++] = b;
                   } while (value > 0);
-          
+
                   return bytesWritten;
               }
-          
+
               /// <summary>
               /// Encodes a 64-bit unsigned integer using Varint and writes it to an IBufferWriter.
               /// </summary>
@@ -201,8 +206,8 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                   i32 bytesWritten = buffer.PackVarU64(value);
                   writer.Advance(bytesWritten);
               }
-          
-          
+
+
               /// <summary>
               /// Attempts to read a ZigZag/Varint-encoded 64-bit signed integer from the start of the span.
               /// </summary>
@@ -215,11 +220,11 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                       value = (long)(zigzagValue >> 1) ^ -(long)(zigzagValue & 1);
                       return true;
                   }
-          
+
                   value = 0;
                   return false;
               }
-          
+
               /// <summary>
               /// Attempts to decode a ZigZag/Varint-encoded 64-bit signed integer, advancing the span on success.
               /// </summary>
@@ -230,11 +235,11 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                       data = data.Slice(bytesRead);
                       return true;
                   }
-          
+
                   return false;
               }
-          
-          
+
+
               /// <summary>
               /// Reads a ZigZag/Varint-encoded 64-bit signed integer from the start of the span. Throws on failure.
               /// </summary>
@@ -244,10 +249,10 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                   {
                       return value;
                   }
-          
+
                   throw new InvalidDataException("Malformed or incomplete ZigZag/Varint data.");
               }
-          
+
               /// <summary>
               /// Decodes a ZigZag/Varint-encoded 64-bit signed integer, advancing the span. Throws on failure.
               /// </summary>
@@ -258,11 +263,11 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                       data = data.Slice(bytesRead);
                       return value;
                   }
-          
+
                   throw new InvalidDataException("Malformed or incomplete ZigZag/Varint data.");
               }
-          
-          
+
+
               /// <summary>
               /// Encodes a 64-bit signed integer using ZigZag and Varint encoding into the destination span.
               /// </summary>
@@ -271,7 +276,7 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                   u64 zigzagValue = (u64)((value << 1) ^ (value >> 63));
                   return destination.PackVarU64(zigzagValue);
               }
-          
+
               /// <summary>
               /// Encodes a 64-bit signed integer using ZigZag/Varint and writes it to an IBufferWriter.
               /// </summary>

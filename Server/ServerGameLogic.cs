@@ -7,6 +7,7 @@ using Common.Networking;
 using Common.Networking.AjivaQuic;
 using Common.SpacialPartitioning;
 using Interception;
+using MemoryPack;
 using MemoryPack.Internal;
 using NetworkPackets;
 
@@ -537,12 +538,13 @@ public class ServerGameLogic
 
     private SerializedMessage BuildChunkData(ChunkCoord chunkCoord, SpatialChunk chunk)
     {
-        var writer = ReusableLinkedArrayBufferWriterPool.Rent();
+        var serializer = new SerializedMessage();
+        var writer = new MemoryPackWriter<ReusableLinkedArrayBufferWriter>(ref serializer.Writer, serializer.State);
         if (_spatialGrid.TryGetDeltaInfo(chunkCoord, out var added, out var removed))
         {
             var addedIds = (added ?? []).Select(x => (NetEntId)x).ToList();
             var removedIds = (removed ?? []).Select(x => (NetEntId)x).ToList();
-            new ChunkDeltaPacket(chunkCoord, addedIds, removedIds).Serialize(writer);
+            new ChunkDeltaPacket(chunkCoord, addedIds, removedIds).Serialize(ref writer, false);
         }
 
         ChunkData<PositionChunkData> positions = new([]);
@@ -558,8 +560,8 @@ public class ServerGameLogic
                 continue;
         }
 
-        new ChunkUpdatePacket(chunkCoord, positions).Serialize(writer);
+        new ChunkUpdatePacket(chunkCoord, positions).Serialize(ref writer);
 
-        return new SerializedMessage(writer);
+        return serializer;
     }
 }

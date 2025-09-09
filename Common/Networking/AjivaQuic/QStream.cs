@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics.Metrics;
 using System.Net.Quic;
-using Common.Networking.AjivaQuic;
 using Interception;
 using NetworkPackets;
 
@@ -9,7 +8,7 @@ namespace Common.Networking.AjivaQuic;
 public class QStream : IDisposable
 {
     private readonly Instrumentation _instrumentation;
-    private readonly MessageDecoder _decoder = new();
+    private readonly MessageDecoder _decoder;
     private readonly ResizableRingBuffer _writeBuffer;
     private readonly u8[] _readBuffer;
     private readonly SemaphoreSlim _dataAvailableSignal = new(1, 1);
@@ -20,6 +19,7 @@ public class QStream : IDisposable
     public QStream(QuicStream stream, QConnection qConnection, Instrumentation instrumentation,
         i32 bufferSize = 64 * 1024 * 1024)
     {
+        _decoder = new MessageDecoder(instrumentation);
         _stream = stream;
         _qConnection = qConnection;
         _instrumentation = instrumentation;
