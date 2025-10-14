@@ -3,13 +3,14 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
 using Common;
+using Common.Ecs;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
 using NetworkPackets;
 
 namespace Server;
 
-public class ServerWorker : IHostedService, IUniversalMessageHandler<QConnection>, QServerEventListener
+public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConnection>, QServerEventListener
 {
     private readonly Thread? _serverUpdateTask;
     private readonly SemaphoreSlim _semaphore = new(1, 1);

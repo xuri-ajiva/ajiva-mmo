@@ -21,9 +21,19 @@ public class ClientNetworkManager(
     ClientGameLogic gameLogic,
     Instrumentation instrumentation,
     ClientConfiguration clientConfiguration)
-    : IHostedLifecycleService, IUniversalMessageHandler<QConnection>
+    : IHostedLifecycleService, IUniversalClientMessageHandler<QConnection>
 {
     public ConnectionState State => client.State;
+
+    public void Handle(HelloPacket message, QConnection userData)
+    {
+    }
+
+    public void Handle(DisconnectPacket message, QConnection userData)
+    {
+        logger.LogWarning("Disconnected from server: {Reason}", message.Reason);
+        Disconnect();
+    }
 
     public void Handle(PingPacket message, QConnection userData)
     {
@@ -88,7 +98,7 @@ public class ClientNetworkManager(
             Scale = scale
         };
 
-        new EntityUpdatePacket(networkEntityId, transform)
+        new PlayerMovementPacket(networkEntityId, transform)
             .Send(client.Connection!);
     }
 

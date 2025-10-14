@@ -8,6 +8,7 @@ namespace AjivaGenerator.Network;
 /// </summary>
 public static class NetworkGeneratorRules
 {
+
     public static readonly DiagnosticDescriptor MustBeStructRule = new(
         "NET001",
         "Network packet must be a struct",
@@ -31,4 +32,13 @@ public static class NetworkGeneratorRules
         "NetworkPacket",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+    
+    public static readonly DiagnosticDescriptor InvalidAttributeRule = new(
+        "NET004", 
+        "Invalid NetworkPacket attribute usage",
+        "The NetworkPacket attribute on type '{0}' is invalid: {1}",
+        "NetworkPacket",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+    
 }
