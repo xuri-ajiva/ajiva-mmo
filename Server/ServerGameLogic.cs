@@ -21,8 +21,7 @@ public class ServerGameLogic
     private readonly ILogger<ServerGameLogic> _logger;
     private readonly SemaphoreSlim _semaphorePlayer = new(1);
 
-    private readonly Dictionary<QConnection, EntityId> _playerEntities = new();
-    private readonly Dictionary<QConnection, HashSet<ChunkCoord>> _loadedChunks = new();
+    private readonly Dictionary<QConnection, ConnectionContext> _connectionContexts = new();
     private const int MaxSendRangeChunks = 10; //  Range in chunks (4 chunks = 4*32 = 128 world units)
     private const int MinSendRangeChunks = 4; // Minimum range in chunks
     private int _currentSendRangeChunks = MinSendRangeChunks;
@@ -46,9 +45,9 @@ public class ServerGameLogic
         _level.LoadLevel("Sponza");
     }
 
-
     public void SetupPlayer(QConnection connection)
     {
+        var context = new ConnectionContext(connection);
         EntityId entity;
         try
         {
@@ -56,7 +55,7 @@ public class ServerGameLogic
             // Send level load info
 
             entity = _world.CreateEntity();
-            _level.SetupPlayer(connection, entity);
+            _level.SetupPlayer(context, entity);
             var spawnPosition = new Vector3(0, 1, 0);
 
             _world.AddPosition(entity, new Position
@@ -83,15 +82,16 @@ public class ServerGameLogic
             });
 
             // Track player entity
-            _playerEntities[connection] = entity;
-            _loadedChunks[connection] = [];
+            context.PrimaryEntity = entity;
+            context.LoadedChunks.Clear();
+            _connectionContexts[connection] = context;
         }
         finally
         {
             _semaphorePlayer.Release();
         }
 
-        _logger.LogInformation("Player entity {Entity} created for connection {Connection}", entity, connection);
+        _logger.LogInformation("Player entity {Entity} created for connection {Context}", entity, context);
 
         // Send entity creation to all players within range
         var position = _world.GetPosition(entity);
@@ -101,13 +101,13 @@ public class ServerGameLogic
         using (var msg = new EntityCreatedPacket((NetEntId)entity,
                    CreateTransformFromComponents(position, rotation, scale), entityType.TypeId).ToMessage())
         {
-            connection.Send(msg); // client needs to know about its own entity immediately
+            context.Connection.Send(msg); // client needs to know about its own entity immediately
             SendToPlayersInRange(position.Value, position.Level, msg);
         }
 
         // Send assignment to the player
         using (var msg = new EntityAssignedPacket((NetEntId)entity).ToMessage())
-            connection.Send(msg);
+            context.Connection.Send(msg);
     }
 
     public void Update(f32 deltaTime)
@@ -174,41 +174,43 @@ public class ServerGameLogic
     [TraceInterception]
     public void UpdateAllPlayerVisibility()
     {
-        foreach (var kv in _playerEntities)
+        foreach (var kv in _connectionContexts)
         {
-            UnloadPlayerChunks(kv.Key, kv.Value);
+            UnloadPlayerChunks(kv.Value);
 
             new PingPacket(Stopwatch.GetTimestamp()).Send(kv.Key);
         }
     }
 
     [TraceInterception]
-    public void UnloadPlayerChunks(QConnection connection, EntityId playerEntity)
+    public void UnloadPlayerChunks(ConnectionContext context)
     {
+        var playerEntity = context.PrimaryEntity;
+        if (playerEntity == EntityId.Invalid) return;
         if (!_world.TryGetPosition(playerEntity, out var playerPosition)) return;
         var playerChunk = _spatialGrid.GetChunkCoord(playerPosition.Value, playerPosition.Level);
-        var visibleChunks = _loadedChunks[connection];
+        var visibleChunks = context.LoadedChunks;
         foreach (var coord in
                  visibleChunks.Where(chunkCoord => chunkCoord.PosDistanceTo(playerChunk) > MaxSendRangeChunks))
         {
-            SendUnloadChunk(connection, coord);
+            SendUnloadChunk(context, coord);
             visibleChunks.Remove(coord);
         }
     }
 
     [TraceInterception]
-    public void SendUnloadChunk(QConnection connection, ChunkCoord chunkCoord)
+    public void SendUnloadChunk(ConnectionContext context, ChunkCoord chunkCoord)
     {
         new ChunkUnloadPacket(chunkCoord, _spatialGrid.GetChunkData(chunkCoord).Entities
-            .Select(x => (NetEntId)x).ToList()).Send(connection);
+            .Select(x => (NetEntId)x).ToList()).Send(context.Connection);
     }
 
-    public void SendLoadChunk(QConnection connection, ChunkCoord chunkCoord)
+    public void SendLoadChunk(ConnectionContext context, ChunkCoord chunkCoord)
     {
         var chunk = _spatialGrid.GetChunkData(chunkCoord);
         using var _ = chunk.UseLock();
         new ChunkLoadPacket(chunkCoord, chunk.Entities
-            .Select(x => (NetEntId)x).ToList()).Send(connection);
+            .Select(x => (NetEntId)x).ToList()).Send(context.Connection);
     }
 
     private void SendToPlayersInRange(Vector3 position, i32 level, SerializedMessage packet)
@@ -216,54 +218,50 @@ public class ServerGameLogic
         // Calculate which chunk this position is in
         var chunkCoord = _spatialGrid.GetChunkCoord(position, level);
 
-        foreach (var (connection, entity) in _playerEntities)
+        foreach (var context in _connectionContexts.Values)
         {
-            if (!_world.TryGetPosition(entity, out var playerPosition)) continue;
+            if (!_world.TryGetPosition(context.PrimaryEntity, out var playerPosition)) continue;
             var playerChunk = _spatialGrid.GetChunkCoord(playerPosition.Value, playerPosition.Level);
             if (playerChunk.PosDistanceTo(chunkCoord) > MaxSendRangeChunks) continue;
-            connection.Send(packet);
+            context.Connection.Send(packet);
         }
     }
 
-    public void HandleEntityUpdate(EntityUpdatePacket message)
+    public void HandleEntityUpdate(EntityId entity, Transform transform)
     {
-        var entity = (EntityId)message.Id;
         if (!_world.HasPosition(entity)) return;
 
-        _world.UpdatePosition(entity).Value = message.Transform.Position;
-        _world.UpdateRotation(entity).Value = message.Transform.Rotation;
-        _world.UpdateScale(entity).Value = message.Transform.Scale;
+        _world.UpdatePosition(entity).Value = transform.Position;
+        _world.UpdateRotation(entity).Value = transform.Rotation;
+        _world.UpdateScale(entity).Value = transform.Scale;
         if (_world.HasSpatialData(entity))
         {
             _spatialGrid.GetChunkData(_world.GetSpatialData(entity).CurrentChunk).MarkDirty();
         }
     }
 
-    public void RemovePlayer(QConnection connection) => DoLocked(() => InternalRemovePlayer(connection));
+    public void RemovePlayer(ConnectionContext context) => DoLocked(() => InternalRemovePlayer(context));
 
-    private void InternalRemovePlayer(QConnection connection)
+    private void InternalRemovePlayer(ConnectionContext context)
     {
-        if (_playerEntities.TryGetValue(connection, out var playerEntity))
+        var playerEntity = context.PrimaryEntity;
+        // Remove from spatial grid
+        if (_world.HasSpatialData(playerEntity))
         {
-            // Remove from spatial grid
-            if (_world.HasSpatialData(playerEntity))
-            {
-                var spatialData = _world.GetSpatialData(playerEntity);
-                // Note: Could clean up empty chunks here if needed
-            }
-
-            // Remove from ECS world
-            _world.DeleteEntity(playerEntity);
-
-            // Clean up tracking
-            _playerEntities.Remove(connection, out _);
-            _loadedChunks.Remove(connection, out _);
-
-            // Notify other players in range
-            var position = _world.HasPosition(playerEntity) ? _world.GetPosition(playerEntity) : new Position();
-            using var msg = new EntityDestroyedPacket((NetEntId)playerEntity).ToMessage();
-            SendToPlayersInRange(position.Value, position.Level, msg);
+            var spatialData = _world.GetSpatialData(playerEntity);
+            // Note: Could clean up empty chunks here if needed
         }
+
+        // Remove from ECS world
+        _world.DeleteEntity(playerEntity);
+        context.PrimaryEntity = EntityId.Invalid;
+        context.LoadedChunks.Clear();
+        _connectionContexts.Remove(context.Connection);
+
+        // Notify other players in range
+        var position = _world.HasPosition(playerEntity) ? _world.GetPosition(playerEntity) : new Position();
+        using var msg = new EntityDestroyedPacket((NetEntId)playerEntity).ToMessage();
+        SendToPlayersInRange(position.Value, position.Level, msg);
     }
 
     private static Transform CreateTransformFromComponents(Position position, Rotation rotation, Scale scale)
@@ -282,18 +280,18 @@ public class ServerGameLogic
         var dirtyChunks = _spatialGrid.GetDirtyChunks().ToList();
 
         if (dirtyChunks.Count == 0) return;
-        List<QConnection> visibleChunksSnapshot = [];
+        List<ConnectionContext> visibleChunksSnapshot = [];
         foreach (var (chunkCoord, chunk) in dirtyChunks)
         {
             if (chunk.Entities.Count == 0) continue;
             visibleChunksSnapshot.Clear();
-            foreach (var (connection, visibleChunks) in _playerEntities)
+            foreach (var context in _connectionContexts.Values)
             {
-                var pos = _world.GetPosition(visibleChunks);
+                var pos = _world.GetPosition(context.PrimaryEntity);
                 var playerChunk = _spatialGrid.GetChunkCoord(pos.Value, pos.Level);
                 var chunkDistance = playerChunk.PosDistanceTo(chunkCoord);
                 if (chunkDistance <= _currentSendRangeChunks)
-                    visibleChunksSnapshot.Add(connection);
+                    visibleChunksSnapshot.Add(context);
             }
 
             if (visibleChunksSnapshot.Count == 0) continue;
@@ -301,14 +299,14 @@ public class ServerGameLogic
             using var chunkData = BuildChunkData(chunkCoord, chunk);
 
             // Send to all players who can see this chunk
-            foreach (var connection in visibleChunksSnapshot)
+            foreach (var context in visibleChunksSnapshot)
             {
-                if (_loadedChunks[connection].Add(chunkCoord))
+                if (context.LoadedChunks.Add(chunkCoord))
                 {
-                    SendLoadChunk(connection, chunkCoord);
+                    SendLoadChunk(context, chunkCoord);
                 }
 
-                connection.Send(chunkData);
+                context.Connection.Send(chunkData);
             }
         }
 
@@ -371,4 +369,7 @@ public class ServerGameLogic
 
         return serializer;
     }
+
+    public bool GetContextForConnection(QConnection connection, out ConnectionContext context) =>
+        _connectionContexts.TryGetValue(connection, out context!);
 }

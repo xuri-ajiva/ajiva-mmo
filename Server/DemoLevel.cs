@@ -24,9 +24,9 @@ public class DemoLevel(ServerEcsWorld world, SpatialGrid spatialGrid)
         //_world.ClearAllEntities();
     }
 
-    public void SetupPlayer(QConnection connection, EntityId entity)
+    public void SetupPlayer(ConnectionContext context, EntityId entity)
     {
-        new LoadLevelPacket(_levelName ?? "", _spatialGrid.GridInfo).Send(connection);
+        new LoadLevelPacket(_levelName ?? "", _spatialGrid.GridInfo).Send(context.Connection);
     }
 
     public void LoadLevel(string levelName)
@@ -66,13 +66,13 @@ public class DemoLevel(ServerEcsWorld world, SpatialGrid spatialGrid)
         });
 
         // Create some static test entities
-        for (var i = 0; i < 10; i++)
+        for (var i = 0; i < 100; i++)
         {
-            for (var j = 0; j < 10; j++)
+            for (var j = 0; j < 100; j++)
             {
                 var entity = _world.CreateEntity();
-                var position = new Vector3(i * 10, MathF.Floor(( /*f32.Cos(i * 0.1f) + */f32.Sin(j * 0.05f) + 2) * 3),
-                    j * 10);
+                var position = new Vector3(i * 2, MathF.Floor(( /*f32.Cos(i * 0.1f) + */f32.Sin(j * 0.05f) + 2) * 3),
+                    j * 2);
 
                 _world.AddPosition(entity, new Position
                 {

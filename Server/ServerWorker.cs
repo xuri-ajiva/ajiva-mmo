@@ -20,7 +20,7 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
     private readonly QServer _server;
     private readonly Instrumentation _instrumentation;
     private readonly ServerGameLogic _serverGameLogic;
-    private readonly ConcurrentQueue<EntityUpdatePacket> _entityUpdateQueue = new();
+    private readonly ConcurrentQueue<PlayerMovementPacket> _entityUpdateQueue = new();
 
     public ServerWorker(ILogger<ServerWorker> logger, QServer server, Instrumentation instrumentation,
         ServerGameLogic serverGameLogic)
@@ -33,15 +33,15 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
         _serverUpdateTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "GameTick",
             histogram: _instrumentation.Meter?.CreateHistogram<f64>("server.tick.duration",
                 unit: "ms", description: "Duration of server tick"),
-            lockedAction: LockedAction, tps: 30f)
+            lockedAction: CoreUpdate, tps: 100f)
         );
     }
 
-    private void LockedAction(f32 delta)
+    private void CoreUpdate(f32 delta)
     {
         while (_entityUpdateQueue.TryDequeue(out var packet))
         {
-            _serverGameLogic.HandleEntityUpdate(packet);
+            _serverGameLogic.HandleEntityUpdate((EntityId)packet.Id, packet.Transform);
         }
 
         _serverGameLogic.Update(delta);
@@ -102,8 +102,9 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
 
     public void OnClientDisconnected(QConnection connection)
     {
-        _logger.LogInformation("Client disconnected: {Client}", connection);
-        _serverGameLogic.RemovePlayer(connection);
+        if (!_serverGameLogic.GetContextForConnection(connection, out var context)) return;
+        _logger.LogInformation("Client disconnected: {Client}", context);
+        _serverGameLogic.RemovePlayer(context);
     }
 
     public void OnConnectionFailed(IPEndPoint? connection, Exception exception)
@@ -115,8 +116,8 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
     {
         Instrumentation.Instance = _instrumentation;
         using var activity = Instrumentation.NamedTrace("ClientConnected", ActivityKind.Server);
-        _logger.LogInformation("Client connected: {Client}", connection);
         // _serverGameLogic.SendWorldState(connection);
+        _logger.LogInformation("Client connected: {Client}", connection);
         _serverGameLogic.SetupPlayer(connection);
     }
 
@@ -139,13 +140,38 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
         }
     }
 
-    public void Handle(EntityUpdatePacket message, QConnection connection)
+    public void Handle(PingPacket message, QConnection userData)
     {
-        _entityUpdateQueue.Enqueue(message);
+        if (!_serverGameLogic.GetContextForConnection(userData, out var context)) return;
+    }
+
+    public void Handle(PlayerMovementPacket message, QConnection userData)
+    {
+        if (!_serverGameLogic.GetContextForConnection(userData, out var context)) return;
+        if (context.PrimaryEntity == (EntityId)message.Id)
+            _entityUpdateQueue.Enqueue(message);
     }
 
     public void MessageNotHandled(string messageType, QConnection connection)
     {
+        if (!_serverGameLogic.GetContextForConnection(connection, out var context)) return;
         _logger.LogWarning("Message not handled: {MessageType}", messageType);
+        _serverGameLogic.RemovePlayer(context);
+        context.Kick("Message not handled: " + messageType);
+    }
+
+    public void Handle(HelloPacket message, QConnection userData)
+    {
+        if (!_serverGameLogic.GetContextForConnection(userData, out var context)) return;
+        _logger.LogInformation("Received Hello from client Version: {Version}", message.Version);
+        // TODO Implement
+    }
+
+    public void Handle(DisconnectPacket message, QConnection userData)
+    {
+        if (!_serverGameLogic.GetContextForConnection(userData, out var context)) return;
+        _logger.LogError("Client disconnected: {Reason}", message.Reason);
+        _serverGameLogic.RemovePlayer(context);
+        // TODO Implement
     }
 }
