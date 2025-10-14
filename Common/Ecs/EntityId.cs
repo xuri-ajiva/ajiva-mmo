@@ -4,6 +4,7 @@ namespace Common.Ecs;
 
 public readonly record struct EntityId(i32 Value) : IComparable<EntityId>
 {
+    public static readonly EntityId Invalid = new(-1);
     public override string ToString() => $"Entity({Value})";
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

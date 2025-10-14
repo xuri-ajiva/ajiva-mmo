@@ -89,6 +89,19 @@ public class QStream(
         stream.Close();
     }
 
+    public void Close(SerializedMessage msg)
+    {
+        using var @lock = EnterLock();
+        WriteLength(msg.Length);
+        foreach (var memory in msg)
+        {
+            WriteData(memory.Span);
+        }
+
+        Flush(CancellationToken.None);
+        stream.Close();
+    }
+
     public void Dispose()
     {
         _dataAvailableSignal.Dispose();

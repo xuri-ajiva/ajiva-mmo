@@ -100,6 +100,7 @@ public class QConnection(
 
     private void SendToChannel(SerializedMessage message, QStream qStream)
     {
+        if (ctx.IsCancellationRequested) return;
         try
         {
             var spaceNeeded = (i32)message.Length + BitPackingHelper.MaxVarLength;
@@ -138,7 +139,6 @@ public class QConnection(
     public async ValueTask DisposeAsync()
     {
         await ctx.CancelAsync();
-        await connection.DisposeAsync();
         foreach (var qStream in streams)
         {
             qStream.Close();
@@ -154,9 +154,30 @@ public class QConnection(
             qStream.Dispose();
         }
 
+        await connection.DisposeAsync();
         ctx.Dispose();
         _threads.Clear();
     }
 
     public override string ToString() => $"{connection}: {connection.RemoteEndPoint}";
+
+    public void Close(SerializedMessage msg)
+    {
+        ctx.Cancel();
+        foreach (var thread in _threads)
+        {
+            thread.Join();
+        }
+
+        foreach (var qStream in streams)
+        {
+            qStream.Close(msg);
+            qStream.Dispose();
+        }
+
+        var disposeAsync = connection.DisposeAsync();   
+        ctx.Dispose();
+        _threads.Clear();
+        disposeAsync.AsTask().GetAwaiter().GetResult();
+    }
 }
