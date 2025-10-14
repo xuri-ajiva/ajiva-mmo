@@ -31,8 +31,9 @@ public class QClient
     public bool IsNotConnected => !IsConnected;
     public QConnection? Connection { get; private set; }
 
-   [ExcludeFromInterception]
-    public async ValueTask ConnectAsync(IUniversalMessageHandler<QConnection> handler, Instrumentation instrumentation, string? ipEndpoint = null,
+    [ExcludeFromInterception]
+    public async ValueTask ConnectAsync(IUniversalMessageHandler<QConnection> handler, Instrumentation instrumentation,
+        string? ipEndpoint = null,
         CancellationToken token = default)
     {
         if (State != ConnectionState.Disconnected) return;
@@ -47,7 +48,7 @@ public class QClient
             State = ConnectionState.Connecting;
             var connection = await QuicConnection.ConnectAsync(_options, _cts.Token);
             Connection = await QConnectionEstablisher.Client(connection, instrumentation, _cts.Token);
-            Connection?.StartLoops(handler);
+            Connection?.StartLoops();
 
             State = ConnectionState.Connected;
         }
@@ -57,6 +58,12 @@ public class QClient
             _logger.LogError(e, "Failed to connect to server at {EndPoint}", _options.RemoteEndPoint);
             throw;
         }
+    }
+
+    public void HandlePackets(PacketHandleDelegate<QConnection> handler)
+    {
+        if (!IsConnected) return;
+        Connection?.HandlePackets(handler);
     }
 
     public async Task DisconnectAsync()

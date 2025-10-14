@@ -1,9 +1,17 @@
-﻿using System.Diagnostics.Metrics;
+﻿using System.Buffers;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Net.Quic;
+using System.Threading.Channels;
 using Interception;
 using NetworkPackets;
+using Serilog;
 
 namespace Common.Networking.AjivaQuic;
+
+public delegate void PacketHandleDelegate<in TUserData>(PacketType packetType,
+    scoped ref global::MemoryPack.MemoryPackReader reader,
+    TUserData userData);
 
 public class QStream(
     QuicStream stream,
@@ -15,7 +23,6 @@ public class QStream(
     private readonly Instrumentation _instrumentation = instrumentation;
     private readonly MessageDecoder _decoder = new(instrumentation);
     private readonly ResizableRingBuffer _writeBuffer = new(bufferSize);
-    private readonly u8[] _readBuffer = new u8[bufferSize];
     private readonly SemaphoreSlim _dataAvailableSignal = new(1, 1);
 
     private readonly Histogram<f64>? _inMeter = instrumentation.Meter?.CreateHistogram<f64>(
@@ -23,26 +30,54 @@ public class QStream(
         _outMeter = instrumentation.Meter?.CreateHistogram<f64>("QStream_Flush_Duration_" + stream.Id, "ms",
             "Duration of Flush call");
 
+    internal record struct RentedPartialBuffer(u8[] Buffer, i32 Length);
+
+    private readonly Channel<RentedPartialBuffer> _channel = Channel.CreateBounded<RentedPartialBuffer>(new BoundedChannelOptions(20)
+        { FullMode = BoundedChannelFullMode.Wait, SingleWriter = true });
+
     [ExcludeFromInterception]
-    public void ReadMessages(IUniversalMessageHandler<QConnection> handler)
+    public async ValueTask ReadMessages(CancellationToken token = default)
     {
-        using var record = Instrumentation.Measure(_inMeter);
-        var bytesRead = stream.Read(_readBuffer);
-        _decoder.DecodeMessages(_readBuffer.AsSpan(0, bytesRead), handler, qConnection);
+        var startingTimestamp = Stopwatch.GetTimestamp();
+        var rent = ArrayPool<u8>.Shared.Rent(bufferSize);
+        var partialRent = new RentedPartialBuffer(rent, await stream.ReadAsync(rent, token));
+        await _channel.Writer.WriteAsync(partialRent, token);
+        _inMeter?.Record(Stopwatch.GetElapsedTime(startingTimestamp).TotalMilliseconds);
+    }
+
+
+    public void DecodeMessages(PacketHandleDelegate<QConnection> handler)
+    {
+        while (_channel.Reader.TryRead(out var rentedBuffer))
+        {
+            try
+            {
+                _decoder.DecodeMessages(rentedBuffer.Buffer.AsSpan(0, rentedBuffer.Length), handler, qConnection);
+            }
+            catch (Exception e)
+            {
+                Log.Error(e, "Exception during message decoding");
+            }
+            finally
+            {
+                ArrayPool<u8>.Shared.Return(rentedBuffer.Buffer);
+            }
+        }
     }
 
     [TraceInterception]
-    public void Flush(CancellationToken token)
+    public async Task FlushAsync(CancellationToken token)
     {
-        using var record = Instrumentation.Measure(_outMeter);
+        var startingTimestamp = Stopwatch.GetTimestamp();
         while (_writeBuffer.DataAvailable() > 0)
         {
             var part = _writeBuffer.ConsumePart();
             stream.Write(part.Span);
-            stream.Flush();
+            await stream.FlushAsync(token);
         }
 
-        _dataAvailableSignal.Wait(token);
+        await _dataAvailableSignal.WaitAsync(token);
+        _outMeter?.Record(Stopwatch.GetElapsedTime(startingTimestamp).TotalMilliseconds);
     }
 
     public i32 PendingWriteBytes() => _writeBuffer.DataAvailable();
@@ -98,7 +133,7 @@ public class QStream(
             WriteData(memory.Span);
         }
 
-        Flush(CancellationToken.None);
+        Task.WaitAll(FlushAsync(CancellationToken.None));
         stream.Close();
     }
 

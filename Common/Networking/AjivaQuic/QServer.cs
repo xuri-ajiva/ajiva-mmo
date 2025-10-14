@@ -41,9 +41,9 @@ public class QServer(
     }
 
     [ExcludeFromInterception]
-    public void Start(IUniversalMessageHandler<QConnection> handler, QServerEventListener eventListener)
+    public void Start(QServerEventListener eventListener)
     {
-        _listenTask = RunListener(handler, eventListener);
+        _listenTask = RunListener(eventListener);
     }
 
     public async ValueTask DisposeAsync()
@@ -56,7 +56,15 @@ public class QServer(
         _cts.Dispose();
     }
 
-    private async Task RunListener(IUniversalMessageHandler<QConnection> handler, QServerEventListener? eventListener)
+    public void HandlePackets(PacketHandleDelegate<QConnection> handler)
+    {
+        foreach (var connection in _connections)
+        {
+            connection.HandlePackets(handler);
+        }
+    }
+
+    private async Task RunListener(QServerEventListener? eventListener)
     {
         try
         {
@@ -72,7 +80,7 @@ public class QServer(
                     endPoint = connection.RemoteEndPoint;
                     logger.LogInformation("Connection accepted {Connection}", connection);
                     var qConnection = await QConnectionEstablisher.Server(connection, instrumentation, _cts.Token);
-                    qConnection.StartLoops(handler);
+                    qConnection.StartLoops();
                     _connections.Add(qConnection);
                     eventListener?.OnClientConnected(qConnection);
                 }

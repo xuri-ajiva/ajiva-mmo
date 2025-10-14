@@ -6,13 +6,14 @@ using Common;
 using Common.Ecs;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
+using MemoryPack;
 using NetworkPackets;
 
 namespace Server;
 
-public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConnection>, QServerEventListener
+public class ServerWorker : IHostedService, IUniversalServerMessageHandler<ConnectionContext>, QServerEventListener
 {
-    private readonly Thread? _serverUpdateTask;
+    private readonly Thread? _serverUpdateTask, _serverNetworkTask;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly CancellationTokenSource _stoppingCts;
 
@@ -20,7 +21,6 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
     private readonly QServer _server;
     private readonly Instrumentation _instrumentation;
     private readonly ServerGameLogic _serverGameLogic;
-    private readonly ConcurrentQueue<PlayerMovementPacket> _entityUpdateQueue = new();
 
     public ServerWorker(ILogger<ServerWorker> logger, QServer server, Instrumentation instrumentation,
         ServerGameLogic serverGameLogic)
@@ -35,22 +35,43 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
                 unit: "ms", description: "Duration of server tick"),
             lockedAction: CoreUpdate, tps: 100f)
         );
+        _serverNetworkTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "GameTick",
+            histogram: _instrumentation.Meter?.CreateHistogram<f64>("server.tick.duration",
+                unit: "ms", description: "Duration of server tick"),
+            lockedAction: CorePull, tps: 100f)
+        );
     }
 
     private void CoreUpdate(f32 delta)
     {
-        while (_entityUpdateQueue.TryDequeue(out var packet))
-        {
-            _serverGameLogic.HandleEntityUpdate((EntityId)packet.Id, packet.Transform);
-        }
-
         _serverGameLogic.Update(delta);
+    }
+
+    private void CorePull(f32 delta)
+    {
+        _server.HandlePackets(DispatchPacket);
+    }
+
+    private void DispatchPacket(PacketType packetType, scoped ref MemoryPackReader reader, QConnection connection)
+    {
+        try
+        {
+            if (!_serverGameLogic.GetContextForConnection(connection, out var context)) return;
+            this.AutoHandle(packetType, ref reader, context);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error handling packet {PacketType} from {Client}", packetType, connection);
+            //_serverGameLogic.RemovePlayer(_connectionContexts[connection]);
+            //_connectionContexts[connection].Kick("Error handling packet: " + packetType);
+        }
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _server.Start(this, this);
+        _server.Start(this);
         _serverUpdateTask?.Start();
+        _serverNetworkTask?.Start();
         return Task.CompletedTask;
     }
 
@@ -126,7 +147,7 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
     {
         await _server.DisposeAsync();
 
-        if (_serverUpdateTask is null)
+        if (_serverUpdateTask is null && _serverNetworkTask is null)
             return;
 
         try
@@ -137,39 +158,37 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<QConn
         finally
         {
             _serverUpdateTask?.Join();
+            _serverNetworkTask?.Join();
+            _stoppingCts.Dispose();
         }
     }
 
-    public void Handle(PingPacket message, QConnection userData)
+    public void Handle(PingPacket message, ConnectionContext context)
     {
-        if (!_serverGameLogic.GetContextForConnection(userData, out var context)) return;
     }
 
-    public void Handle(PlayerMovementPacket message, QConnection userData)
+    public void Handle(PlayerMovementPacket message, ConnectionContext context)
     {
-        if (!_serverGameLogic.GetContextForConnection(userData, out var context)) return;
-        if (context.PrimaryEntity == (EntityId)message.Id)
-            _entityUpdateQueue.Enqueue(message);
+        var entityId = (EntityId)message.Id;
+        if (context.PrimaryEntity == entityId)
+            _serverGameLogic.HandleEntityUpdate(entityId, message.Transform);
     }
 
-    public void MessageNotHandled(string messageType, QConnection connection)
+    public void MessageNotHandled(string messageType, ConnectionContext context)
     {
-        if (!_serverGameLogic.GetContextForConnection(connection, out var context)) return;
         _logger.LogWarning("Message not handled: {MessageType}", messageType);
         _serverGameLogic.RemovePlayer(context);
         context.Kick("Message not handled: " + messageType);
     }
 
-    public void Handle(HelloPacket message, QConnection userData)
+    public void Handle(HelloPacket message, ConnectionContext context)
     {
-        if (!_serverGameLogic.GetContextForConnection(userData, out var context)) return;
         _logger.LogInformation("Received Hello from client Version: {Version}", message.Version);
         // TODO Implement
     }
 
-    public void Handle(DisconnectPacket message, QConnection userData)
+    public void Handle(DisconnectPacket message, ConnectionContext context)
     {
-        if (!_serverGameLogic.GetContextForConnection(userData, out var context)) return;
         _logger.LogError("Client disconnected: {Reason}", message.Reason);
         _serverGameLogic.RemovePlayer(context);
         // TODO Implement

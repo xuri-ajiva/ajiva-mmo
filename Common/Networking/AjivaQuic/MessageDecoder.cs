@@ -28,14 +28,18 @@ public class MessageDecoder(Instrumentation instrumentation)
             instrumentation.Meter?.CreateCounter<i64>("MessageDecoder_TotalPackets", "count",
                 "Total number of packets processed");
 
-    public void DecodeMessages(ReadOnlySpan<u8> newData, IUniversalMessageHandler<QConnection> handler,
+    public void DecodeMessages(ReadOnlySpan<u8> newData, PacketHandleDelegate<QConnection> handler,
         QConnection connection)
     {
-        switch (_bufferState)
+        var stateCopy = _bufferState;
+        switch (stateCopy)
         {
             case BufferState.PartialLength:
+                Debugger.Launch();
+                // TODO here is a bug, as NormalRead is reading length, so we need to process the data only
                 TryReadMessageLength(newData, out var lengthBytesRead);
                 newData = newData[lengthBytesRead..];
+                if (ProcessOrSave(ref newData, handler, connection, lengthBytesRead)) return; 
                 break;
             case BufferState.PartialMessage:
                 ContinuePartialMessageRead(newData, handler, connection);
@@ -49,7 +53,7 @@ public class MessageDecoder(Instrumentation instrumentation)
         NormalRead(newData, handler, connection);
     }
 
-    private void ContinuePartialMessageRead(ReadOnlySpan<u8> newData, IUniversalMessageHandler<QConnection> handler,
+    private void ContinuePartialMessageRead(ReadOnlySpan<u8> newData, PacketHandleDelegate<QConnection> handler,
         QConnection connection)
     {
         var needed = _nextMessageLength - _partialLength;
@@ -70,7 +74,7 @@ public class MessageDecoder(Instrumentation instrumentation)
         }
     }
 
-    private void NormalRead(ReadOnlySpan<u8> newData, IUniversalMessageHandler<QConnection> handler,
+    private void NormalRead(ReadOnlySpan<u8> newData, PacketHandleDelegate<QConnection> handler,
         QConnection connection)
     {
         while (newData.Length > 0)
@@ -81,22 +85,31 @@ public class MessageDecoder(Instrumentation instrumentation)
                 return; // Need more data for length
             }
 
-            if (newData.Length - lengthBytesRead >= _nextMessageLength)
-            {
-                ProcessData(newData.Slice(lengthBytesRead, _nextMessageLength), _nextMessageLength, handler,
-                    connection);
-                newData = newData[(lengthBytesRead + _nextMessageLength)..];
-            }
-            else
-            {
-                SavePartialData(newData[lengthBytesRead..]);
-                _bufferState = BufferState.PartialMessage;
-                return; // Need more data for the full message
-            }
+            if (ProcessOrSave(ref newData, handler, connection, lengthBytesRead)) return; 
         }
     }
 
-    private void ProcessData(ReadOnlySpan<u8> slice, i32 messageLength, IUniversalMessageHandler<QConnection> handler,
+    private bool ProcessOrSave(ref ReadOnlySpan<u8> newData, PacketHandleDelegate<QConnection> handler, QConnection connection,
+        i32 lengthBytesRead)
+    {
+        // Need more data for the full message
+        if (newData.Length - lengthBytesRead >= _nextMessageLength)
+        {
+            ProcessData(newData.Slice(lengthBytesRead, _nextMessageLength), _nextMessageLength, handler,
+                connection);
+            newData = newData[(lengthBytesRead + _nextMessageLength)..];
+        }
+        else
+        {
+            SavePartialData(newData[lengthBytesRead..]);
+            _bufferState = BufferState.PartialMessage;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ProcessData(ReadOnlySpan<u8> slice, i32 messageLength, PacketHandleDelegate<QConnection> handler,
         QConnection connection)
     {
         if (messageLength == 0)
@@ -115,7 +128,7 @@ public class MessageDecoder(Instrumentation instrumentation)
                 var type = reader.ReadUnmanaged<PacketType>();
                 pos = reader.Consumed;
 
-                handler.AutoHandle(type, ref reader, connection);
+                handler.Invoke(type, ref reader, connection);
                 _totalPacketsCounter?.Add(1);
             }
             catch (MemoryPackSerializationException)

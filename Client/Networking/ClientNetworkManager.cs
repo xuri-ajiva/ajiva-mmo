@@ -2,11 +2,13 @@
 using System.Diagnostics.Metrics;
 using System.Numerics;
 using Client.Game;
+using Client.LayerSystem;
 using Common;
 using Common.Config;
 using Common.Ecs;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
+using MemoryPack;
 using NetworkPackets;
 
 namespace Client.Networking;
@@ -20,6 +22,7 @@ public class ClientNetworkManager(
     QClient client,
     ClientGameLogic gameLogic,
     Instrumentation instrumentation,
+    PeriodicUpdater updater,
     ClientConfiguration clientConfiguration)
     : IHostedLifecycleService, IUniversalClientMessageHandler<QConnection>
 {
@@ -187,7 +190,7 @@ public class ClientNetworkManager(
     {
         gameLogic.HandleChunkUpdate(message);
     }
-    
+
     public void Handle(ChunkLoadPacket message, QConnection userData)
     {
         gameLogic.HandleChunkLoad(message);
@@ -203,7 +206,24 @@ public class ClientNetworkManager(
         gameLogic.HandleChunkUnload(message);
     }
 
-    public Task StartedAsync(CancellationToken cancellationToken) => RunAutoConnect(cancellationToken);
+    public Task StartedAsync(CancellationToken cancellationToken)
+    {
+        updater.RegisterUpdate(UpdateCycle.Update, _ => client.HandlePackets(PacketDispatcher));
+        return RunAutoConnect(cancellationToken);
+    }
+
+    private void PacketDispatcher(PacketType packetType, scoped ref MemoryPackReader reader, QConnection userData)
+    {
+        try
+        {
+            this.AutoHandle(packetType, ref reader, userData);
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "Error handling packet of type {PacketType}", packetType);
+        }
+    }
+
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;

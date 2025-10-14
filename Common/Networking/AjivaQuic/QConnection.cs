@@ -1,6 +1,8 @@
-﻿using System.Diagnostics;
+﻿using System.Buffers;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net.Quic;
+using System.Threading.Channels;
 using Interception;
 using NetworkPackets;
 
@@ -13,7 +15,7 @@ public class QConnection(
     CancellationTokenSource ctx)
     : IQConnection, IAsyncDisposable
 {
-    private readonly List<Thread> _threads = [];
+    private readonly List<Task> _tasks = [];
 
     private readonly Counter<i64>? _inPackets =
             instrumentation.Meter?.CreateCounter<i64>("QConnection_InPackets", "count",
@@ -23,29 +25,49 @@ public class QConnection(
         _outDroppedPackets = instrumentation.Meter?.CreateCounter<i64>("QConnection_OutDropedPackets", "count",
             "Number of droped outgoing packets due to full buffer");
 
+
+
     [ExcludeFromInterception]
-    public void StartLoops(IUniversalMessageHandler<QConnection> handler)
+    public void StartLoops()
     {
         foreach (var qStream in streams)
         {
-            RunThreadLoop([TraceInterception]() => qStream.Flush(ctx.Token));
-            RunThreadLoop([TraceInterception]() => qStream.ReadMessages(handler));
+            RunThreadLoop(WriterTask);
+            RunThreadLoop(ReaderTask);
+            continue;
+
+            [TraceInterception]
+            async Task WriterTask() => await qStream.FlushAsync(ctx.Token);
+
+            [TraceInterception]
+            async Task ReaderTask()
+            {
+                await qStream.ReadMessages(ctx.Token);
+            }
         }
     }
 
-    private void RunThreadLoop(Action action)
+    public void HandlePackets(PacketHandleDelegate<QConnection> handler)
     {
-        var thread = new Thread(() =>
+        foreach (var qStream in streams)
+        {
+            qStream.DecodeMessages(handler);
+        }
+    }
+
+    private void RunThreadLoop(Func<Task> action)
+    {
+        var thread = Task.Factory.StartNew(async () =>
         {
             //Instrumentation.Instance = instrumentation;
-            var mater = instrumentation.Meter?.CreateHistogram<f64>("QConnection_Loop_Duration",
+            var mater = instrumentation.Meter?.CreateHistogram<f64>("QConnection_Loop_Out_Duration",
                 "ms", "Duration of one loop in QConnection thread");
             while (!ctx.IsCancellationRequested)
             {
                 var sw = Stopwatch.StartNew();
                 try
                 {
-                    action();
+                    await action();
                 }
                 catch (QuicException e)
                 {
@@ -85,12 +107,8 @@ public class QConnection(
                     mater?.Record(sw.Elapsed.TotalMilliseconds);
                 }
             }
-        })
-        {
-            Name = "QConnectionThread"
-        };
-        thread.Start();
-        _threads.Add(thread);
+        });
+        _tasks.Add(thread);
     }
 
     public void Send(SerializedMessage message, u8 streamId = 0)
@@ -144,10 +162,7 @@ public class QConnection(
             qStream.Close();
         }
 
-        foreach (var thread in _threads)
-        {
-            thread.Join();
-        }
+        Task.WaitAll(_tasks);
 
         foreach (var qStream in streams)
         {
@@ -156,7 +171,7 @@ public class QConnection(
 
         await connection.DisposeAsync();
         ctx.Dispose();
-        _threads.Clear();
+        _tasks.Clear();
     }
 
     public override string ToString() => $"{connection}: {connection.RemoteEndPoint}";
@@ -164,10 +179,8 @@ public class QConnection(
     public void Close(SerializedMessage msg)
     {
         ctx.Cancel();
-        foreach (var thread in _threads)
-        {
-            thread.Join();
-        }
+
+        Task.WaitAll(_tasks);
 
         foreach (var qStream in streams)
         {
@@ -175,9 +188,9 @@ public class QConnection(
             qStream.Dispose();
         }
 
-        var disposeAsync = connection.DisposeAsync();   
+        var disposeAsync = connection.DisposeAsync();
         ctx.Dispose();
-        _threads.Clear();
+        _tasks.Clear();
         disposeAsync.AsTask().GetAwaiter().GetResult();
     }
 }
