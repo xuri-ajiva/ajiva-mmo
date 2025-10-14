@@ -98,7 +98,7 @@ public class ServerGameLogic
         var entityType = _world.GetEntityType(entity);
         var rotation = _world.GetRotation(entity);
         var scale = _world.GetScale(entity);
-        using (var msg = new EntityCreatedPacket((NetEntId)entity,
+        using (var msg = new ToClientPackets.EntityCreatedPacket((NetEntId)entity,
                    CreateTransformFromComponents(position, rotation, scale), entityType.TypeId).ToMessage())
         {
             context.Connection.Send(msg); // client needs to know about its own entity immediately
@@ -106,7 +106,7 @@ public class ServerGameLogic
         }
 
         // Send assignment to the player
-        using (var msg = new EntityAssignedPacket((NetEntId)entity).ToMessage())
+        using (var msg = new ToClientPackets.EntityAssignedPacket((NetEntId)entity).ToMessage())
             context.Connection.Send(msg);
     }
 
@@ -178,7 +178,7 @@ public class ServerGameLogic
         {
             UnloadPlayerChunks(kv.Value);
 
-            new PingPacket(Stopwatch.GetTimestamp()).Send(kv.Key);
+            new Packets.PingPacket(Stopwatch.GetTimestamp()).Send(kv.Key);
         }
     }
 
@@ -201,7 +201,7 @@ public class ServerGameLogic
     [TraceInterception]
     public void SendUnloadChunk(ConnectionContext context, ChunkCoord chunkCoord)
     {
-        new ChunkUnloadPacket(chunkCoord, _spatialGrid.GetChunkData(chunkCoord).Entities
+        new ToClientPackets.ChunkUnloadPacket(chunkCoord, _spatialGrid.GetChunkData(chunkCoord).Entities
             .Select(x => (NetEntId)x).ToList()).Send(context.Connection);
     }
 
@@ -209,7 +209,7 @@ public class ServerGameLogic
     {
         var chunk = _spatialGrid.GetChunkData(chunkCoord);
         using var _ = chunk.UseLock();
-        new ChunkLoadPacket(chunkCoord, chunk.Entities
+        new ToClientPackets.ChunkLoadPacket(chunkCoord, chunk.Entities
             .Select(x => (NetEntId)x).ToList()).Send(context.Connection);
     }
 
@@ -260,7 +260,7 @@ public class ServerGameLogic
 
         // Notify other players in range
         var position = _world.HasPosition(playerEntity) ? _world.GetPosition(playerEntity) : new Position();
-        using var msg = new EntityDestroyedPacket((NetEntId)playerEntity).ToMessage();
+        using var msg = new ToClientPackets.EntityDestroyedPacket((NetEntId)playerEntity).ToMessage();
         SendToPlayersInRange(position.Value, position.Level, msg);
     }
 
@@ -322,7 +322,7 @@ public class ServerGameLogic
         {
             var addedIds = (added ?? []).Select(x => (NetEntId)x).ToList();
             var removedIds = (removed ?? []).Select(x => (NetEntId)x).ToList();
-            new ChunkDeltaPacket(chunkCoord, addedIds, removedIds).Serialize(ref writer, false);
+            new ToClientPackets.ChunkDeltaPacket(chunkCoord, addedIds, removedIds).Serialize(ref writer, false);
         }
 
         ChunkData<PositionChunkData> positions = new([], null);
@@ -356,15 +356,15 @@ public class ServerGameLogic
             i++;
         }
 
-        new ChunkUpdatePacket(chunkCoord, positions).Serialize(ref writer);
+        new ToClientPackets.ChunkUpdatePacket(chunkCoord, positions).Serialize(ref writer);
         if (rotations.Data.Count > 0)
         {
-            new ChunkUpdatePacket(chunkCoord, rotations).Serialize(ref writer);
+            new ToClientPackets.ChunkUpdatePacket(chunkCoord, rotations).Serialize(ref writer);
         }
 
         if (scales.Data.Count > 0)
         {
-            new ChunkUpdatePacket(chunkCoord, scales).Serialize(ref writer);
+            new ToClientPackets.ChunkUpdatePacket(chunkCoord, scales).Serialize(ref writer);
         }
 
         return serializer;

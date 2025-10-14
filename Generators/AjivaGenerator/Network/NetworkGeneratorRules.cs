@@ -9,10 +9,10 @@ namespace AjivaGenerator.Network;
 public static class NetworkGeneratorRules
 {
 
-    public static readonly DiagnosticDescriptor MustBeStructRule = new(
+    public static readonly DiagnosticDescriptor MustBeRecordStructRule = new(
         "NET001",
         "Network packet must be a struct",
-        "Type '{0}' marked with [NetworkPacket] must be a struct",
+        "Type '{0}' marked with [NetworkPacket] must be a record struct",
         "NetworkPacket",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

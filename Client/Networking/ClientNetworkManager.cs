@@ -24,21 +24,21 @@ public class ClientNetworkManager(
     Instrumentation instrumentation,
     PeriodicUpdater updater,
     ClientConfiguration clientConfiguration)
-    : IHostedLifecycleService, IUniversalClientMessageHandler<QConnection>
+    : IHostedLifecycleService, IClientPacketHandler<QConnection>
 {
     public ConnectionState State => client.State;
 
-    public void Handle(HelloPacket message, QConnection userData)
+    public void Handle(Packets.HelloPacket message, QConnection userData)
     {
     }
 
-    public void Handle(DisconnectPacket message, QConnection userData)
+    public void Handle(Packets.DisconnectPacket message, QConnection userData)
     {
         logger.LogWarning("Disconnected from server: {Reason}", message.Reason);
         Disconnect();
     }
 
-    public void Handle(PingPacket message, QConnection userData)
+    public void Handle(Packets.PingPacket message, QConnection userData)
     {
         var now = Stopwatch.GetTimestamp();
         LastRtt = Stopwatch.GetElapsedTime(message.Timestamp, now);
@@ -71,7 +71,7 @@ public class ClientNetworkManager(
     {
         if (client.IsNotConnected)
         {
-            Task.Run(() => client.ConnectAsync(this, instrumentation, address));
+            Task.Run(() => client.ConnectAsync(instrumentation, address));
         }
     }
 
@@ -101,7 +101,7 @@ public class ClientNetworkManager(
             Scale = scale
         };
 
-        new PlayerMovementPacket(networkEntityId, transform)
+        new ToServerPackets.PlayerMovementPacket(networkEntityId, transform)
             .Send(client.Connection!);
     }
 
@@ -120,7 +120,7 @@ public class ClientNetworkManager(
                 await Task.Delay(1000, cancellationToken);
                 logger.LogInformation("Connecting client to server on {ServerAddress}",
                     clientConfiguration.AutoConnectAddress);
-                await client.ConnectAsync(this, instrumentation,
+                await client.ConnectAsync(instrumentation,
                     clientConfiguration.AutoConnectAddress.Replace("localhost", "127.0.0.1"), cancellationToken);
                 while (client.State == ConnectionState.Connecting)
                 {
@@ -152,56 +152,56 @@ public class ClientNetworkManager(
         }
     }
 
-    public void Handle(EntityCreatedPacket message, QConnection connection)
+    public void Handle(ToClientPackets.EntityCreatedPacket message, QConnection connection)
     {
         gameLogic.HandleEntityCreated(message);
     }
 
-    public void Handle(EntityUpdatePacket message, QConnection connection)
+    public void Handle(ToClientPackets.EntityUpdatePacket message, QConnection connection)
     {
         gameLogic.HandleEntityUpdate(message);
     }
 
-    public void Handle(EntityDestroyedPacket message, QConnection connection)
+    public void Handle(ToClientPackets.EntityDestroyedPacket message, QConnection connection)
     {
         gameLogic.HandleEntityDestroyed(message);
     }
 
-    public void Handle(BeginWorldStatePacket message, QConnection connection)
+    public void Handle(ToClientPackets.BeginWorldStatePacket message, QConnection connection)
     {
         logger.LogInformation("Beginning to receive world state for {EntityCount} entities.", message.EntityCount);
         gameLogic.HandleBeginWorldState(message);
     }
 
-    public void Handle(LoadLevelPacket message, QConnection connection)
+    public void Handle(ToClientPackets.LoadLevelPacket message, QConnection connection)
     {
         logger.LogInformation("Loading level: {LevelName}", message.LevelName);
         //gameLogic.LoadLevel(message.LevelName);
         gameLogic.InitializeSpacialGrid(message.GridInfo);
     }
 
-    public void Handle(EntityAssignedPacket message, QConnection connection)
+    public void Handle(ToClientPackets.EntityAssignedPacket message, QConnection connection)
     {
         gameLogic.SetLocalPlayerEntityId(message.Id);
         logger.LogInformation("Assigned local player entity ID: {EntityId}", message.Id);
     }
 
-    public void Handle(ChunkUpdatePacket message, QConnection connection)
+    public void Handle(ToClientPackets.ChunkUpdatePacket message, QConnection connection)
     {
         gameLogic.HandleChunkUpdate(message);
     }
 
-    public void Handle(ChunkLoadPacket message, QConnection userData)
+    public void Handle(ToClientPackets.ChunkLoadPacket message, QConnection userData)
     {
         gameLogic.HandleChunkLoad(message);
     }
 
-    public void Handle(ChunkDeltaPacket message, QConnection userData)
+    public void Handle(ToClientPackets.ChunkDeltaPacket message, QConnection userData)
     {
         gameLogic.HandleChunkDelta(message);
     }
 
-    public void Handle(ChunkUnloadPacket message, QConnection connection)
+    public void Handle(ToClientPackets.ChunkUnloadPacket message, QConnection connection)
     {
         gameLogic.HandleChunkUnload(message);
     }
@@ -216,7 +216,7 @@ public class ClientNetworkManager(
     {
         try
         {
-            this.AutoHandle(packetType, ref reader, userData);
+            ((IClientPacketHandler<QConnection>)this).AutoHandle(packetType, ref reader, userData);
         }
         catch (Exception e)
         {

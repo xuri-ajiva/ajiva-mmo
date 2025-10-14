@@ -17,7 +17,7 @@ public class ConnectionContext(QConnection connection)
         {
             try
             {
-                using var msg = new DisconnectPacket("Kicked: " + reason).ToMessage();
+                using var msg = new Packets.DisconnectPacket("Kicked: " + reason).ToMessage();
                 Connection.Close(msg);
             }
             catch

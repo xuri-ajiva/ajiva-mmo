@@ -32,8 +32,7 @@ public class QClient
     public QConnection? Connection { get; private set; }
 
     [ExcludeFromInterception]
-    public async ValueTask ConnectAsync(IUniversalMessageHandler<QConnection> handler, Instrumentation instrumentation,
-        string? ipEndpoint = null,
+    public async ValueTask ConnectAsync(Instrumentation instrumentation, string? ipEndpoint = null,
         CancellationToken token = default)
     {
         if (State != ConnectionState.Disconnected) return;

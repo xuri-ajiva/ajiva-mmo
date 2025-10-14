@@ -11,7 +11,7 @@ using NetworkPackets;
 
 namespace Server;
 
-public class ServerWorker : IHostedService, IUniversalServerMessageHandler<ConnectionContext>, QServerEventListener
+public class ServerWorker : IHostedService, IServerPacketHandler<ConnectionContext>, QServerEventListener
 {
     private readonly Thread? _serverUpdateTask, _serverNetworkTask;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -57,7 +57,7 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<Conne
         try
         {
             if (!_serverGameLogic.GetContextForConnection(connection, out var context)) return;
-            this.AutoHandle(packetType, ref reader, context);
+            ((IServerPacketHandler<ConnectionContext>)this).AutoHandle(packetType, ref reader, context);
         }
         catch (Exception e)
         {
@@ -163,11 +163,11 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<Conne
         }
     }
 
-    public void Handle(PingPacket message, ConnectionContext context)
+    public void Handle(Packets.PingPacket message, ConnectionContext context)
     {
     }
 
-    public void Handle(PlayerMovementPacket message, ConnectionContext context)
+    public void Handle(ToServerPackets.PlayerMovementPacket message, ConnectionContext context)
     {
         var entityId = (EntityId)message.Id;
         if (context.PrimaryEntity == entityId)
@@ -181,13 +181,13 @@ public class ServerWorker : IHostedService, IUniversalServerMessageHandler<Conne
         context.Kick("Message not handled: " + messageType);
     }
 
-    public void Handle(HelloPacket message, ConnectionContext context)
+    public void Handle(Packets.HelloPacket message, ConnectionContext context)
     {
         _logger.LogInformation("Received Hello from client Version: {Version}", message.Version);
         // TODO Implement
     }
 
-    public void Handle(DisconnectPacket message, ConnectionContext context)
+    public void Handle(Packets.DisconnectPacket message, ConnectionContext context)
     {
         _logger.LogError("Client disconnected: {Reason}", message.Reason);
         _serverGameLogic.RemovePlayer(context);

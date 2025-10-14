@@ -3,7 +3,6 @@ using Ajiva.Ecs;
 using Common;
 using Common.Ecs;
 using Common.Networking;
-using Common.Networking.AjivaQuic;
 using Common.SpacialPartitioning;
 
 namespace Server;
@@ -26,7 +25,7 @@ public class DemoLevel(ServerEcsWorld world, SpatialGrid spatialGrid)
 
     public void SetupPlayer(ConnectionContext context, EntityId entity)
     {
-        new LoadLevelPacket(_levelName ?? "", _spatialGrid.GridInfo).Send(context.Connection);
+        new ToClientPackets.LoadLevelPacket(_levelName ?? "", _spatialGrid.GridInfo).Send(context.Connection);
     }
 
     public void LoadLevel(string levelName)

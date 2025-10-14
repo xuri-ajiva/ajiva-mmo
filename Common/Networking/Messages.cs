@@ -6,62 +6,76 @@ using NetworkPackets;
 
 namespace Common.Networking;
 
-[NetworkPacket(1, HandlerType.Both)]
-[MemoryPackable]
-public partial record struct HelloPacket(u64 Version);
+[NetworkPacketGroup("Server")]
+[NetworkPacketGroup("Client")]
+public abstract partial class Packets
+{
+    [NetworkPacket(1)]
+    [MemoryPackable]
+    public partial record struct HelloPacket(u64 Version);
 
-[NetworkPacket(2, HandlerType.Both)]
-[MemoryPackable]
-public partial record struct DisconnectPacket(string? Reason);
+    [NetworkPacket(2)]
+    [MemoryPackable]
+    public partial record struct DisconnectPacket(string? Reason);
 
-[NetworkPacket(10, HandlerType.Both)]
-[MemoryPackable]
-public partial record struct PingPacket(i64 Timestamp);
+    [NetworkPacket(10)]
+    [MemoryPackable]
+    public partial record struct PingPacket(i64 Timestamp);
+}
 
-[NetworkPacket(300, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct BeginWorldStatePacket(u32 EntityCount);
+[NetworkPacketGroup("Client")]
+public abstract partial class ToClientPackets
+{
 
-[NetworkPacket(301, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct EntityCreatedPacket(NetEntId Id, Transform Transform, u32 TypeId);
+    [NetworkPacket(300)]
+    [MemoryPackable]
+    public partial record struct BeginWorldStatePacket(u32 EntityCount);
 
-[NetworkPacket(302, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct EntityUpdatePacket(NetEntId Id, Transform Transform);
+    [NetworkPacket(301)]
+    [MemoryPackable]
+    public partial record struct EntityCreatedPacket(NetEntId Id, Transform Transform, u32 TypeId);
 
-[NetworkPacket(303, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct EntityDestroyedPacket(NetEntId Id);
+    [NetworkPacket(302)]
+    [MemoryPackable]
+    public partial record struct EntityUpdatePacket(NetEntId Id, Transform Transform);
 
-[NetworkPacket(304, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct LoadLevelPacket(string LevelName, SpacialGridInfo GridInfo);
+    [NetworkPacket(303)]
+    [MemoryPackable]
+    public partial record struct EntityDestroyedPacket(NetEntId Id);
 
-[NetworkPacket(305, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct EntityAssignedPacket(NetEntId Id);
+    [NetworkPacket(304)]
+    [MemoryPackable]
+    public partial record struct LoadLevelPacket(string LevelName, SpacialGridInfo GridInfo);
 
-[NetworkPacket(306, HandlerType.Server)]
-[MemoryPackable]
-public partial record struct PlayerMovementPacket(NetEntId Id, Transform Transform);
+    [NetworkPacket(305)]
+    [MemoryPackable]
+    public partial record struct EntityAssignedPacket(NetEntId Id);
 
 // Chunk-based updates
-[NetworkPacket(400, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct ChunkLoadPacket(ChunkCoord Coord, List<NetEntId> NetEntIds);
+    [NetworkPacket(400)]
+    [MemoryPackable]
+    public partial record struct ChunkLoadPacket(ChunkCoord Coord, List<NetEntId> NetEntIds);
 
-[NetworkPacket(402, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct ChunkDeltaPacket(ChunkCoord Coord, List<NetEntId> NewIds, List<NetEntId> RemovedIds);
+    [NetworkPacket(402)]
+    [MemoryPackable]
+    public partial record struct ChunkDeltaPacket(ChunkCoord Coord, List<NetEntId> NewIds, List<NetEntId> RemovedIds);
 
-[NetworkPacket(403, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct ChunkUpdatePacket(ChunkCoord Coord, IChunkData Data);
+    [NetworkPacket(403)]
+    [MemoryPackable]
+    public partial record struct ChunkUpdatePacket(ChunkCoord Coord, IChunkData Data);
 
-[NetworkPacket(404, HandlerType.Client)]
-[MemoryPackable]
-public partial record struct ChunkUnloadPacket(ChunkCoord ChunkCoord, List<NetEntId> NetEntIds);
+    [NetworkPacket(404)]
+    [MemoryPackable]
+    public partial record struct ChunkUnloadPacket(ChunkCoord ChunkCoord, List<NetEntId> NetEntIds);
+}
+
+[NetworkPacketGroup("Server")]
+public abstract partial class ToServerPackets
+{
+    [NetworkPacket(306)]
+    [MemoryPackable]
+    public partial record struct PlayerMovementPacket(NetEntId Id, Transform Transform);
+}
 
 [MemoryPackable]
 //[MemoryPackUnion(0, typeof(PositionChunkData))]

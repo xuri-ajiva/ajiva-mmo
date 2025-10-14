@@ -51,12 +51,12 @@ public class ClientGameLogic(
         }
     }
 
-    public void HandleEntityCreated(EntityCreatedPacket packet)
+    public void HandleEntityCreated(ToClientPackets.EntityCreatedPacket packet)
     {
         logger.LogTrace("Entity created: {EntityId}", packet.Id);
         if (_networkToEcs.ContainsKey(packet.Id))
         {
-            HandleEntityUpdate(new EntityUpdatePacket(packet.Id, packet.Transform));
+            HandleEntityUpdate(new ToClientPackets.EntityUpdatePacket(packet.Id, packet.Transform));
             return;
         }
 
@@ -119,7 +119,7 @@ public class ClientGameLogic(
         IncrementRenderVersion();
     }
 
-    public void HandleEntityUpdate(EntityUpdatePacket packet)
+    public void HandleEntityUpdate(ToClientPackets.EntityUpdatePacket packet)
     {
         if (!_networkToEcs.TryGetValue(packet.Id, out var entity))
             return; // Entity not found
@@ -141,7 +141,7 @@ public class ClientGameLogic(
         }
     }
 
-    public void HandleEntityDestroyed(EntityDestroyedPacket packet)
+    public void HandleEntityDestroyed(ToClientPackets.EntityDestroyedPacket packet)
     {
         logger.LogTrace("Entity destroyed: {EntityId}", packet.Id);
         if (!_networkToEcs.Remove(packet.Id, out var entity))
@@ -161,7 +161,7 @@ public class ClientGameLogic(
         RenderEntityVersion++;
     }
 
-    public void HandleBeginWorldState(BeginWorldStatePacket packet)
+    public void HandleBeginWorldState(ToClientPackets.BeginWorldStatePacket packet)
     {
         ClearWorld();
         IncrementRenderVersion();
@@ -201,7 +201,7 @@ public class ClientGameLogic(
         _scene.LoadLevel(levelName);
     }
 
-    public void HandleChunkUpdate(ChunkUpdatePacket packet)
+    public void HandleChunkUpdate(ToClientPackets.ChunkUpdatePacket packet)
     {
         logger.LogTrace("Chunk update received: {ChunkCoord} with {Type}", packet.Coord, packet.Data.GetType());
 
@@ -277,7 +277,7 @@ public class ClientGameLogic(
         chunk.MarkDirty();
     }
 
-    public void HandleChunkUnload(ChunkUnloadPacket packet)
+    public void HandleChunkUnload(ToClientPackets.ChunkUnloadPacket packet)
     {
         logger.LogTrace("Chunk unload received: {ChunkCoord}", packet.ChunkCoord);
         if (!GridCheck()) return;
@@ -315,7 +315,7 @@ public class ClientGameLogic(
         return true;
     }
 
-    public void HandleChunkDelta(ChunkDeltaPacket message)
+    public void HandleChunkDelta(ToClientPackets.ChunkDeltaPacket message)
     {
         logger.LogTrace("Chunk delta received: {ChunkCoord} with {NewCount} new and {RemovedCount} removed entities",
             message.Coord, message.NewIds.Count, message.RemovedIds.Count);
@@ -333,7 +333,7 @@ public class ClientGameLogic(
                 }
                 else
                 {
-                    HandleEntityCreated(new EntityCreatedPacket(netEntId, TryGetTransform(netEntId), 1));
+                    HandleEntityCreated(new ToClientPackets.EntityCreatedPacket(netEntId, TryGetTransform(netEntId), 1));
                 }
             }
         }
@@ -371,7 +371,7 @@ public class ClientGameLogic(
         };
     }
 
-    public void HandleChunkLoad(ChunkLoadPacket message)
+    public void HandleChunkLoad(ToClientPackets.ChunkLoadPacket message)
     {
         var entityCount = message.NetEntIds.Count;
         logger.LogTrace("Chunk load received: {ChunkCoord} with {EntityCount} entities",
@@ -395,7 +395,7 @@ public class ClientGameLogic(
 
             foreach (var entId in message.NetEntIds)
             {
-                HandleEntityCreated(new EntityCreatedPacket(entId, new Transform(), 1));
+                HandleEntityCreated(new ToClientPackets.EntityCreatedPacket(entId, new Transform(), 1));
                 chunk.Entities.Add(_networkToEcs[entId]);
             }
 
