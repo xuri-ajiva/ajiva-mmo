@@ -37,6 +37,10 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
           {
               public string GroupName { get; }
 
+              /// <summary>
+              /// Creates a new NetworkPacketGroup attribute with the specified group name.
+              /// </summary>
+              /// <param name="groupName">The name of the packet group. Can be any string, but should be unique per handler type. Accepts "*" as wildcard to include in all groups.</param>
               public NetworkPacketGroupAttribute(string groupName)
               {
                   GroupName = groupName;
@@ -52,7 +56,6 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
           {
               public ushort PacketId { get; }
 
-              // Default constructor: packet handled by both sides
               public {{AttributeName}}(ushort packetId)
               {
                   PacketId = packetId;
@@ -128,39 +131,6 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
         }
 
         return null;
-    }
-
-    private static (TypeDeclarationSyntax, ushort, bool reportAttributeFound, string? error)
-        GetLegacyPacketDeclarationForSourceGen(GeneratorSyntaxContext context,
-            IncrementalGeneratorInitializationContext incrementalGeneratorInitializationContext)
-    {
-        var declarationSyntax = (TypeDeclarationSyntax)context.Node;
-
-        foreach (AttributeListSyntax attributeListSyntax in declarationSyntax.AttributeLists)
-        foreach (AttributeSyntax attributeSyntax in attributeListSyntax.Attributes)
-        {
-            if (context.SemanticModel.GetSymbolInfo(attributeSyntax).Symbol is not IMethodSymbol attributeSymbol)
-                continue;
-
-            string attributeName = attributeSymbol.ContainingType.ToDisplayString();
-            if (attributeName == $"{Namespace}.{AttributeName}")
-            {
-                // Legacy: [NetworkPacket(id, handlerType)]
-                if (attributeSyntax.ArgumentList is
-                    {
-                        Arguments:
-                        [
-                            { Expression: LiteralExpressionSyntax { Token.Value: int packetId } },
-                            { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: var handlerTypeStr } }
-                        ]
-                    })
-                {
-                    return (declarationSyntax, (ushort)packetId, true, null);
-                }
-            }
-        }
-
-        return (declarationSyntax, 0, false, null);
     }
 
     private void GenerateCode(SourceProductionContext context, Compilation compilation,
@@ -298,7 +268,9 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
 
             foreach (var groupName in allGroupNames.Distinct())
             {
-                var groupPackets = packetDetails.Where(p => p.groupNames.Contains(groupName)).ToList();
+                if (groupName == "*") continue; // Skip wildcard group
+                var groupPackets = packetDetails
+                    .Where(p => p.groupNames.Contains(groupName) || p.groupNames.Contains("*")).ToList();
                 if (groupPackets.Any())
                 {
                     context.AddSource($"I{groupName}PacketHandler.g.cs",
@@ -383,7 +355,14 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
             member, INamedTypeSymbol symbol)> packetDetails)
     {
         // Check for duplicate packet IDs within the same group
+        var wildcardIds = new HashSet<ushort>();
         var packetIdGroups = new Dictionary<string, HashSet<ushort>>();
+        foreach (var (name, id, _, groups, source, symbol) in packetDetails)
+        {
+            if(groups.Contains("*"))
+                wildcardIds.Add(id);
+        }
+        
         foreach (var (name, id, _, groups, source, symbol) in packetDetails)
         {
             foreach (var group in groups)
@@ -393,7 +372,7 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
                     packetIdGroups[group] = new HashSet<ushort>();
                 }
 
-                if (packetIdGroups[group].Contains(id))
+                if (packetIdGroups[group].Contains(id) || (group != "*" && wildcardIds.Contains(id)))
                 {
                     context.ReportDiagnostic(Diagnostic.Create(NetworkGeneratorRules.InvalidAttributeRule,
                         source.GetLocation(), name,

@@ -6,23 +6,6 @@ using NetworkPackets;
 
 namespace Common.Networking;
 
-[NetworkPacketGroup("Server")]
-[NetworkPacketGroup("Client")]
-public abstract partial class Packets
-{
-    [NetworkPacket(1)]
-    [MemoryPackable]
-    public partial record struct HelloPacket(u64 Version);
-
-    [NetworkPacket(2)]
-    [MemoryPackable]
-    public partial record struct DisconnectPacket(string? Reason);
-
-    [NetworkPacket(10)]
-    [MemoryPackable]
-    public partial record struct PingPacket(i64 Timestamp);
-}
-
 [NetworkPacketGroup("Client")]
 public abstract partial class ToClientPackets
 {
