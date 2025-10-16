@@ -24,6 +24,7 @@ public class QServer(
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentBag<QConnection> _connections = [];
     private Task? _listenTask;
+    public IPEndPoint? LocalEndPoint => _server?.LocalEndPoint;
 
     public void SendToAll(SerializedMessage message)
     {
@@ -96,4 +97,11 @@ public class QServer(
             logger.LogError(e, "Error in listener");
         }
     }
+
+    public void SetEndpoint(IPEndPoint endPoint)
+    {
+        options.ListenEndPoint = endPoint;
+    }
+
+    public IEnumerable<QConnection> GetConnections() => _connections;
 }

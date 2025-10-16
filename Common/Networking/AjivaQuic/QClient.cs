@@ -39,7 +39,8 @@ public class QClient
         _cts = CancellationTokenSource.CreateLinkedTokenSource(token);
         if (ipEndpoint is not null)
             _options.RemoteEndPoint =
-                IPEndPoint.Parse(ipEndpoint.TrimStart("http://").TrimStart("https://").TrimStart("udp://"));
+                IPEndPoint.Parse(ipEndpoint.Replace("localhost", "127.0.0.1")
+                    .TrimStart("http://").TrimStart("https://").TrimStart("udp://"));
 
         _logger.LogInformation("Connecting to server at {EndPoint}", _options.RemoteEndPoint);
         try
