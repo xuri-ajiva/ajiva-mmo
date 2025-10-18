@@ -13,24 +13,32 @@ using NetworkPackets;
 
 namespace Client.Networking;
 
+public class ClientConnectionContext(Packets.ServerType serverType)
+{
+    public QConnection Connection { get; set; } = null!;
+    public Packets.ServerType ServerType { get; init; } = serverType;
+}
+
 /// <summary>
 /// Clean network manager that handles all client-server communication
 /// Separates networking concerns from UI and game logic
 /// </summary>
 public class ClientNetworkManager(
     ILogger<ClientNetworkManager> logger,
-    QClient client,
+    QFactory factory,
     ClientGameLogic gameLogic,
     Instrumentation instrumentation,
     PeriodicUpdater updater,
     ClientConfiguration clientConfiguration)
-    : IHostedLifecycleService, IClientPacketHandler<QConnection>
+    : IHostedLifecycleService, IClientPacketHandler<ClientConnectionContext>
 {
     public ConnectionState State => client.State;
 
     public void Handle(Packets.HelloPacket message, QConnection userData)
     {
     }
+    public QClient Client { get; } = factory.CreateClient();
+    private readonly ClientConnectionContext _gameContext = new(Packets.ServerType.GameServer);
 
     public void Handle(Packets.DisconnectPacket message, QConnection userData)
     {
@@ -44,6 +52,7 @@ public class ClientNetworkManager(
         LastRtt = Stopwatch.GetElapsedTime(message.Timestamp, now);
         _rttMeter?.Record(LastRtt.TotalMilliseconds);
     }
+    public bool IsConnected => Client.IsConnected;
 
     public TimeSpan LastRtt = TimeSpan.Zero;
     private Histogram<f64>? _rttMeter;

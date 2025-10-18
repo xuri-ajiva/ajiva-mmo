@@ -54,10 +54,6 @@ public class ClientRunner
         services.AddService<PeriodicUpdater>();
         services.AddService<ShaderReloadManager, IShaderManager>();
 
-        // Networking
-        builder.AddQuickClientOptions();
-        services.AddSingleton<QClient>();
-
         // Background services
         services.AddHostedService<Application>();
         // Networking

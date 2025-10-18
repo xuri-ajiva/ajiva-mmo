@@ -20,11 +20,8 @@ public class ServerRunner
 
         services.AddSingleton(config);
 
-        // networking
-        builder.AddQuickServerOptions(new IPEndPoint(IPAddress.Any, config.Port));
-        services.AddSingleton<QServer>();
-
-        services.AddHostedService<ServerWorker>();
+        services.AddService<ServerWorker>();
+        services.AddService<ManagementService>();
         services.AddSingleton<ServerGameLogic>();
     }
 

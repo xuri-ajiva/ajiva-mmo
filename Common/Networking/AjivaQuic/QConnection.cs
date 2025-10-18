@@ -27,6 +27,7 @@ public class QConnection(
             "Number of droped outgoing packets due to full buffer");
 
     public IPEndPoint RemoteEndPoint => connection.RemoteEndPoint;
+    public IPEndPoint LocalEndPoint => connection.LocalEndPoint;
 
     [ExcludeFromInterception]
     public void StartLoops()

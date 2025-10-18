@@ -19,89 +19,17 @@ namespace Common;
 // To learn more about using this project, see https://aka.ms/dotnet/aspire/service-defaults
 public static class Extensions
 {
-    private const u16 DefaultServerPort = 31313;
-    private const string ApplicationProtocol = "ajiva-quic";
-    private static readonly List<SslApplicationProtocol> ApplicationProtocols = [new(ApplicationProtocol)];
-
+   
     public static IHostApplicationBuilder AddServiceDefaults<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {
         builder.Services.AddServiceDiscovery();
         builder.Services.AddSerilog();
+        builder.Services.AddSingleton<QFactory>();
 
         builder.ConfigureOpenTelemetry();
         return builder;
     }
-
-    private static TOptions DefaultQuicConnectionOptions<TOptions>()
-        where TOptions : QuicConnectionOptions, new() => new()
-    {
-        DefaultCloseErrorCode = 0,
-        DefaultStreamErrorCode = 0,
-        IdleTimeout = TimeSpan.FromHours(1),
-        HandshakeTimeout = TimeSpan.FromMinutes(1),
-        MaxInboundBidirectionalStreams = 8,
-        MaxInboundUnidirectionalStreams = 8,
-        KeepAliveInterval = TimeSpan.FromMinutes(1)
-    };
-
-    public static IHostApplicationBuilder AddQuickServerOptions<TBuilder>(this TBuilder builder,
-        IPEndPoint? endPoint = null)
-        where TBuilder : IHostApplicationBuilder
-    {
-        builder.Services.AddSingleton(provider => QuickServerFactory(provider, endPoint));
-        builder.Services.AddSingleton(provider =>
-        {
-            var serverOptions = DefaultQuicConnectionOptions<QuicServerConnectionOptions>();
-            serverOptions.ServerAuthenticationOptions = new SslServerAuthenticationOptions
-            {
-                ApplicationProtocols = ApplicationProtocols,
-                RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true,
-                ServerCertificate = CertificateHelper.GenerateManualCertificate(),
-                ClientCertificateRequired = false,
-                AllowTlsResume = true,
-                AllowRenegotiation = false,
-            };
-            return serverOptions;
-        });
-
-        return builder;
-    }
-
-    public static IHostApplicationBuilder AddQuickClientOptions<TBuilder>(this TBuilder builder,
-        IPEndPoint? endPoint = null)
-        where TBuilder : IHostApplicationBuilder
-    {
-        builder.Services.AddSingleton(provider =>
-        {
-            var clientOptions = DefaultQuicConnectionOptions<QuicClientConnectionOptions>();
-            if (endPoint is not null)
-                clientOptions.RemoteEndPoint = endPoint;
-            clientOptions.ClientAuthenticationOptions = new SslClientAuthenticationOptions
-            {
-                ApplicationProtocols = ApplicationProtocols,
-                RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true,
-                TargetHost = endPoint?.Address.ToString(),
-                EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls13,
-            };
-            return clientOptions;
-        });
-        return builder;
-    }
-
-
-    static QuicListenerOptions QuickServerFactory(IServiceProvider provider, IPEndPoint? endPoint)
-    {
-        var options = provider.GetRequiredService<QuicServerConnectionOptions>();
-        return new QuicListenerOptions
-        {
-            ListenEndPoint = endPoint ?? new IPEndPoint(IPAddress.IPv6Any, DefaultServerPort),
-            ListenBacklog = 100,
-            ConnectionOptionsCallback = (connection, info, token) => ValueTask.FromResult(options),
-            ApplicationProtocols = ApplicationProtocols
-        };
-    }
-
 
     public static IHostApplicationBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder

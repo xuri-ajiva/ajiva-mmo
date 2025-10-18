@@ -10,21 +10,19 @@ namespace Common.Networking.AjivaQuic;
 
 public interface QServerEventListener
 {
-    void OnClientConnected(QConnection connection);
+    void OnClientConnected(QuicListener server, QConnection connection);
     void OnClientDisconnected(QConnection connection);
-    void OnConnectionFailed(IPEndPoint? connection, Exception exception);
+    void OnConnectionFailed(QuicListener server, IPEndPoint? connection, Exception exception);
 }
 
-public class QServer(
-    QuicListenerOptions options,
-    ILogger<QServer> logger,
-    Instrumentation instrumentation) : IAsyncDisposable, IQServer
+public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAsyncDisposable, IQServer
 {
     private QuicListener? _server;
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentBag<QConnection> _connections = [];
     private Task? _listenTask;
     public IPEndPoint? LocalEndPoint => _server?.LocalEndPoint;
+    private readonly TaskCompletionSource _readyHandle = new();
 
     public void SendToAll(SerializedMessage message)
     {
@@ -42,9 +40,9 @@ public class QServer(
     }
 
     [ExcludeFromInterception]
-    public void Start(QServerEventListener eventListener)
+    public void Start(QServerEventListener eventListener, Instrumentation instrumentation)
     {
-        _listenTask = RunListener(eventListener);
+        _listenTask = RunListener(eventListener, instrumentation);
     }
 
     public async ValueTask DisposeAsync()
@@ -65,13 +63,14 @@ public class QServer(
         }
     }
 
-    private async Task RunListener(QServerEventListener? eventListener)
+    private async Task RunListener(QServerEventListener? eventListener, Instrumentation instrumentation)
     {
         try
         {
             _server = await QuicListener.ListenAsync(options, cancellationToken: _cts.Token);
             logger.LogInformation("Server started and listening for connections in {EntryPoint}",
                 options.ListenEndPoint);
+            _readyHandle.SetResult();
             IPEndPoint? endPoint = null;
             while (!_cts.IsCancellationRequested)
             {
@@ -83,11 +82,11 @@ public class QServer(
                     var qConnection = await QConnectionEstablisher.Server(connection, instrumentation, _cts.Token);
                     qConnection.StartLoops();
                     _connections.Add(qConnection);
-                    eventListener?.OnClientConnected(qConnection);
+                    eventListener?.OnClientConnected(_server, qConnection);
                 }
                 catch (Exception e)
                 {
-                    eventListener?.OnConnectionFailed(endPoint, e);
+                    eventListener?.OnConnectionFailed(_server, endPoint, e);
                     logger.LogError(e, "Error accepting connection");
                 }
             }
@@ -104,4 +103,9 @@ public class QServer(
     }
 
     public IEnumerable<QConnection> GetConnections() => _connections;
+
+    public async Task WaitForReady()
+    {
+        await _readyHandle.Task;
+    }
 }

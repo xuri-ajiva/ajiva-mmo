@@ -77,4 +77,9 @@ public class QClient
             await Connection.DisposeAsync();
         State = ConnectionState.Disconnected;
     }
+
+    public override string ToString()
+    {
+        return $"{nameof(State)}: {State}, {nameof(IsConnected)}: {IsConnected}, {nameof(Connection)}: {Connection}";
+    }
 }

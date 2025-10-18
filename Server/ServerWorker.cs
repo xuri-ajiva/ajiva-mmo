@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
+using System.Net.Quic;
 using Common;
+using Common.Config;
 using Common.Ecs;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
@@ -19,14 +21,17 @@ public class ServerWorker : IHostedService, IServerPacketHandler<ConnectionConte
 
     private readonly ILogger<ServerWorker> _logger;
     private readonly QServer _server;
+    private readonly ManagementService _managementService;
     private readonly Instrumentation _instrumentation;
     private readonly ServerGameLogic _serverGameLogic;
 
-    public ServerWorker(ILogger<ServerWorker> logger, QServer server, Instrumentation instrumentation,
+    public ServerWorker(ILogger<ServerWorker> logger, QFactory factory, ServerConfiguration configuration,
+        ManagementService managementService, Instrumentation instrumentation,
         ServerGameLogic serverGameLogic)
     {
         _logger = logger;
-        _server = server;
+        _server = factory.CreateServer(0);
+        _managementService = managementService;
         _instrumentation = instrumentation;
         _serverGameLogic = serverGameLogic;
         _stoppingCts = new CancellationTokenSource();
@@ -67,12 +72,14 @@ public class ServerWorker : IHostedService, IServerPacketHandler<ConnectionConte
         }
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        _server.Start(this);
+        _server.Start(this, _instrumentation);
+        await _server.WaitForReady();
         _serverUpdateTask?.Start();
         _serverNetworkTask?.Start();
-        return Task.CompletedTask;
+        await Task.Delay(Random.Shared.Next(1, 5) * 1000, cancellationToken);
+        await _managementService.RegisterServer(_server.LocalEndPoint, cancellationToken);
     }
 
 
@@ -128,12 +135,12 @@ public class ServerWorker : IHostedService, IServerPacketHandler<ConnectionConte
         _serverGameLogic.RemovePlayer(context);
     }
 
-    public void OnConnectionFailed(IPEndPoint? connection, Exception exception)
+    public void OnConnectionFailed(QuicListener server, IPEndPoint? connection, Exception exception)
     {
         _logger.LogCritical(exception, "Server connection failed: {@Client}", connection);
     }
 
-    public void OnClientConnected(QConnection connection)
+    public void OnClientConnected(QuicListener server, QConnection connection)
     {
         Instrumentation.Instance = _instrumentation;
         using var activity = Instrumentation.NamedTrace("ClientConnected", ActivityKind.Server);

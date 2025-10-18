@@ -17,7 +17,6 @@ public class ServerGameLogic
 {
     private readonly ServerEcsWorld _world = new();
     private readonly SpatialGrid _spatialGrid = new(new SpacialGridInfo(new ChunkCoord(16, 16, 16, 1)));
-    private readonly QServer _server;
     private readonly ILogger<ServerGameLogic> _logger;
     private readonly SemaphoreSlim _semaphorePlayer = new(1);
 
@@ -37,9 +36,8 @@ public class ServerGameLogic
         _rangeStep = (_rangeStep + 1) % (MaxRangeSteps + 1);
     }
 
-    public ServerGameLogic(QServer server, ILogger<ServerGameLogic> logger)
+    public ServerGameLogic(ILogger<ServerGameLogic> logger)
     {
-        _server = server;
         _logger = logger;
         _level = new DemoLevel(_world, _spatialGrid);
         _level.LoadLevel("Sponza");
