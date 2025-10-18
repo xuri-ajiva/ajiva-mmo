@@ -2,5 +2,6 @@
 
 public class ServerConfiguration
 {
-    public u16 Port { get; set; }
+    public string? ClusterManagerAddress { get; set; }
+    public i32 ManagementPort { get; set; }
 }
