@@ -516,7 +516,7 @@ public class Instanced3dDeferredRenderer(
             var hi = 0;
             foreach (var buffer in _dynamicInstances.OpaqueMeshes)
             {
-                if(hi > 50) break;
+                if (hi > 50) break;
                 for (var i = 0; i < buffer.InstanceInfos.Length && i < 100; i++)
                 {
                     ref var instance = ref buffer.InstanceInfos[i];
@@ -584,15 +584,15 @@ public class Instanced3dDeferredRenderer(
                 ImGui.Separator();
                 ImGui.Text("Default Meshes");
                 ImGui.Text(
-                    $"Cube: VB: {_loader.DefaultPbrCubeMesh.VertexBuffer.Size} IB: {_loader.DefaultPbrCubeMesh.IndexBuffer.Size}");
+                    $"Cube: VB: {_loader.DefaultPbrCubeMesh.VertexBuffer.Size} IB: {_loader.DefaultPbrCubeMesh.IndexBuffer.Size} Refs: {_loader.DefaultPbrCubeMesh.Data.RefCount}");
                 ImGui.Text(
-                    $"TransparentCube: VB: {_loader.DefaultTransparentCubeMesh.VertexBuffer.Size} IB: {_loader.DefaultTransparentCubeMesh.IndexBuffer.Size}");
+                    $"TransparentCube: VB: {_loader.DefaultTransparentCubeMesh.VertexBuffer.Size} IB: {_loader.DefaultTransparentCubeMesh.IndexBuffer.Size}  Refs: {_loader.DefaultPbrCubeMesh.Data.RefCount}");
 
                 ImGui.Separator();
                 foreach (var mesh in _loader.GetAllMeshes())
                 {
                     ImGui.Text($"{mesh.Name}");
-                    ImGui.Text($"VB: {mesh.VertexBuffer.Size} IB: {mesh.IndexBuffer.Size}");
+                    ImGui.Text($"VB: {mesh.VertexBuffer.Size} IB: {mesh.IndexBuffer.Size}  Refs: {mesh.Data.RefCount}");
                 }
             }
         }
