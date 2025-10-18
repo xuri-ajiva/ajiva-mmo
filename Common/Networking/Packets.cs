@@ -16,13 +16,13 @@ public abstract partial class Packets
 
     [NetworkPacket(0xFF01)]
     [MemoryPackable]
-    public partial record struct HelloPacket(u64 Version, ServerType ServerType);
+    public partial record struct Hello(u64 Version, ServerType ServerType);
 
     [NetworkPacket(0xFF02)]
     [MemoryPackable]
-    public partial record struct DisconnectPacket(string? Reason);
+    public partial record struct Disconnect(string? Reason);
 
     [NetworkPacket(0xFF03)]
     [MemoryPackable]
-    public partial record struct PingPacket(i64 Timestamp);
+    public partial record struct Ping(i64 Timestamp);
 }

@@ -9,7 +9,7 @@ namespace Client.Networking;
 public partial class ClientNetworkManager
 {
     public class GatewayHandler(ClientNetworkManager handler, ILogger<ClientNetworkManager> logger, QClient client, Instrumentation instrumentation)
-        : IEntryPointClientPacketHandler<ClientConnectionContext>
+        : IGatewayClientPacketHandler<ClientConnectionContext>
     {
         protected internal readonly QClient Client = client;
 
@@ -41,7 +41,7 @@ public partial class ClientNetworkManager
         }
 
         
-        public void Handle(Management.ServerList message, ClientConnectionContext userData)
+        public void Handle(GatewayPackets.ServerList message, ClientConnectionContext userData)
         {
             handler.GameServerEndpoints = message.IpEndpoints;
             //if (handler.GameServerEndpoints is [var first, ..])
@@ -50,13 +50,13 @@ public partial class ClientNetworkManager
                 handler.GameServerEndpoints.Length);
         }
 
-        public void Handle(Packets.HelloPacket message, ClientConnectionContext userData) =>
+        public void Handle(Packets.Hello message, ClientConnectionContext userData) =>
             handler.Handle(message, userData);
 
-        public void Handle(Packets.DisconnectPacket message, ClientConnectionContext userData) =>
+        public void Handle(Packets.Disconnect message, ClientConnectionContext userData) =>
             handler.Handle(message, userData);
 
-        public void Handle(Packets.PingPacket message, ClientConnectionContext userData) =>
+        public void Handle(Packets.Ping message, ClientConnectionContext userData) =>
             handler.Handle(message, userData);
     }
 }

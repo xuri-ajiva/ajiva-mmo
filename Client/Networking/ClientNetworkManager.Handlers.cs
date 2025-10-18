@@ -8,13 +8,13 @@ namespace Client.Networking;
 
 public partial class ClientNetworkManager
 {
-    public void Handle(Packets.HelloPacket message, ClientConnectionContext context)
+    public void Handle(Packets.Hello message, ClientConnectionContext context)
     {
         if (message.ServerType != context.ServerType)
         {
             logger.LogError("Server type mismatch: expected {Expected}, got {Actual}", context.ServerType,
                 message.ServerType);
-            var dc = new Packets.DisconnectPacket("Server type mismatch").ToMessage();
+            var dc = new Packets.Disconnect("Server type mismatch").ToMessage();
             context.Connection.Close(dc);
             return;
         }
@@ -23,7 +23,7 @@ public partial class ClientNetworkManager
             message.Version);
     }
 
-    public void Handle(Packets.DisconnectPacket message, ClientConnectionContext context)
+    public void Handle(Packets.Disconnect message, ClientConnectionContext context)
     {
         logger.LogWarning("Disconnected from server {Server}: {Reason}", context.Connection.RemoteEndPoint,
             message.Reason);
@@ -44,7 +44,7 @@ public partial class ClientNetworkManager
         }
     }
 
-    public void Handle(Packets.PingPacket message, ClientConnectionContext context)
+    public void Handle(Packets.Ping message, ClientConnectionContext context)
     {
         var now = Stopwatch.GetTimestamp();
         LastRtt = Stopwatch.GetElapsedTime(message.Timestamp, now);
@@ -114,7 +114,7 @@ public partial class ClientNetworkManager
             {
                 case Packets.ServerType.Unknown:
                 case Packets.ServerType.EntryPoint:
-                    ((IEntryPointClientPacketHandler<ClientConnectionContext>)Gateway).AutoHandle(packetType,
+                    ((IGatewayClientPacketHandler<ClientConnectionContext>)Gateway).AutoHandle(packetType,
                         ref reader,
                         context);
                     break;

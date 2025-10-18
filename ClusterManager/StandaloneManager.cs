@@ -22,6 +22,7 @@ var services = builder.Services;
 
 services.AddSingleton(serverConfig);
 
+services.AddService<GatewayServer>();
 services.AddService<ClusterServer>();
 var iHost = builder.Build();
 

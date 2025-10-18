@@ -3,16 +3,16 @@ using NetworkPackets;
 
 namespace Common.Networking;
 
-[NetworkPacketGroup("EntryPoint")]
-public partial class Management
+[NetworkPacketGroup("Gateway")]
+public partial class GatewayPackets
 {
     [NetworkPacket(100)]
     [MemoryPackable]
     public partial record struct ConnectPacket(Guid Token);
 }
 
-[NetworkPacketGroup("EntryPointClient")]
-public partial class Management
+[NetworkPacketGroup("GatewayClient")]
+public partial class GatewayPackets
 {
     [NetworkPacket(1001)]
     [MemoryPackable]
@@ -20,9 +20,9 @@ public partial class Management
 }
 
 [NetworkPacketGroup("Management")]
-public partial class Management
+public partial class ManagementPackets
 {
     [NetworkPacket(100)]
     [MemoryPackable]
-    public partial record struct RegisterServerPacket(string Name, i32 GamePort, i32 ManagementPort);
+    public partial record struct RegisterServer(string Name, i32 GamePort, i32 ManagementPort);
 }

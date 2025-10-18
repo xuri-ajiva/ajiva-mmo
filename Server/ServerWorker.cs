@@ -170,7 +170,7 @@ public class ServerWorker : IHostedService, IServerPacketHandler<ConnectionConte
         }
     }
 
-    public void Handle(Packets.PingPacket message, ConnectionContext context)
+    public void Handle(Packets.Ping message, ConnectionContext context)
     {
     }
 
@@ -188,13 +188,13 @@ public class ServerWorker : IHostedService, IServerPacketHandler<ConnectionConte
         context.Kick("Message not handled: " + messageType);
     }
 
-    public void Handle(Packets.HelloPacket message, ConnectionContext context)
+    public void Handle(Packets.Hello message, ConnectionContext context)
     {
         _logger.LogInformation("Received Hello from client Version: {Version}", message.Version);
         // TODO Implement
     }
 
-    public void Handle(Packets.DisconnectPacket message, ConnectionContext context)
+    public void Handle(Packets.Disconnect message, ConnectionContext context)
     {
         _logger.LogError("Client disconnected: {Reason}", message.Reason);
         _serverGameLogic.RemovePlayer(context);

@@ -37,7 +37,7 @@ public class ManagementService : IHostedLifecycleService, QServerEventListener
         }
 
         _logger.LogInformation("Registering server with ClusterManager");
-        new Management.RegisterServerPacket(Guid.NewGuid().ToString("D"), serverLocalEndPoint.Port,
+        new ManagementPackets.RegisterServer(Guid.NewGuid().ToString("D"), serverLocalEndPoint.Port,
             _server.LocalEndPoint!.Port).Send(
             _client.Connection!);
     }

@@ -10,22 +10,25 @@ using NetworkPackets;
 
 namespace ClusterManager;
 
+public record ClientInfo(QConnection Connection);
+
 public class ClusterServer(
     ILogger<ClusterServer> logger,
     QFactory factory,
     ClusterConfiguration configuration,
-    Instrumentation instrumentation) : IHostedService, IManagementPacketHandler<GameServerInfo>, QServerEventListener
+    Instrumentation instrumentation,
+    GatewayServer gatewayServer) : IHostedService, IManagementPacketHandler<GameServerInfo>, QServerEventListener
 {
-    private readonly QServer _gatewayServer = factory.CreateServer(configuration.EntryPort);
+    private readonly GatewayServer _gatewayServer = gatewayServer;
     private readonly QServer _managementServer = factory.CreateServer(configuration.ManagementPort);
     private Thread _serverThread = null!;
     private readonly CancellationTokenSource _cts = new();
-
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _serverThread = new Thread(RunServers) { IsBackground = true };
         _serverThread.Start();
+        _gatewayServer.Cluster = this;
         return Task.CompletedTask;
     }
 
@@ -40,8 +43,8 @@ public class ClusterServer(
     {
         try
         {
-            _gatewayServer.Start(this, instrumentation);
             _managementServer.Start(this, instrumentation);
+            _gatewayServer.Start();
             logger.LogInformation(
                 "ClusterManager listening on ports {EntryPort} (clients) and {ManagementPort} (game servers)",
                 configuration.EntryPort, configuration.ManagementPort);
@@ -56,7 +59,7 @@ public class ClusterServer(
         {
             try
             {
-                _gatewayServer.HandlePackets(HandlePackets);
+                _gatewayServer.HandlePackets();
                 _managementServer.HandlePackets(HandlePackets);
                 Thread.Sleep(10);
             }
@@ -91,17 +94,8 @@ public class ClusterServer(
             .ToArray();
     }
 
-    public void NotifyServerListUpdated()
-    {
-        foreach (var client in _gatewayServer.GetConnections())
-        {
-            var servers = FindServersForConnection(client);
-            new Management.ServerList(servers).Send(client);
-        }
-    }
 
-
-    public void Handle(Management.RegisterServerPacket message, GameServerInfo userData)
+    public void Handle(ManagementPackets.RegisterServer message, GameServerInfo userData)
     {
         logger.LogInformation("Registered game server {ServerName} at {RemoteEndPoint}", message.Name,
             userData.Connection.RemoteEndPoint);
@@ -109,26 +103,20 @@ public class ClusterServer(
         userData.GamePort = message.GamePort;
         userData.ManagementPort = message.ManagementPort;
         userData.IsReady = true;
-        NotifyServerListUpdated();
+       _gatewayServer.NotifyServerListUpdated();
     }
 
-    public void Handle(Packets.HelloPacket message, GameServerInfo userData)
-    {
-        logger.LogInformation("Received hello from {RemoteEndPoint}", userData.Connection.RemoteEndPoint);
-    }
+    public void Handle(Packets.Hello message, GameServerInfo userData) => Ignore();
 
-    public void Handle(Packets.DisconnectPacket message, GameServerInfo userData)
+    public void Handle(Packets.Disconnect message, GameServerInfo userData)
     {
         logger.LogInformation("Received disconnect from {RemoteEndPoint}: {Reason}",
             userData.Connection.RemoteEndPoint, message.Reason);
-        using var dc = new Packets.DisconnectPacket("Disconnect packet received").ToMessage();
+        using var dc = new Packets.Disconnect("Disconnect packet received").ToMessage();
         userData.Connection.Close(dc);
     }
 
-    public void Handle(Packets.PingPacket message, GameServerInfo userData)
-    {
-        logger.LogDebug("Received ping from {RemoteEndPoint}", userData.Connection.RemoteEndPoint);
-    }
+    public void Handle(Packets.Ping message, GameServerInfo userData) => Ignore();
 
     public void OnClientConnected(QuicListener server, QConnection connection)
     {
@@ -137,11 +125,7 @@ public class ClusterServer(
             Thread.Yield();
         }
 
-        logger.LogInformation("Client connected from {EndPoint}, sending server list", connection.RemoteEndPoint);
-        new Packets.HelloPacket(0, Packets.ServerType.EntryPoint).Send(connection);
-        var servers = FindServersForConnection(connection);
-        logger.LogInformation("Servers for client {Client}: {Servers}", connection, string.Join(", ", servers));
-        new Management.ServerList(servers).Send(connection);
+        logger.LogInformation("Game server connected: {RemoteEndPoint}", connection.RemoteEndPoint);
     }
 
     public void OnClientDisconnected(QConnection connection)
@@ -157,5 +141,9 @@ public class ClusterServer(
     public void OnConnectionFailed(QuicListener server, IPEndPoint? connection, Exception exception)
     {
         logger.LogWarning(exception, "Connection failed: {RemoteEndPoint}", connection);
+    }
+
+    private static void Ignore()
+    {
     }
 }

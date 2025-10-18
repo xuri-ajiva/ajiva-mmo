@@ -176,7 +176,7 @@ public class ServerGameLogic
         {
             UnloadPlayerChunks(kv.Value);
 
-            new Packets.PingPacket(Stopwatch.GetTimestamp()).Send(kv.Key);
+            new Packets.Ping(Stopwatch.GetTimestamp()).Send(kv.Key);
         }
     }
 
