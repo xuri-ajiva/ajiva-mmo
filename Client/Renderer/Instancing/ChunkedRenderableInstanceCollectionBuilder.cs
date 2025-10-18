@@ -1,4 +1,6 @@
 ﻿using System.Numerics;
+using System.Runtime.CompilerServices;
+using Ajiva.Ecs;
 using Client.Game;
 using Client.LayerSystem;
 using Client.Renderer.PbrRenderer;
@@ -142,36 +144,49 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
 
             nonSlide = true;
 
-            var i = 0;
-            foreach (var entity in tmpEntities)
-            {
-                ref var instance = ref meshBuffer.InstanceInfos[i];
-                if (ecs.TryGetPosition(entity, out var pos) &&
-                    ecs.TryGetRotation(entity, out var rot) &&
-                    ecs.TryGetScale(entity, out var scale))
-                {
-                    var currentTransform = instance.GetTransform();
-                    Matrix4x4 matrix;
-                    if (nonSlide || currentTransform == default)
-                    {
-                        matrix = Matrix4x4.CreateScale(scale.Value) *
-                                 Matrix4x4.CreateFromQuaternion(rot.Value) * Matrix4x4.CreateTranslation(pos.Value);
-                    }
-                    else
-                    {
-                        matrix = SmoothStep(currentTransform, scale.Value, rot.Value, pos.Value, sFrame);
-                    }
+            CoreLoop(tmpEntities, meshBuffer, ecs, nonSlide, sFrame);
+        }
+    }
 
-                    instance.SetTransform(matrix);
-                    _renderingCount++;
+    public void CoreLoop(List<EntityId> tmpEntities, PbrInstancedMeshBuffer meshBuffer, ClientEcsWorld ecs,
+        bool nonSlide,
+        f32 sFrame) => CoreLoop2(tmpEntities, meshBuffer, ecs, nonSlide, sFrame);
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    [ExcludeFromInterception]
+    private void CoreLoop2(List<EntityId> tmpEntities, PbrInstancedMeshBuffer meshBuffer, ClientEcsWorld ecs,
+        bool nonSlide,
+        f32 sFrame)
+    {
+        var i = 0;
+        foreach (var entity in tmpEntities)
+        {
+            ref var instance = ref meshBuffer.InstanceInfos[i];
+            if (ecs.TryGetPosition(entity, out var pos) &&
+                ecs.TryGetRotation(entity, out var rot) &&
+                ecs.TryGetScale(entity, out var scale))
+            {
+                var currentTransform = instance.GetTransform();
+                Matrix4x4 matrix;
+                if (nonSlide || currentTransform == default)
+                {
+                    matrix = Matrix4x4.CreateScale(scale.Value) *
+                             Matrix4x4.CreateFromQuaternion(rot.Value) * Matrix4x4.CreateTranslation(pos.Value);
                 }
                 else
                 {
-                    instance.SetTransform(default);
+                    matrix = SmoothStep(currentTransform, scale.Value, rot.Value, pos.Value, sFrame);
                 }
 
-                i++;
+                instance.SetTransform(matrix);
+                _renderingCount++;
             }
+            else
+            {
+                instance.SetTransform(default);
+            }
+
+            i++;
         }
     }
 
@@ -180,7 +195,7 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     private i32 _renderingCount = 0;
 
     [ExcludeFromInterception]
-    public static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, float t)
+    public static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, f32 t)
     {
         if (current == default)
             return Matrix4x4.CreateScale(tarScale) *
