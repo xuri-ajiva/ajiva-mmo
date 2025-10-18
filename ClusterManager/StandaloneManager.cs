@@ -2,6 +2,7 @@ using Common;
 using Common.Config;
 using Serilog;
 using ClusterManager;
+using ClusterManager.Net;
 
 var builder = Host.CreateApplicationBuilder(args);
 

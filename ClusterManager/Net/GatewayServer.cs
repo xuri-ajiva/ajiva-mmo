@@ -1,14 +1,11 @@
 ﻿using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Quic;
 using Common;
 using Common.Config;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
-using MemoryPack;
 using NetworkPackets;
 
-namespace ClusterManager;
+namespace ClusterManager.Net;
 
 public partial class GatewayServer(
     ILogger<GatewayServer> logger,

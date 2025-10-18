@@ -5,7 +5,15 @@ using Common.Networking.AjivaQuic;
 using MemoryPack;
 using NetworkPackets;
 
-namespace ClusterManager;
+namespace ClusterManager.Net;
+
+public record GameServerInfo(QConnection Connection)
+{
+    public string? ServerName { get; set; }
+    public bool IsReady { get; set; }
+    public i32 ManagementPort { get; set; }
+    public i32 GamePort { get; set; }
+}
 
 public partial class GatewayServer
 {
