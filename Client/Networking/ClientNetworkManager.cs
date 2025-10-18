@@ -10,6 +10,7 @@ using Common.Networking;
 using Common.Networking.AjivaQuic;
 using MemoryPack;
 using NetworkPackets;
+using Polly;
 
 namespace Client.Networking;
 
@@ -23,7 +24,7 @@ public class ClientConnectionContext(Packets.ServerType serverType)
 /// Clean network manager that handles all client-server communication
 /// Separates networking concerns from UI and game logic
 /// </summary>
-public class ClientNetworkManager(
+public partial class ClientNetworkManager(
     ILogger<ClientNetworkManager> logger,
     QFactory factory,
     ClientGameLogic gameLogic,
@@ -32,69 +33,79 @@ public class ClientNetworkManager(
     ClientConfiguration clientConfiguration)
     : IHostedLifecycleService, IClientPacketHandler<ClientConnectionContext>
 {
-    public ConnectionState State => client.State;
-
-    public void Handle(Packets.HelloPacket message, QConnection userData)
-    {
-    }
+    public GatewayHandler Gateway { get; private set; } = null!;
     public QClient Client { get; } = factory.CreateClient();
     private readonly ClientConnectionContext _gameContext = new(Packets.ServerType.GameServer);
+    private readonly ClientConnectionContext _gatewayContext = new(Packets.ServerType.EntryPoint);
+    public string[] GameServerEndpoints { get; private set; } = [];
 
-    public void Handle(Packets.DisconnectPacket message, QConnection userData)
-    {
-        logger.LogWarning("Disconnected from server: {Reason}", message.Reason);
-        Disconnect();
-    }
-
-    public void Handle(Packets.PingPacket message, QConnection userData)
-    {
-        var now = Stopwatch.GetTimestamp();
-        LastRtt = Stopwatch.GetElapsedTime(message.Timestamp, now);
-        _rttMeter?.Record(LastRtt.TotalMilliseconds);
-    }
     public bool IsConnected => Client.IsConnected;
+    public string RemoteEndPoint { get; private set; } = "Not connected";
 
     public TimeSpan LastRtt = TimeSpan.Zero;
     private Histogram<f64>? _rttMeter;
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
+        Gateway = new GatewayHandler(this, logger, factory.CreateClient(), instrumentation);
         _rttMeter = instrumentation.Meter?.CreateHistogram<f64>("client_network_rtt", "ms",
             "Round-trip time to the server");
         return Task.CompletedTask;
     }
 
-    public Task StoppingAsync(CancellationToken cancellationToken)
+    public Task StartedAsync(CancellationToken cancellationToken)
     {
-        Disconnect();
-        return Task.CompletedTask;
+        _gameContext.Connection = Client.Connection!;
+        _gatewayContext.Connection = Gateway.Client.Connection!;
+        updater.RegisterUpdate(UpdateCycle.Update, _ => Client.HandlePackets((packetType, ref reader, _) =>
+            PacketDispatcher(packetType, ref reader, _gameContext)));
+        updater.RegisterUpdate(UpdateCycle.Update, _ => Gateway.Client.HandlePackets((packetType, ref reader, _) =>
+            PacketDispatcher(packetType, ref reader, _gatewayContext)));
+        return RunAutoConnect(cancellationToken);
     }
 
-    public void MessageNotHandled(string messageType, QConnection connection)
+    public async Task StoppingAsync(CancellationToken cancellationToken)
     {
-        logger.LogWarning("Message not handled: {MessageType}", messageType);
-    }
-
-
-    public void Connect(string address)
-    {
-        if (client.IsNotConnected)
+        if (Client.IsConnected)
         {
-            Task.Run(() => client.ConnectAsync(instrumentation, address));
+            await Task.Run(Client.DisconnectAsync, cancellationToken);
         }
-    }
 
-    public void Disconnect()
-    {
-        if (!client.IsNotConnected)
+        if (Gateway.Client.IsConnected)
         {
-            Task.Run(client.DisconnectAsync);
+            await Task.Run(Gateway.Client.DisconnectAsync, cancellationToken);
         }
     }
 
 
-    public bool IsConnected => client.IsConnected;
-    public bool IsNotConnected => client.IsNotConnected;
+    public void ConnectGame(string address)
+    {
+        Task.Run(async () =>
+        {
+            if (Client.IsConnected)
+            {
+                logger.LogWarning("Game Client is already connected to a server at {RemoteEndPoint}, Disconnecting...",
+                    Client.Connection?.RemoteEndPoint);
+                await Client.DisconnectAsync();
+            }
+
+            RemoteEndPoint = address;
+            await Policy.Handle<Exception>()
+                .WaitAndRetryAsync(10, _ => TimeSpan.FromSeconds(5))
+                .ExecuteAsync(async ct => await Client.ConnectAsync(instrumentation, address, ct),
+                    CancellationToken.None);
+            RemoteEndPoint = Client.Connection?.RemoteEndPoint.ToString() ?? "Unknown";
+        });
+    }
+
+
+    public void DisconnectGame()
+    {
+        if (Client.IsConnected)
+        {
+            Task.Run(Client.DisconnectAsync);
+        }
+    }
 
     /// <summary>
     /// Send entity update to server (called by player input system)
@@ -111,7 +122,7 @@ public class ClientNetworkManager(
         };
 
         new ToServerPackets.PlayerMovementPacket(networkEntityId, transform)
-            .Send(client.Connection!);
+            .Send(Client.Connection!);
     }
 
 
@@ -120,7 +131,7 @@ public class ClientNetworkManager(
         if (clientConfiguration is not { AutoConnect: true, AutoConnectAddress: not null })
             return;
 
-        while (!client.IsConnected && !cancellationToken.IsCancellationRequested)
+        while (!Gateway.Client.IsConnected && !cancellationToken.IsCancellationRequested)
         {
             using var span = instrumentation.StartActivity(ActivityKind.Client);
             try
@@ -129,9 +140,9 @@ public class ClientNetworkManager(
                 await Task.Delay(1000, cancellationToken);
                 logger.LogInformation("Connecting client to server on {ServerAddress}",
                     clientConfiguration.AutoConnectAddress);
-                await client.ConnectAsync(instrumentation,
-                    clientConfiguration.AutoConnectAddress.Replace("localhost", "127.0.0.1"), cancellationToken);
-                while (client.State == ConnectionState.Connecting)
+                await Gateway.Client.ConnectAsync(instrumentation, clientConfiguration.AutoConnectAddress,
+                    cancellationToken);
+                while (Gateway.Client.State == ConnectionState.Connecting)
                 {
                     await Task.Delay(100, cancellationToken);
                 }
@@ -144,92 +155,16 @@ public class ClientNetworkManager(
                 break;
             }
 
-            if (client.IsConnected)
+            if (Gateway.Client.IsConnected)
             {
-                span?.AddEvent(new ActivityEvent(
-                    "Connected to server",
-                    DateTimeOffset.Now));
+                span?.AddEvent(new ActivityEvent("Connected to server", DateTimeOffset.Now));
                 span?.SetStatus(ActivityStatusCode.Ok);
             }
             else
             {
-                span?.AddEvent(new ActivityEvent(
-                    "Failed to connect to server",
-                    DateTimeOffset.Now));
+                span?.AddEvent(new ActivityEvent("Failed to connect to server", DateTimeOffset.Now));
                 span?.SetStatus(ActivityStatusCode.Error);
             }
-        }
-    }
-
-    public void Handle(ToClientPackets.EntityCreatedPacket message, QConnection connection)
-    {
-        gameLogic.HandleEntityCreated(message);
-    }
-
-    public void Handle(ToClientPackets.EntityUpdatePacket message, QConnection connection)
-    {
-        gameLogic.HandleEntityUpdate(message);
-    }
-
-    public void Handle(ToClientPackets.EntityDestroyedPacket message, QConnection connection)
-    {
-        gameLogic.HandleEntityDestroyed(message);
-    }
-
-    public void Handle(ToClientPackets.BeginWorldStatePacket message, QConnection connection)
-    {
-        logger.LogInformation("Beginning to receive world state for {EntityCount} entities.", message.EntityCount);
-        gameLogic.HandleBeginWorldState(message);
-    }
-
-    public void Handle(ToClientPackets.LoadLevelPacket message, QConnection connection)
-    {
-        logger.LogInformation("Loading level: {LevelName}", message.LevelName);
-        //gameLogic.LoadLevel(message.LevelName);
-        gameLogic.InitializeSpacialGrid(message.GridInfo);
-    }
-
-    public void Handle(ToClientPackets.EntityAssignedPacket message, QConnection connection)
-    {
-        gameLogic.SetLocalPlayerEntityId(message.Id);
-        logger.LogInformation("Assigned local player entity ID: {EntityId}", message.Id);
-    }
-
-    public void Handle(ToClientPackets.ChunkUpdatePacket message, QConnection connection)
-    {
-        gameLogic.HandleChunkUpdate(message);
-    }
-
-    public void Handle(ToClientPackets.ChunkLoadPacket message, QConnection userData)
-    {
-        gameLogic.HandleChunkLoad(message);
-    }
-
-    public void Handle(ToClientPackets.ChunkDeltaPacket message, QConnection userData)
-    {
-        gameLogic.HandleChunkDelta(message);
-    }
-
-    public void Handle(ToClientPackets.ChunkUnloadPacket message, QConnection connection)
-    {
-        gameLogic.HandleChunkUnload(message);
-    }
-
-    public Task StartedAsync(CancellationToken cancellationToken)
-    {
-        updater.RegisterUpdate(UpdateCycle.Update, _ => client.HandlePackets(PacketDispatcher));
-        return RunAutoConnect(cancellationToken);
-    }
-
-    private void PacketDispatcher(PacketType packetType, scoped ref MemoryPackReader reader, QConnection userData)
-    {
-        try
-        {
-            ((IClientPacketHandler<QConnection>)this).AutoHandle(packetType, ref reader, userData);
-        }
-        catch (Exception e)
-        {
-            logger.LogError(e, "Error handling packet of type {PacketType}", packetType);
         }
     }
 
