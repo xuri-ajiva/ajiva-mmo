@@ -86,16 +86,16 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         if (target.OpaqueMeshes.Count < 10 || target.OpaqueMeshes.Count <= maxOversize) return;
         using var activity2 = Instrumentation.NamedTrace("Cleanup Oversubscription");
 
-        var i = target.OpaqueMeshes.Count - maxOversize;
-        for (; i > 0; i--)
+        // Start from the end and work backwards
+        var countToRemove = target.OpaqueMeshes.Count - maxOversize;
+        for (var idx = target.OpaqueMeshes.Count - 1; idx >= maxOversize && countToRemove > 0; idx--)
         {
-            var lastIndex = target.OpaqueMeshes.Count - 1;
-            if (_chunkToInstance.ContainsValue(lastIndex)) break;
-            var mesh = target.OpaqueMeshes[lastIndex];
+            if (_chunkToInstance.ContainsValue(idx)) continue;
+            var mesh = target.OpaqueMeshes[idx];
             mesh.Dispose();
+            target.OpaqueMeshes.RemoveAt(idx);
+            countToRemove--;
         }
-
-        target.OpaqueMeshes.RemoveRange(i, target.OpaqueMeshes.Count - i);
     }
 
     public void UpdateDrawEntities(UpdateInfo info, RenderableInstanceCollection target)
