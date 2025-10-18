@@ -15,7 +15,9 @@ Log.Logger = new LoggerConfiguration()
 builder.AddServiceDefaults();
 var serverConfig = builder.Configuration
                        .GetSection(nameof(ServerConfiguration)).Get<ServerConfiguration>()
-                   ?? new ServerConfiguration { Port = 7777 };
+                   ?? new ServerConfiguration();
+
+serverConfig.ClusterManagerAddress ??= builder.Configuration["services:clusterManager:management:0"];
 
 var server = new ServerRunner(builder, serverConfig);
 var iHost = builder.Build();

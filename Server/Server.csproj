@@ -10,6 +10,7 @@
         <LangVersion>preview</LangVersion>
         <Features>InterceptorsPreview</Features>
         <InterceptorsPreviewNamespaces>$(InterceptorsPreviewNamespaces);Microsoft.AspNetCore.Http.Generated;Server;System.Runtime.CompilerServices;Interception</InterceptorsPreviewNamespaces>
+        <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
     </PropertyGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="Composer"/>
