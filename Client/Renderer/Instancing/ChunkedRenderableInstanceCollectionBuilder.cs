@@ -23,9 +23,11 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     private u64 _renderableMeshVersion;
     private readonly Dictionary<(ChunkCoord chunk, u32 meshId), i32> _chunkToInstance = [];
     private Queue<i32> _freeList = [];
+    private Lock _lock = new();
 
     public void PrepareDrawEntities(RenderableInstanceCollection target)
     {
+        using var guard = _lock.EnterScope();
         var ecs = _gameLogic.World;
         if (_gameLogic.Grid is null) return;
         //if (_renderableMeshVersion == _gameLogic.RenderEntityVersion) return;
@@ -84,7 +86,7 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         }
 
         // Optionally shrink the target.OpaqueMeshes list if there are many free slots
-        var maxOversize = (i32)(max * 1.5f); // Allow up to 50% oversize
+        var maxOversize = (i32)(max * 1.5f);
         if (target.OpaqueMeshes.Count < 10 || target.OpaqueMeshes.Count <= maxOversize) return;
         using var activity2 = Instrumentation.NamedTrace("Cleanup Oversubscription");
 
@@ -105,14 +107,17 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         var ecs = _gameLogic.World;
         var sFrame = 1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFrames);
         if (_gameLogic.Grid is null) return;
-        var dirtyChunks = _gameLogic.Grid.Chunks.Where(x => x.Value.IsDirty).ToDictionary();
-        if (dirtyChunks.Count == 0) return;
+        //var dirtyChunks = _gameLogic.Grid.Chunks.Where(x => x.Value.IsDirty).ToDictionary();
+        //if (dirtyChunks.Count == 0) return;
         _renderingCount = 0;
-
         List<EntityId> tmpEntities = [];
         foreach (var ((chunk, meshId), instanceIndex) in _chunkToInstance)
         {
-            if (!dirtyChunks.TryGetValue(chunk, out var chunkData)) continue;
+            const f32 maxSize = 10;
+            var chunkColor = new Vector4(chunk.X / maxSize, chunk.Y / maxSize, chunk.Z / 3.0f, 1.0f);
+            //ColorPallet[Math.Abs(chunk.GetHashCode()) % ColorPallet.Length];
+            //if (!dirtyChunks.TryGetValue(chunk, out var chunkData)) continue;
+            if (!_gameLogic.Grid.Chunks.TryGetValue(chunk, out var chunkData)) continue;
 
             using (var _ = chunkData.UseLock())
             {
@@ -129,7 +134,7 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
                 continue;
             }
 
-            bool nonSlide = false;
+            var nonSlide = false;
             if (instances.Count < entitiesCount)
             {
                 instances.AddRange(Enumerable.Repeat(new PbrGBufferShader.Instance(),
@@ -144,19 +149,18 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
 
             nonSlide = true;
 
-            CoreLoop(tmpEntities, meshBuffer, ecs, nonSlide, sFrame);
+            CoreLoop(tmpEntities, meshBuffer, ecs, nonSlide, sFrame, chunkColor);
         }
     }
 
     public void CoreLoop(List<EntityId> tmpEntities, PbrInstancedMeshBuffer meshBuffer, ClientEcsWorld ecs,
-        bool nonSlide,
-        f32 sFrame) => CoreLoop2(tmpEntities, meshBuffer, ecs, nonSlide, sFrame);
+        bool nonSlide, f32 sFrame, Vector4 chunkColor) =>
+        CoreLoop2(tmpEntities, meshBuffer, ecs, nonSlide, sFrame, chunkColor);
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     [ExcludeFromInterception]
     private void CoreLoop2(List<EntityId> tmpEntities, PbrInstancedMeshBuffer meshBuffer, ClientEcsWorld ecs,
-        bool nonSlide,
-        f32 sFrame)
+        bool nonSlide, f32 sFrame, Vector4 chunkColor)
     {
         var i = 0;
         foreach (var entity in tmpEntities)
@@ -186,6 +190,7 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
                 instance.SetTransform(default);
             }
 
+            instance.HighlightColorRef = chunkColor;
             i++;
         }
     }
@@ -218,10 +223,22 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     public void RequestReBuild()
     {
         _renderableMeshVersion = 0;
+        using var guard = _lock.EnterScope();
+        foreach (var (_, index) in _chunkToInstance)
+        {
+            _freeList.Enqueue(index);
+        }
+
+        _chunkToInstance.Clear();
     }
 
     public string Stats()
     {
         return $"Groups: {_chunkToInstance.Count}, Free: {_freeList.Count}, Rendering {_renderingCount}";
+    }
+
+    public EntityId GetEntityId(u32 selectedObjectId, u32 selectedInstanceId)
+    {
+        return EntityId.Invalid;
     }
 }

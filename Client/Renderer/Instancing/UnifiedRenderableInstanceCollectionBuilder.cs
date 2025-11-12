@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using Ajiva.Ecs;
 using Client.Game;
 using Client.LayerSystem;
 using Client.Renderer.PbrRenderer;
@@ -23,39 +24,36 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     public void PrepareDrawEntities(RenderableInstanceCollection target)
     {
         var ecs = _gameLogic.World;
-        if (_renderableMeshVersion != _gameLogic.RenderEntityVersion)
+        if (_renderableMeshVersion == _gameLogic.RenderEntityVersion) return;
+        _renderableMeshVersion = _gameLogic.RenderEntityVersion;
+
+        // Group entities by mesh
+        _entitiesByMesh.Clear();
+        foreach (var ent in ecs.GetEntitiesWithRenderMesh())
         {
-            _renderableMeshVersion = _gameLogic.RenderEntityVersion;
-
-            // Group entities by mesh
-            _entitiesByMesh.Clear();
-            foreach (var ent in ecs.GetEntitiesWithRenderMesh())
+            if (!ecs.TryGetRenderMesh(ent, out var renderable)) continue;
+            if (!_entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
             {
-                if (ent == _gameLogic.LocalPlayerEntityId) continue; // Dont Render Local Player
-                if (!ecs.TryGetRenderMesh(ent, out var renderable)) continue;
-                if (!_entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
-                {
-                    list = [];
-                    _entitiesByMesh[renderable.MeshId] = list;
-                }
-
-                list.Add(ent);
+                list = [];
+                _entitiesByMesh[renderable.MeshId] = list;
             }
 
-            // Clear the old dynamic meshes
-            foreach (var mesh in target.OpaqueMeshes) mesh.Dispose();
-            target.OpaqueMeshes.Clear();
-            // Create a mesh buffer for each mesh
-            foreach (var (_, enitites) in _entitiesByMesh)
+            list.Add(ent);
+        }
+
+        // Clear the old dynamic meshes
+        foreach (var mesh in target.OpaqueMeshes) mesh.Dispose();
+        target.OpaqueMeshes.Clear();
+        // Create a mesh buffer for each mesh
+        foreach (var (_, enitites) in _entitiesByMesh)
+        {
+            if (enitites.Count > 0)
             {
-                if (enitites.Count > 0)
-                {
-                    var dynamicMesh = new PbrInstancedMeshBuffer(_loader.DefaultPbrCubeMesh,
-                        ModelHelper.PbrMaterialExamples.WornLeather(),
-                        _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
-                            BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"));
-                    target.OpaqueMeshes.Add(dynamicMesh);
-                }
+                var dynamicMesh = new PbrInstancedMeshBuffer(_loader.DefaultPbrCubeMesh,
+                    ModelHelper.PbrMaterialExamples.WornLeather(),
+                    _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
+                        BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"));
+                target.OpaqueMeshes.Add(dynamicMesh);
             }
         }
     }
@@ -70,6 +68,8 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         foreach (var (_, entities) in _entitiesByMesh)
         {
             var dynamicMesh = target.OpaqueMeshes[index++];
+            dynamicMesh.MaterialUniform.ObjectId = (u32)index;
+
             if (dynamicMesh._instanceInfos.Count < entities.Count)
             {
                 dynamicMesh._instanceInfos.AddRange(Enumerable.Repeat(new PbrGBufferShader.Instance(),
@@ -81,21 +81,33 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
                     dynamicMesh._instanceInfos.Count - entities.Count);
             }
 
-            for (var i = 0; i < entities.Count; i++)
+            CoreLoop(entities, dynamicMesh, ecs, sFrame);
+        }
+    }
+
+    internal void CoreLoop(List<EntityId> entities, PbrInstancedMeshBuffer dynamicMesh, ClientEcsWorld ecs, float sFrame) => _CoreLoop(entities, dynamicMesh, ecs, sFrame);
+
+    [ExcludeFromInterception]
+    private void _CoreLoop(List<EntityId> entities, PbrInstancedMeshBuffer dynamicMesh, ClientEcsWorld ecs, float sFrame)
+    {
+        for (var i = 0; i < entities.Count; i++)
+        {
+            var entity = entities[i];
+            ref var instance = ref dynamicMesh.InstanceInfos[i];
+            if (ecs.TryGetPosition(entity, out var pos) &&
+                ecs.TryGetRotation(entity, out var rot) &&
+                ecs.TryGetScale(entity, out var scale))
             {
-                var entity = entities[i];
-                if (ecs.TryGetPosition(entity, out var pos) &&
-                    ecs.TryGetRotation(entity, out var rot) &&
-                    ecs.TryGetScale(entity, out var scale))
-                {
-                    var currentTransform = dynamicMesh.InstanceInfos[i].GetTransform();
-                    var blended = SmoothStep(currentTransform, scale.Value, rot.Value, pos.Value, sFrame);
-                    dynamicMesh.InstanceInfos[i].SetTransform(blended);
-                }
-                else
-                {
-                    dynamicMesh.InstanceInfos[i].SetTransform(default);
-                }
+                var cc = gameLogic.Grid!.GetChunkCoord(pos.Value, 0);
+                const f32 max = 10.0f;
+                instance.HighlightColorRef = new Vector4(cc.X / max, cc.Y / max, cc.Z / max, 1f);
+                var currentTransform = instance.GetTransform();
+                var blended = SmoothStep(currentTransform, scale.Value, rot.Value, pos.Value, sFrame);
+                instance.SetTransform(blended);
+            }
+            else
+            {
+                instance.SetTransform(default);
             }
         }
     }
@@ -103,7 +115,8 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     private f32 _smoothingFrames = 10f;
     public ref f32 SmoothingFrames => ref _smoothingFrames;
 
-    public static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, float t)
+    [ExcludeFromInterception]
+    private static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, float t)
     {
         if (current == default)
             return Matrix4x4.CreateScale(tarScale) *
@@ -130,6 +143,14 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
 
     public string Stats()
     {
-        return $"Groups: {_entitiesByMesh.Count}, Meshes: {string.Join(", ", _entitiesByMesh.Select(kv => kv.Value.Count))}";
+        return
+            $"Groups: {_entitiesByMesh.Count}, Meshes: {string.Join(", ", _entitiesByMesh.Select(kv => kv.Value.Count))}";
+    }
+
+    public EntityId GetEntityId(u32 selectedObjectId, u32 selectedInstanceId)
+    {
+        return _entitiesByMesh.TryGetValue(selectedObjectId, out var entityIds) && selectedInstanceId < entityIds.Count
+            ? entityIds[(i32)selectedInstanceId]
+            : EntityId.Invalid;
     }
 }
