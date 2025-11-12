@@ -4,135 +4,144 @@ using Common;
 using Common.Ecs;
 using Common.Networking;
 using Common.SpacialPartitioning;
+using Serilog;
 
 namespace Server;
 
-public class DemoLevel(ServerEcsWorld world, SpatialGrid spatialGrid)
+public class DemoLevel(
+    ServerEcsWorld world,
+    SpatialGrid spatialGrid,
+    ServerId localServerId,
+    RegionAssignment assignedRegion)
 {
     private readonly ServerEcsWorld _world = world;
     private readonly SpatialGrid _spatialGrid = spatialGrid;
+    private readonly ServerId _localServerId = localServerId;
     private EntityId _rotatingEntity;
     private readonly List<EntityId> _bouncingEntities = [];
     private readonly List<EntityId> _slidingEntities = [];
-    private string? _levelName;
+    private readonly RegionAssignment _region = assignedRegion;
 
     private void ClearLevel()
     {
-        //TODO
-        _levelName = null;
-        //_world.ClearAllEntities();
+        _world.ClearAllEntities();
     }
 
-    public void SetupPlayer(ConnectionContext context, EntityId entity)
-    {
-        new ToClientPackets.LoadLevelPacket(_levelName ?? "", _spatialGrid.GridInfo).Send(context.Connection);
-    }
-
-    public void LoadLevel(string levelName)
+    /// <summary>
+    /// Load level within the assigned region
+    /// </summary>
+    public void LoadLevel()
     {
         ClearLevel();
-        _levelName = levelName;
 
-        // Create a rotating box
-        _rotatingEntity = _world.CreateEntity();
-        _world.AddPosition(_rotatingEntity, new Position
-        {
-            Value = new Vector3(0, 1, 5),
-            Level = 0
-        });
-        _world.AddRotation(_rotatingEntity, new Rotation
-        {
-            Value = Quaternion.Identity
-        });
-        _world.AddScale(_rotatingEntity, new Scale
-        {
-            Value = Vector3.One
-        });
-        _world.AddVelocity(_rotatingEntity, new Velocity
-        {
-            Linear = Vector3.Zero,
-            Angular = new Vector3(0, 1, 0) // Rotate around Y axis
-        });
-        _world.AddEntityType(_rotatingEntity, new EntityType { TypeId = 1 }); // Type 1 for rotating box
+        var chunkSize = _spatialGrid.GridInfo.ChunkSize;
 
-        // Add to spatial grid
-        var pos = _world.GetPosition(_rotatingEntity);
-        var chunk = _spatialGrid.GetChunkCoord(pos.Value, pos.Level);
-        _world.AddSpatialData(_rotatingEntity, new SpatialData
-        {
-            CurrentChunk = chunk with { Z = chunk.Z + 1 },
-            PreviousChunk = chunk,
-        });
+        // Find the chunk coordinates closest to the world origin (0,0) that are within the region's bounds.
+        var closestChunkX = Math.Clamp(0, _region.MinChunk.X, _region.MaxChunk.X);
+        var closestChunkZ = Math.Clamp(0, _region.MinChunk.Z, _region.MaxChunk.Z);
+        var closestChunk = new Vector3(closestChunkX, _region.MinChunk.Y, closestChunkZ);
 
-        // Create some static test entities
-        for (var i = 0; i < 100; i++)
+        const i32 chunks = 16;
+        var desiredMinChunk = new Vector3(closestChunk.X - chunks, _region.MinChunk.Y, closestChunk.Z - chunks);
+        var desiredMaxChunk = new Vector3(closestChunk.X + chunks, _region.MaxChunk.Y, closestChunk.Z + chunks);
+
+        // Clamp the desired 3x3 area to the actual region bounds. This handles regions smaller than 3x3.
+        var placementMinChunk = new Vector3(
+            Math.Max(_region.MinChunk.X, desiredMinChunk.X),
+            _region.MinChunk.Y,
+            Math.Max(_region.MinChunk.Z, desiredMinChunk.Z)
+        );
+
+        var placementMaxChunk = new Vector3(
+            Math.Min(_region.MaxChunk.X, desiredMaxChunk.X),
+            _region.MaxChunk.Y,
+            Math.Min(_region.MaxChunk.Z, desiredMaxChunk.Z)
+        );
+
+        // --- Place the Rotating Box ---
+
+        // Calculate the world center of the single chunk closest to the origin.
+        var centerChunkWorld = new Vector3(
+            (closestChunk.X + 0.5f) * chunkSize.X,
+            (closestChunk.Y + 0.5f) * chunkSize.Y,
+            (closestChunk.Z + 0.5f) * chunkSize.Z
+        );
+
+        // Create a rotating box at the center of that chunk.
+        _rotatingEntity = CreateOwnedEntity(new Position(centerChunkWorld + new Vector3(0, 5, 0)), 1,
+            new Velocity { Angular = Vector3.UnitZ });
+        Log.Information("Placed rotating entity {EntityId} at {Position} in chunk {ChunkCoord}",
+            _rotatingEntity, centerChunkWorld, closestChunk);
+
+
+        // Calculate world coordinates from the determined placement chunk area.
+        var minWorld = new Vector3(
+            placementMinChunk.X * chunkSize.X,
+            placementMinChunk.Y * chunkSize.Y,
+            placementMinChunk.Z * chunkSize.Z
+        );
+
+        var maxWorld = new Vector3(
+            (placementMaxChunk.X + 1) * chunkSize.X,
+            (placementMaxChunk.Y + 1) * chunkSize.Y,
+            (placementMaxChunk.Z + 1) * chunkSize.Z
+        );
+
+        var regionWidth = maxWorld.X - minWorld.X;
+        var regionDepth = maxWorld.Z - minWorld.Z;
+        var spacing = 2.0f;
+
+        var entitiesX = (i32)(regionWidth / spacing);
+        var entitiesZ = (i32)(regionDepth / spacing);
+
+        for (var i = 0; i < entitiesX; i++)
         {
-            for (var j = 0; j < 100; j++)
+            for (var j = 0; j < entitiesZ; j++)
             {
-                var entity = _world.CreateEntity();
-                var position = new Vector3(i * 2, MathF.Floor(( /*f32.Cos(i * 0.1f) + */f32.Sin(j * 0.05f) + 2) * 3),
-                    j * 2);
-
-                _world.AddPosition(entity, new Position
-                {
-                    Value = position,
-                    Level = 0
-                });
-                _world.AddRotation(entity, new Rotation
-                {
-                    Value = Quaternion.Identity
-                });
-                _world.AddScale(entity, new Scale
-                {
-                    Value = new Vector3(0.5f)
-                });
-                _world.AddEntityType(entity, new EntityType { TypeId = 1 });
-                _world.AddVelocity(entity, new Velocity
-                {
-                    Linear = Vector3.Zero,
-                    Angular = Vector3.Zero
-                });
-
-                // Add to spatial grid
-                chunk = _spatialGrid.GetChunkCoord(position, 0);
-                _world.AddSpatialData(entity, new SpatialData
-                {
-                    CurrentChunk = chunk with { Z = chunk.Z + 1 },
-                    PreviousChunk = chunk,
-                });
+                var entity = CreateOwnedEntity(new Position(new Vector3(
+                    minWorld.X + i * spacing,
+                    chunkSize.Y * 10,
+                    minWorld.Z + j * spacing
+                )), 1, new Velocity());
                 _bouncingEntities.Add(entity);
             }
         }
+    }
 
-        for (var i = 0; i < 8; i++)
+    private EntityId CreateOwnedEntity(Position position, u32 typeId, Velocity velocity)
+    {
+        var entity = _world.CreateEntity();
+
+        _world.AddPosition(entity, position);
+        _world.AddRotation(entity, new Rotation
         {
-            var entity = _world.CreateEntity();
-            var position = new Vector3(-i * 2, 5, -i * 2 + 10);
+            Value = Quaternion.Identity
+        });
+        _world.AddScale(entity, new Scale
+        {
+            Value = Vector3.One
+        });
+        _world.AddVelocity(entity, velocity);
+        _world.AddEntityType(entity, new EntityType { TypeId = typeId });
 
-            _world.AddPosition(entity, new Position
-            {
-                Value = position,
-                Level = 0
-            });
-            _world.AddRotation(entity, new Rotation
-            {
-                Value = Quaternion.Identity
-            });
-            _world.AddScale(entity, new Scale
-            {
-                Value = new Vector3(0.5f)
-            });
-            _world.AddEntityType(entity, new EntityType { TypeId = 1 });
+        // Add to spatial grid
+        var chunk = _spatialGrid.GetChunkCoord(position.Value, 0);
+        _world.AddSpatialData(entity, new SpatialData
+        {
+            CurrentChunk = chunk,
+            PreviousChunk = chunk,
+        });
 
-            // Add to spatial grid
-            chunk = _spatialGrid.GetChunkCoord(position, 0);
-            _world.AddSpatialData(entity, new SpatialData
-            {
-                CurrentChunk = chunk with { Z = chunk.Z + 1 },
-                PreviousChunk = chunk,
-            });
-            _slidingEntities.Add(entity);
-        }
+        // Mark as owned by this server
+        _world.AddEntityOwnership(entity, new EntityOwnership
+        {
+            OwnerServerId = _localServerId,
+            IsProxy = false,
+            IsInProxyRange = false,
+            LastSyncTick = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        });
+
+        return entity;
     }
 
     public void Update(f32 deltaTime)
@@ -212,12 +221,13 @@ public class DemoLevel(ServerEcsWorld world, SpatialGrid spatialGrid)
 
             var position = _world.GetPosition(entityId).Value;
 
+            const f32 minY = 1f;
             // simple bounce logic
             var linearVel = _world.GetVelocity(entityId).Linear;
-            if (position.Y <= 0.001)
+            if (position.Y < minY)
             {
                 linearVel.Y = -linearVel.Y; // Reverse Y velocity on hit
-                position.Y = 0; // Reset to ground level
+                position.Y = minY; // Reset to ground level
             }
             else
             {

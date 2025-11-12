@@ -9,6 +9,12 @@ public class ConnectionContext(QConnection connection)
 {
     public HashSet<ChunkCoord> LoadedChunks { get; } = [];
     public EntityId PrimaryEntity { get; set; } = EntityId.Invalid;
+
+    /// <summary>
+    /// The Position for the client, dictates which chunks are loaded around this position.
+    /// </summary>
+    public Position Position;
+
     public QConnection Connection { get; } = connection;
 
     public void Kick(string reason)

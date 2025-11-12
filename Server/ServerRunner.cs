@@ -1,14 +1,5 @@
-﻿using System.Diagnostics;
-using System.Net;
-using System.Net.Quic;
-using System.Net.Security;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
-using Common;
+﻿using Common;
 using Common.Config;
-using Common.Networking;
-using Common.Networking.AjivaQuic;
-using Server;
 
 namespace Server;
 
@@ -20,9 +11,9 @@ public class ServerRunner
 
         services.AddSingleton(config);
 
-        services.AddService<ServerWorker>();
-        services.AddService<ManagementService>();
-        services.AddSingleton<ServerGameLogic>();
+        services.AddService<ManagementServer>();
+        services.AddService<ManagementClient>();
+        services.AddService<ServerGameNetHandler>();
     }
 
 
