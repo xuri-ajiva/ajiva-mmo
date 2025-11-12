@@ -1,4 +1,5 @@
-﻿using Client.Game;
+﻿using System.Numerics;
+using Client.Game;
 using Client.Networking;
 using ImGuiNET;
 using Interception;
@@ -10,7 +11,10 @@ namespace Client.LayerSystem;
 /// Now purely focused on UI - no network logic
 /// </summary>
 [ExcludeFromInterception]
-public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGameLogic gameLogic)
+public class ClientConnectionLayer(
+    ClientNetworkManager networkManager,
+    ClientGameLogic gameLogic,
+    PlayerInputSystem inputSystem)
     : IUiRenderLayer
 {
     public void Attach()
@@ -40,12 +44,12 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
             ImGui.InputText("Address Gateway", ref _address, 100);
             if (ImGui.Button("Connect Gateway"))
             {
-                networkManager.Gateway.ConnectGateway(_address);
+                Task.Run(() => networkManager.Gateway.ConnectGateway(_address));
             }
 
             if (ImGui.Button("Disconnect Gateway"))
             {
-                networkManager.Gateway.DisconnectGateway();
+                Task.Run(networkManager.Gateway.DisconnectGateway);
             }
 
             ImGui.TextWrapped($"Gateway Server: {networkManager.Gateway.Client}");
@@ -53,23 +57,38 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
             ImGui.InputText("Address Game", ref _address, 100);
             if (networkManager.Gateway.Client.IsNotConnected && ImGui.Button("Connect Game"))
             {
-                networkManager.ConnectGame(_address);
+                Task.Run(() => networkManager.ConnectGame(_address));
             }
-            
-            ImGui.Text("Available Game Servers:");
-            foreach (var serverEndpoint in networkManager.GameServerEndpoints)
+
+            if (networkManager.GameServerEndpoints.Length == 0)
             {
-                if (ImGui.Button($"Connect to {serverEndpoint}"))
+                ImGui.Text("Waiting for available game servers from gateway...");
+            }
+            else
+            {
+                ImGui.Text("Available Game Servers: ");
+                ImGui.SameLine();
+                ImGui.Text(networkManager.GameServerEndpoints.Length.ToString());
+                if (ImGui.Button("Connect To All"))
                 {
-                    networkManager.ConnectGame(serverEndpoint);
+                    Task.Run(networkManager.ConnectToAllGameServers);
+                }
+
+                foreach (var serverEndpoint in networkManager.GameServerEndpoints)
+                {
+                    if (ImGui.Button($"Connect to {serverEndpoint}"))
+                    {
+                        Task.Run(() => networkManager.ConnectGame(serverEndpoint));
+                    }
                 }
             }
 
             if (networkManager.IsConnected && ImGui.Button("Disconnect Game"))
             {
-                networkManager.DisconnectGame();
+                Task.Run(networkManager.DisconnectGame);
             }
-            ImGui.TextWrapped($"Game Server: {networkManager.Client}");
+
+            ImGui.TextWrapped($"Game Server: {networkManager}");
             ImGui.End();
         }
 
@@ -80,27 +99,8 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager, ClientGa
             ImGui.SameLine();
             ImGui.Text($"EntityCount: {gameLogic.EntityCount}");
             
-            // Player info
-            if (gameLogic.LocalPlayerNetworkId.HasValue)
-            {
-                ImGui.Text($"Local Player Network ID: {gameLogic.LocalPlayerNetworkId.Value}");
-
-                if (gameLogic.LocalPlayerEntityId.HasValue)
-                {
-                    var playerEntity = gameLogic.LocalPlayerEntityId.Value;
-                    ImGui.Text($"Local Player ECS ID: {playerEntity.Value}");
-
-                    if (gameLogic.World.HasPosition(playerEntity))
-                    {
-                        var pos = gameLogic.World.GetPosition(playerEntity);
-                        ImGui.Text($"Player Position: {pos.Value}");
-                    }
-                }
-                else
-                {
-                    ImGui.Text("Local Player ECS ID: <none>");
-                }
-            }
+            ImGui.Text($"Player Position: {inputSystem.CurrentPosition}");
+            ImGui.Text($"Player Rotation: {inputSystem.CurrentRotation}");
 
             ImGui.Separator();
 
