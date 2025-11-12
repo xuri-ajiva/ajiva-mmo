@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using System.Net;
 using System.Numerics;
 using Ajiva.Ecs;
 using Common;
@@ -13,99 +15,113 @@ using NetworkPackets;
 
 namespace Server;
 
-public class ServerGameLogic
+public partial class ServerGameNetHandler(
+    ILogger<ServerGameNetHandler> logger,
+    Instrumentation instrumentation,
+    QFactory factory) : IServerPacketHandler<ConnectionContext>, QServerEventListener,
+    IAsyncDisposable
 {
     private readonly ServerEcsWorld _world = new();
-    private readonly SpatialGrid _spatialGrid = new(new SpacialGridInfo(new ChunkCoord(16, 16, 16, 1)));
-    private readonly ILogger<ServerGameLogic> _logger;
     private readonly SemaphoreSlim _semaphorePlayer = new(1);
 
     private readonly Dictionary<QConnection, ConnectionContext> _connectionContexts = new();
-    private const int MaxSendRangeChunks = 10; //  Range in chunks (4 chunks = 4*32 = 128 world units)
-    private const int MinSendRangeChunks = 4; // Minimum range in chunks
-    private int _currentSendRangeChunks = MinSendRangeChunks;
-    private int _rangeStep;
-    private const int MaxRangeSteps = 100;
+    private const i32 MaxSendRangeChunks = 16; //  Range in chunks (4 chunks = 4*32 = 128 world units)
+    private const i32 MinSendRangeChunks = 4; // Minimum range in chunks
+    private i32 _currentSendRangeChunks = MinSendRangeChunks;
+    private i32 _rangeStep;
+    private const i32 MaxRangeSteps = 100;
 
-    private DemoLevel _level;
+    private DemoLevel _level = null!;
+    private QServer _server = null!;
+    private ManagementServer _managementServer = null!;
+    private SpatialGrid _spatialGrid = null!;
+    private ServerId _serverId;
+    private Thread? _serverNetworkTask, _serverUpdateTask;
+    private readonly SemaphoreSlim _semaphore = new(1, 1);
+    private readonly CancellationTokenSource _stoppingCts = new();
 
     private void UpdateSendRange()
     {
+        //_currentSendRangeChunks = MaxSendRangeChunks;
         var t = (f32)_rangeStep / MaxRangeSteps; // 0..1
-        _currentSendRangeChunks = (int)(MinSendRangeChunks + t * (MaxSendRangeChunks - MinSendRangeChunks));
+        _currentSendRangeChunks = (i32)(MinSendRangeChunks + t * (MaxSendRangeChunks - MinSendRangeChunks));
         _rangeStep = (_rangeStep + 1) % (MaxRangeSteps + 1);
     }
 
-    public ServerGameLogic(ILogger<ServerGameLogic> logger)
+    public async Task<IPEndPoint> InitAsync(ServerId serverId, ManagementServer managementServer,
+        RegionAssignment assignedRegion, SpacialGridInfo spatialGridInfo)
     {
-        _logger = logger;
-        _level = new DemoLevel(_world, _spatialGrid);
-        _level.LoadLevel("Sponza");
+        _serverId = serverId;
+        _managementServer = managementServer;
+        _spatialGrid = new SpatialGrid(spatialGridInfo);
+        _level = new DemoLevel(_world, _spatialGrid, serverId, assignedRegion);
+        _level.LoadLevel();
+        _server = factory.CreateServer(0);
+        _server.Start(this, instrumentation);
+        _serverUpdateTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "GameTick",
+            histogram: instrumentation.Meter?.CreateHistogram<f64>("server.tick.duration",
+                unit: "ms", description: "Duration of server tick"),
+            lockedAction: Update, tps: 50f)
+        );
+        _serverNetworkTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "NetworkTick",
+            histogram: instrumentation.Meter?.CreateHistogram<f64>("server.network.duration",
+                unit: "ms", description: "Duration of server net tick"),
+            lockedAction: Poll, tps: 100f)
+        );
+        _serverUpdateTask?.Start();
+        _serverNetworkTask?.Start();
+        await _server.WaitForReady();
+        return _server.LocalEndPoint!;
     }
 
-    public void SetupPlayer(QConnection connection)
+    private void RunLoop(CancellationToken token, string loopName, Histogram<f64>? histogram, Action<f32> lockedAction,
+        f32 tps, u32 traceIntervalSeconds = 10)
     {
-        var context = new ConnectionContext(connection);
-        EntityId entity;
-        try
+        f32 traceIntervalElapsed = 0;
+        var lastUpdate = Stopwatch.GetTimestamp();
+        while (!token.IsCancellationRequested)
         {
-            _semaphorePlayer.Wait();
-            // Send level load info
+            if (traceIntervalElapsed > traceIntervalSeconds) Instrumentation.Instance = instrumentation;
 
-            entity = _world.CreateEntity();
-            _level.SetupPlayer(context, entity);
-            var spawnPosition = new Vector3(0, 1, 0);
+            using var activity = Instrumentation.Instance?.StartActivity(ActivityKind.Server);
 
-            _world.AddPosition(entity, new Position
-            {
-                Value = spawnPosition,
-                Level = 0
-            });
-            _world.AddRotation(entity, new Rotation
-            {
-                Value = Quaternion.Identity
-            });
-            _world.AddScale(entity, new Scale
-            {
-                Value = Vector3.One
-            });
-            _world.AddEntityType(entity, new EntityType { TypeId = 2 }); // Type 2 for player
+            var now = Stopwatch.GetTimestamp();
+            var elapsed = Stopwatch.GetElapsedTime(lastUpdate, now);
+            var delta = (f32)elapsed.TotalSeconds;
 
-            // Add to spatial grid
-            var chunk = _spatialGrid.GetChunkCoord(spawnPosition, 0);
-            _world.AddSpatialData(entity, new SpatialData
+            try
             {
-                CurrentChunk = chunk with { Z = chunk.Z + 1 },
-                PreviousChunk = chunk,
-            });
+                using (Instrumentation.Instance?.StartNamedActivity($"Entering Locked Section ({loopName})"))
+                    _semaphore.Wait(token);
+                using var exec = Instrumentation.Instance?.StartNamedActivity($"Executing ({loopName})");
+                lockedAction.Invoke(delta);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
 
-            // Track player entity
-            context.PrimaryEntity = entity;
-            context.LoadedChunks.Clear();
-            _connectionContexts[connection] = context;
+            histogram?.Record(elapsed.TotalMilliseconds);
+            lastUpdate = now;
+
+            var sleepTime = 1f / tps - delta;
+            using var wait = Instrumentation.Instance?.StartNamedActivity("Waiting",
+                tags: [new KeyValuePair<string, object?>("sleepTime", sleepTime)]);
+            Thread.Sleep(Math.Max(1, (i32)(sleepTime * 1000)));
+            if (traceIntervalElapsed > traceIntervalSeconds)
+            {
+                Instrumentation.Instance = null;
+                traceIntervalElapsed = 0;
+            }
+
+            traceIntervalElapsed += delta;
         }
-        finally
-        {
-            _semaphorePlayer.Release();
-        }
+    }
 
-        _logger.LogInformation("Player entity {Entity} created for connection {Context}", entity, context);
-
-        // Send entity creation to all players within range
-        var position = _world.GetPosition(entity);
-        var entityType = _world.GetEntityType(entity);
-        var rotation = _world.GetRotation(entity);
-        var scale = _world.GetScale(entity);
-        using (var msg = new ToClientPackets.EntityCreatedPacket((NetEntId)entity,
-                   CreateTransformFromComponents(position, rotation, scale), entityType.TypeId).ToMessage())
-        {
-            context.Connection.Send(msg); // client needs to know about its own entity immediately
-            SendToPlayersInRange(position.Value, position.Level, msg);
-        }
-
-        // Send assignment to the player
-        using (var msg = new ToClientPackets.EntityAssignedPacket((NetEntId)entity).ToMessage())
-            context.Connection.Send(msg);
+    public void Poll(f32 f)
+    {
+        using var poll = Instrumentation.NamedTrace("PollPackets");
+        _server.HandlePackets(DispatchPacket);
     }
 
     public void Update(f32 deltaTime)
@@ -183,9 +199,7 @@ public class ServerGameLogic
     [TraceInterception]
     public void UnloadPlayerChunks(ConnectionContext context)
     {
-        var playerEntity = context.PrimaryEntity;
-        if (playerEntity == EntityId.Invalid) return;
-        if (!_world.TryGetPosition(playerEntity, out var playerPosition)) return;
+        var playerPosition = context.Position;
         var playerChunk = _spatialGrid.GetChunkCoord(playerPosition.Value, playerPosition.Level);
         var visibleChunks = context.LoadedChunks;
         foreach (var coord in
@@ -200,7 +214,7 @@ public class ServerGameLogic
     public void SendUnloadChunk(ConnectionContext context, ChunkCoord chunkCoord)
     {
         new ToClientPackets.ChunkUnloadPacket(chunkCoord, _spatialGrid.GetChunkData(chunkCoord).Entities
-            .Select(x => (NetEntId)x).ToList()).Send(context.Connection);
+            .Select(x => new NetEntId(_serverId, x)).ToList()).Send(context.Connection);
     }
 
     public void SendLoadChunk(ConnectionContext context, ChunkCoord chunkCoord)
@@ -208,7 +222,7 @@ public class ServerGameLogic
         var chunk = _spatialGrid.GetChunkData(chunkCoord);
         using var _ = chunk.UseLock();
         new ToClientPackets.ChunkLoadPacket(chunkCoord, chunk.Entities
-            .Select(x => (NetEntId)x).ToList()).Send(context.Connection);
+            .Select(x => new NetEntId(_serverId, x)).ToList()).Send(context.Connection);
     }
 
     private void SendToPlayersInRange(Vector3 position, i32 level, SerializedMessage packet)
@@ -218,7 +232,7 @@ public class ServerGameLogic
 
         foreach (var context in _connectionContexts.Values)
         {
-            if (!_world.TryGetPosition(context.PrimaryEntity, out var playerPosition)) continue;
+            var playerPosition = context.Position;
             var playerChunk = _spatialGrid.GetChunkCoord(playerPosition.Value, playerPosition.Level);
             if (playerChunk.PosDistanceTo(chunkCoord) > MaxSendRangeChunks) continue;
             context.Connection.Send(packet);
@@ -258,20 +272,10 @@ public class ServerGameLogic
 
         // Notify other players in range
         var position = _world.HasPosition(playerEntity) ? _world.GetPosition(playerEntity) : new Position();
-        using var msg = new ToClientPackets.EntityDestroyedPacket((NetEntId)playerEntity).ToMessage();
+        using var msg = new ToClientPackets.EntityDestroyedPacket(new NetEntId(_serverId, playerEntity)).ToMessage();
         SendToPlayersInRange(position.Value, position.Level, msg);
     }
-
-    private static Transform CreateTransformFromComponents(Position position, Rotation rotation, Scale scale)
-    {
-        return new Transform
-        {
-            Position = position.Value,
-            Rotation = rotation.Value,
-            Scale = scale.Value
-        };
-    }
-
+    
     private void SendChunkUpdates()
     {
         // Get all dirty chunks from the spatial grid
@@ -281,12 +285,12 @@ public class ServerGameLogic
         List<ConnectionContext> visibleChunksSnapshot = [];
         foreach (var (chunkCoord, chunk) in dirtyChunks)
         {
-            if (chunk.Entities.Count == 0) continue;
+            //if (chunk.Entities.Count == 0) continue; we still need to delta removed entities
+            if(chunk.Entities.Count == 0 && !_spatialGrid.TryGetDeltaInfo(chunkCoord, out var added, out var removed)) continue;
             visibleChunksSnapshot.Clear();
             foreach (var context in _connectionContexts.Values)
             {
-                var pos = _world.GetPosition(context.PrimaryEntity);
-                var playerChunk = _spatialGrid.GetChunkCoord(pos.Value, pos.Level);
+                var playerChunk = _spatialGrid.GetChunkCoord(context.Position.Value, context.Position.Level);
                 var chunkDistance = playerChunk.PosDistanceTo(chunkCoord);
                 if (chunkDistance <= _currentSendRangeChunks)
                     visibleChunksSnapshot.Add(context);
@@ -318,8 +322,8 @@ public class ServerGameLogic
         var writer = new MemoryPackWriter<ReusableLinkedArrayBufferWriter>(ref serializer.Writer, serializer.State);
         if (_spatialGrid.TryGetDeltaInfo(chunkCoord, out var added, out var removed))
         {
-            var addedIds = (added ?? []).Select(x => (NetEntId)x).ToList();
-            var removedIds = (removed ?? []).Select(x => (NetEntId)x).ToList();
+            var addedIds = (added ?? []).Select(x => new NetEntId(_serverId, x)).ToList();
+            var removedIds = (removed ?? []).Select(x => new NetEntId(_serverId, x)).ToList();
             new ToClientPackets.ChunkDeltaPacket(chunkCoord, addedIds, removedIds).Serialize(ref writer, false);
         }
 
@@ -368,6 +372,21 @@ public class ServerGameLogic
         return serializer;
     }
 
-    public bool GetContextForConnection(QConnection connection, out ConnectionContext context) =>
-        _connectionContexts.TryGetValue(connection, out context!);
+    public async ValueTask DisposeAsync()
+    {
+        await _server.DisposeAsync();
+        try
+        {
+            await _stoppingCts.CancelAsync();
+        }
+        finally
+        {
+            _serverUpdateTask?.Join();
+            _serverNetworkTask?.Join();
+            _stoppingCts.Dispose();
+        }
+
+        _semaphorePlayer.Dispose();
+        _semaphore.Dispose();
+    }
 }
