@@ -35,7 +35,6 @@ public class MessageDecoder(Instrumentation instrumentation)
         switch (stateCopy)
         {
             case BufferState.PartialLength:
-                Debugger.Launch();
                 // TODO here is a bug, as NormalRead is reading length, so we need to process the data only
                 TryReadMessageLength(newData, out var lengthBytesRead);
                 newData = newData[lengthBytesRead..];

@@ -26,14 +26,6 @@ public abstract partial class ToClientPackets
     [MemoryPackable]
     public partial record struct EntityDestroyedPacket(NetEntId Id);
 
-    [NetworkPacket(304)]
-    [MemoryPackable]
-    public partial record struct LoadLevelPacket(string LevelName, SpacialGridInfo GridInfo);
-
-    [NetworkPacket(305)]
-    [MemoryPackable]
-    public partial record struct EntityAssignedPacket(NetEntId Id);
-
 // Chunk-based updates
     [NetworkPacket(400)]
     [MemoryPackable]
@@ -57,7 +49,7 @@ public abstract partial class ToServerPackets
 {
     [NetworkPacket(306)]
     [MemoryPackable]
-    public partial record struct PlayerMovementPacket(NetEntId Id, Transform Transform);
+    public partial record struct PlayerMovementPacket(Position Position, Rotation Rotation);
 }
 
 [MemoryPackable]
