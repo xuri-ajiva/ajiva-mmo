@@ -28,6 +28,7 @@ public class Instanced3dDeferredRenderer(
     ICamera camera,
     Scene scene,
     IRenderableInstanceCollectionBuilder renderBuilder,
+    ClientGameLogic gameLogic,
     PeriodicUpdater periodicUpdater) : IRenderLayer, IUiRenderLayer, IAjivaLayer
 {
     private readonly ILogger<Instanced3dDeferredRenderer> _logger = logger;
@@ -36,6 +37,7 @@ public class Instanced3dDeferredRenderer(
     private readonly ResourceManager _loader = loader;
     private readonly Scene _scene = scene;
     private readonly IRenderableInstanceCollectionBuilder _renderBuilder = renderBuilder;
+    private readonly ClientGameLogic _gameLogic = gameLogic;
     private readonly ICamera _camera = camera;
 
     private readonly RenderableInstanceCollection _dynamicInstances = new();
@@ -57,6 +59,7 @@ public class Instanced3dDeferredRenderer(
     private ObjectSamplingShader.Result? _underCursor;
     private u32 _selectedObjectId;
     private u32 _selectedInstanceId;
+    private EntityId _selectedEntityId;
     private Vector2 _mousePosition;
 
     public void Attach()
@@ -274,15 +277,15 @@ public class Instanced3dDeferredRenderer(
             {
                 _selectedObjectId = pos.ObjectId;
                 _selectedInstanceId = pos.InstanceId;
+                _selectedEntityId = _renderBuilder.GetEntityId(_selectedObjectId, _selectedInstanceId);
             }
-
-            _mousePosition = ImGui.GetMousePos() -
-                             (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
 
         if (!ImGui.Begin("Scene")) return;
+        _mousePosition = ImGui.GetMousePos() -
+                         (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
         if (_sceneGBuffer is null || _finalSceneTexture is null)
         {
             _logger.LogError("Scene Buffers not created");
@@ -362,6 +365,68 @@ public class Instanced3dDeferredRenderer(
     public void RenderUi(UpdateInfo info)
     {
         using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Internal);
+        if (ImGui.Begin("Entity Inspector"))
+        {
+            ImGui.DragInt("##EntityId", ref Unsafe.As<EntityId, i32>(ref _selectedEntityId));
+            if (_selectedEntityId != EntityId.Invalid && _gameLogic.World.HasPosition(_selectedEntityId))
+            {
+                ref var pos = ref _gameLogic.World.UpdatePosition(_selectedEntityId);
+                ImGui.DragFloat3("##EntityPosition", ref pos.Value);
+
+                if (_gameLogic.World.HasRotation(_selectedEntityId))
+                {
+                    ref var rot = ref _gameLogic.World.UpdateRotation(_selectedEntityId);
+                    ImGui.DragFloat4("##EntityRotation", ref Unsafe.As<Quaternion, Vector4>(ref rot.Value));
+                }
+                else
+                {
+                    ImGui.Text("Entity has no Rotation component");
+                }
+
+                if (_gameLogic.World.HasScale(_selectedEntityId))
+                {
+                    ref var scale = ref _gameLogic.World.UpdateScale(_selectedEntityId);
+                    ImGui.DragFloat3("##EntityScale", ref scale.Value);
+                }
+                else
+                {
+                    ImGui.Text("Entity has no Transform components");
+                }
+
+                if (_gameLogic.World.HasNetState(_selectedEntityId))
+                {
+                    var netState = _gameLogic.World.GetNetState(_selectedEntityId);
+                    ImGui.Text($"Network ID: {netState.Id}");
+                    ImGui.Text($"CreatedTick: {netState.CreatedTick}");
+                    ImGui.Text($"DeletedTick: {netState.DeletedTick}");
+                    ImGui.Text($"GhostChunk: {netState.GhostChunk}");
+                }
+                else
+                {
+                    ImGui.Text("No Network State");
+                }
+
+                if (_gameLogic.Grid?.GetChunkCoord(pos.Value, 0) is { } chunk)
+                {
+                    ImGui.Text($"Chunk Coord: {chunk}");
+                    var spatialChunk = _gameLogic.Grid.GetChunkData(chunk);
+                    ImGui.Text($"Chunk Entities: {spatialChunk.Entities.Count}");
+                    ImGui.Text($"Chunk Dirty: {spatialChunk.IsDirty}");
+                    ImGui.Text($"Contains Entity: {spatialChunk.Entities.Contains(_selectedEntityId)}");
+                }
+                else
+                {
+                    ImGui.Text("No Spatial Chunk");
+                }
+            }
+            else
+            {
+                ImGui.Text("Entity has no Position component");
+            }
+
+            ImGui.End();
+        }
+
         if (ImGui.Begin("Controls"))
         {
             ImGui.InputFloat("SmoothingFrames", ref _renderBuilder.SmoothingFrames, 0.1f, 1f);
@@ -405,11 +470,14 @@ public class Instanced3dDeferredRenderer(
             }
 
             ImGui.Text("Under Mouse Sample:");
+            ImGui.Text($"Mouse Position: {_mousePosition.X}, {_mousePosition.Y}");
             if (_underCursor is { } selected)
             {
                 ImGui.Text($"Object ID: {selected.ObjectId}");
                 ImGui.Text($"Instance ID: {selected.InstanceId}");
                 ImGui.Text($"Depth: {selected.Depth}");
+                var selRenderEnt = _renderBuilder.GetEntityId(_selectedObjectId, _selectedInstanceId);
+                ImGui.Text($"Entity ID: {selRenderEnt}");
             }
             else
             {
@@ -418,11 +486,10 @@ public class Instanced3dDeferredRenderer(
 
             if (_selectedObjectId != 0 && _selectedObjectId <= _dynamicInstances.OpaqueMeshes.Count)
             {
-                var selectedBuffer = _dynamicInstances.OpaqueMeshes[(i32)_selectedObjectId - 1];
-
                 var y = ImGui.GetCursorPosY();
                 ImGui.Text("Textures");
                 var imageButtonSize = ImGui.GetContentRegionAvail().X;
+                var selectedBuffer = _dynamicInstances.OpaqueMeshes[(i32)_selectedObjectId - 1];
                 if (selectedBuffer.BaseColorTexture is { } texture)
                 {
                     if (ImGui.ImageButton("ChooseTextureA", texture.View.GetIntPtr(),
