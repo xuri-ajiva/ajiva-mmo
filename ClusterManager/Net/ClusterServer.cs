@@ -3,6 +3,7 @@ using System.Net;
 using Common;
 using Common.Config;
 using Common.Networking.AjivaQuic;
+using Common.SpacialPartitioning;
 using NetworkPackets;
 
 namespace ClusterManager.Net;
@@ -13,12 +14,15 @@ public partial class ClusterServer(
     QFactory factory,
     ClusterConfiguration configuration,
     Instrumentation instrumentation,
-    GatewayServer gatewayServer) : IHostedService, IManagementPacketHandler<GameServerInfo>, QServerEventListener
+    GatewayServer gatewayServer,
+    ClusterMapService clusterMapService) : IHostedService, IManagementPacketHandler<GameServerInfo>, QServerEventListener
 {
     private readonly QServer _managementServer = factory.CreateServer(configuration.ManagementPort);
     private Thread _serverThread = null!;
     private readonly CancellationTokenSource _cts = new();
+    private SpacialGridInfo _spacialInfo = new(configuration.GridSize);
     private ConcurrentDictionary<QConnection, GameServerInfo> GameServers { get; } = [];
+    private ConcurrentDictionary<ServerId, QConnection> ServerIdToConnection { get; } = [];
 
     public string[] FindServersForConnection(QConnection connection)
     {

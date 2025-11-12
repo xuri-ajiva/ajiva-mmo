@@ -2,6 +2,7 @@
 using System.Net.Quic;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
+using Common.SpacialPartitioning;
 using MemoryPack;
 using NetworkPackets;
 
@@ -9,6 +10,7 @@ namespace ClusterManager.Net;
 
 public record GameServerInfo(QConnection Connection)
 {
+    public ServerId? ServerId { get; set; }
     public string? ServerName { get; set; }
     public bool IsReady { get; set; }
     public i32 ManagementPort { get; set; }
@@ -48,6 +50,9 @@ public partial class GatewayServer
 
         logger.LogInformation("Client connected from {EndPoint}, sending server list", connection.RemoteEndPoint);
         new Packets.Hello(0, Packets.ServerType.EntryPoint).Send(connection);
+        var servers = Cluster.FindServersForConnection(connection);
+        new GatewayPackets.ServerList(servers).Send(connection);
+        new GatewayPackets.LoadLevelPacket("Sponza", new SpacialGridInfo(configuration.GridSize)).Send(connection);
     }
 
     public void OnClientDisconnected(QConnection connection)
