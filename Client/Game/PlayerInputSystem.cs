@@ -12,7 +12,6 @@ namespace Client.Game;
 /// Handles player input and sends updates to server
 /// Separated from UI layers for clean architecture
 /// </summary>
-
 [ExcludeFromInterception]
 public class PlayerInputSystem(
     ClientGameLogic gameLogic,
@@ -25,50 +24,25 @@ public class PlayerInputSystem(
     private readonly ILogger<PlayerInputSystem> _logger = logger;
     private PeriodicUpdater.UpdateHandle? _updateHandle;
 
+    public Vector3 CurrentPosition { get; set; }
+    public Quaternion CurrentRotation { get; set; }
+
     public void Update(UpdateInfo info)
     {
         if (!networkManager.IsConnected) return;
-        if (!gameLogic.LocalPlayerEntityId.HasValue) return;
-
-        var localPlayerEntity = gameLogic.LocalPlayerEntityId.Value;
-        var networkId = gameLogic.GetNetworkId(localPlayerEntity);
-
-        if (!networkId.HasValue) return;
-
-        // Get current transform from ECS
-        if (!gameLogic.World.HasPosition(localPlayerEntity)) return;
-
-        var currentPosition = gameLogic.World.GetPosition(localPlayerEntity);
-        var currentRotation = gameLogic.World.HasRotation(localPlayerEntity)
-            ? gameLogic.World.GetRotation(localPlayerEntity)
-            : new Rotation { Value = Quaternion.Identity };
-        var currentScale = gameLogic.World.HasScale(localPlayerEntity)
-            ? gameLogic.World.GetScale(localPlayerEntity)
-            : new Scale { Value = Vector3.One };
 
         // Get camera transform
         var cameraPosition = camera.Position;
         var cameraRotation = Quaternion.CreateFromRotationMatrix(camera.ViewMatrix);
 
-        // Check if camera moved significantly (to avoid spamming network)
-        var positionChanged = Vector3.Distance(currentPosition.Value, cameraPosition) > 0.01f;
-        var rotationChanged = Quaternion.Dot(currentRotation.Value, cameraRotation) < 0.999f; // ~2.5 degree threshold
-
-        if (positionChanged || rotationChanged)
+        if (Vector3.Distance(CurrentPosition, cameraPosition) > 0.01f
+            || Quaternion.Dot(CurrentRotation, cameraRotation) < 0.9999f)
         {
-            // Update local ECS immediately for responsive feel
-
-            gameLogic.World.UpdatePosition(localPlayerEntity).Value = cameraPosition;
-            gameLogic.World.UpdateRotation(localPlayerEntity).Value = cameraRotation;
-
             // Send to server
-            networkManager.SendEntityUpdate(
-                networkId.Value,
-                cameraPosition,
-                cameraRotation,
-                currentScale.Value
-            );
+            networkManager.SendPlayerUpdate(cameraPosition, cameraRotation);
         }
+        CurrentPosition = cameraPosition;
+        CurrentRotation = cameraRotation;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
