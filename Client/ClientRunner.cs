@@ -14,6 +14,7 @@ using Client.Renderer.Resources;
 using Client.Wgsl;
 using Common;
 using Common.Config;
+using Common.Ecs;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
 
@@ -30,7 +31,7 @@ public class ClientRunner
         services.AddSingleton<PlatformSystem>();
         services.AddSingleton<ModelHelper>();
         services.AddSingleton<Scene>();
-        services.AddSingleton<IRenderableInstanceCollectionBuilder, ChunkedRenderableInstanceCollectionBuilder>();
+        services.AddSingleton<IRenderableInstanceCollectionBuilder, UnifiedRenderableInstanceCollectionBuilder>();
         services.AddSingleton<ICamera, FreeCamera>();
         
         // Asset management
@@ -38,7 +39,7 @@ public class ClientRunner
 
         // Ecs Game Logic
         services.AddSingleton<ClientGameLogic>();
-        services.AddSingleton<ClientEcsWorld>();
+        services.AddSingleton<NClientEcsWorld>();
         services.AddService<PlayerInputSystem>();
 
         // UI/Rendering

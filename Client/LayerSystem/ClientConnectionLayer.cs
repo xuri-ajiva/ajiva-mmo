@@ -117,20 +117,20 @@ public class ClientConnectionLayer(
                 ImGui.TableSetupColumn("Scale");
                 ImGui.TableHeadersRow();
 
-                foreach (var entityId in gameLogic.GetAllEntities().Take(200))
+                foreach (var entityId in gameLogic.World.Take(200))
                 {
                     var networkId = gameLogic.GetNetworkId(entityId);
 
-                    var position = gameLogic.World.TryGetPosition(entityId, out var posVal)
+                    var position = gameLogic.World.Position.TryGet(entityId, out var posVal)
                         ? posVal.Value.ToString()
                         : "<none>";
-                    var rotation = gameLogic.World.TryGetRotation(entityId, out var rotVal)
+                    var rotation = gameLogic.World.Rotation.TryGet(entityId, out var rotVal)
                         ? rotVal.Value.ToString()
                         : "<none>";
-                    var scale = gameLogic.World.TryGetScale(entityId, out var scaleVal)
+                    var scale = gameLogic.World.Scale.TryGet(entityId, out var scaleVal)
                         ? scaleVal.Value.ToString()
                         : "<none>";
-                    var entityType = gameLogic.World.TryGetEntityType(entityId, out var typeVal)
+                    var entityType = gameLogic.World.EntityType.TryGet(entityId, out var typeVal)
                         ? $"{typeVal.TypeId}"
                         : "<none>";
 

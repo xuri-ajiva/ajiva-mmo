@@ -22,19 +22,19 @@ public partial class ClientGameLogic
             return; // Entity not found
 
         // Update components
-        if (World.HasPosition(entity))
+        if (World.Position.Has(entity))
         {
-            World.UpdatePosition(entity).Value = packet.Transform.Position;
+            World.Position.Update(entity).Value = packet.Transform.Position;
         }
 
-        if (World.HasRotation(entity))
+        if (World.Rotation.Has(entity))
         {
-            World.UpdateRotation(entity).Value = packet.Transform.Rotation;
+            World.Rotation.Update(entity).Value = packet.Transform.Rotation;
         }
 
-        if (World.HasScale(entity))
+        if (World.Scale.Has(entity))
         {
-            World.UpdateScale(entity).Value = packet.Transform.Scale;
+            World.Scale.Update(entity).Value = packet.Transform.Scale;
         }
     }
 
@@ -73,8 +73,8 @@ public partial class ClientGameLogic
                     using var a = Instrumentation.NamedTrace("PositionChunkData");
                     foreach (var (id, delta) in chunk.Entities.Zip(posUpdate.Data))
                     {
-                        if (!World.HasPosition(id)) continue;
-                        World.UpdatePosition(id).Value = delta.Restore(packet.Coord, Grid.GridInfo);
+                        if (!World.Position.Has(id)) continue;
+                        World.Position.Update(id).Value = delta.Restore(packet.Coord, Grid.GridInfo);
                     }
 
                     break;
@@ -98,8 +98,8 @@ public partial class ClientGameLogic
                         if (!entEnum.MoveNext()) break;
                         entEnumIndex++;
                         var id = entEnum.Current;
-                        if (!World.HasRotation(id)) continue;
-                        World.UpdateRotation(id).Value = rotUpdate.Data[i].Restore();
+                        if (!World.Rotation.Has(id)) continue;
+                        World.Rotation.Update(id).Value = rotUpdate.Data[i].Restore();
                         i++;
                     }
                 }
@@ -123,8 +123,8 @@ public partial class ClientGameLogic
                         if (!entEnum.MoveNext()) break;
                         entEnumIndex++;
                         var id = entEnum.Current;
-                        if (!World.HasScale(id)) continue;
-                        World.UpdateScale(id).Value = rotUpdate.Data[i].Value;
+                        if (!World.Scale.Has(id)) continue;
+                        World.Scale.Update(id).Value = rotUpdate.Data[i].Value;
                         i++;
                     }
                 }
@@ -195,7 +195,7 @@ public partial class ClientGameLogic
                 if (!_networkToEcs.TryGetValue(entId, out var local)) continue;
                 if (TryMarkEntityForDeletion(local, entId))
                 {
-                    World.UpdateNetState(local).GhostChunk = chunk;
+                    World.NetState.Update(local).GhostChunk = chunk;
                 }
 
                 chunk.Entities.Remove(local);

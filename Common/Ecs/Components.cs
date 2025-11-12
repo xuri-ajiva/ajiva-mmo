@@ -28,6 +28,14 @@ public partial struct Scale : IComponent
     public Vector3 Value;
 }
 
+public struct TransformData
+{
+    public Vector3 Position;
+    public i32 Level;
+    public Quaternion Rotation;
+    public Vector3 Scale;
+}
+
 [EcsComponent(ComponentScope.Shared, ComponentSync.ServerToClient,
     ComponentFlags.Dense | ComponentFlags.DirtyTracked | ComponentFlags.UnreliableSync)]
 public partial struct Velocity : IComponent

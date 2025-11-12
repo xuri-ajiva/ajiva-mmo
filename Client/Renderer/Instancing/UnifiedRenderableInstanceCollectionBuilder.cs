@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Runtime.CompilerServices;
 using Ajiva.Ecs;
 using Client.Game;
 using Client.LayerSystem;
@@ -29,17 +30,7 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
 
         // Group entities by mesh
         _entitiesByMesh.Clear();
-        foreach (var ent in ecs.GetEntitiesWithRenderMesh())
-        {
-            if (!ecs.TryGetRenderMesh(ent, out var renderable)) continue;
-            if (!_entitiesByMesh.TryGetValue(renderable.MeshId, out var list))
-            {
-                list = [];
-                _entitiesByMesh[renderable.MeshId] = list;
-            }
-
-            list.Add(ent);
-        }
+        ForwardScan(ecs);
 
         // Clear the old dynamic meshes
         foreach (var mesh in target.OpaqueMeshes) mesh.Dispose();
@@ -58,12 +49,29 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         }
     }
 
+    internal void ForwardScan(NClientEcsWorld ecs) => _ForwardScan(ecs);
+
+    [ExcludeFromInterception]
+    private void _ForwardScan(NClientEcsWorld ecs)
+    {
+        foreach (var kv in ecs.RenderMesh)
+        {
+            if (!_entitiesByMesh.TryGetValue(kv.Value.MeshId, out var list))
+            {
+                list = [];
+                _entitiesByMesh[kv.Value.MeshId] = list;
+            }
+
+            list.Add(kv.Key);
+        }
+    }
+
     [TraceInterception]
     public void UpdateDrawEntities(UpdateInfo info, RenderableInstanceCollection target)
     {
         var ecs = _gameLogic.World;
         //UpdateScene(queue, _sceneRenderCollection.StaticMeshes);
-        float sFrame = 1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFrames);
+        f32 sFrame = 1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFrames);
         var index = 0;
         foreach (var (_, entities) in _entitiesByMesh)
         {
@@ -85,18 +93,21 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         }
     }
 
-    internal void CoreLoop(List<EntityId> entities, PbrInstancedMeshBuffer dynamicMesh, ClientEcsWorld ecs, float sFrame) => _CoreLoop(entities, dynamicMesh, ecs, sFrame);
+    internal void CoreLoop(List<EntityId> entities, PbrInstancedMeshBuffer dynamicMesh, NClientEcsWorld ecs,
+        f32 sFrame) => _CoreLoop(entities, dynamicMesh, ecs, sFrame);
 
     [ExcludeFromInterception]
-    private void _CoreLoop(List<EntityId> entities, PbrInstancedMeshBuffer dynamicMesh, ClientEcsWorld ecs, float sFrame)
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    private void _CoreLoop(List<EntityId> entities, PbrInstancedMeshBuffer dynamicMesh, NClientEcsWorld ecs,
+        f32 sFrame)
     {
         for (var i = 0; i < entities.Count; i++)
         {
             var entity = entities[i];
             ref var instance = ref dynamicMesh.InstanceInfos[i];
-            if (ecs.TryGetPosition(entity, out var pos) &&
-                ecs.TryGetRotation(entity, out var rot) &&
-                ecs.TryGetScale(entity, out var scale))
+            if (ecs.Position.TryGet(entity, out var pos) &&
+                ecs.Rotation.TryGet(entity, out var rot) &&
+                ecs.Scale.TryGet(entity, out var scale))
             {
                 var cc = gameLogic.Grid!.GetChunkCoord(pos.Value, 0);
                 const f32 max = 10.0f;
@@ -116,7 +127,8 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     public ref f32 SmoothingFrames => ref _smoothingFrames;
 
     [ExcludeFromInterception]
-    private static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, float t)
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    private static Matrix4x4 SmoothStep(Matrix4x4 current, Vector3 tarScale, Quaternion tarRot, Vector3 tarPos, f32 t)
     {
         if (current == default)
             return Matrix4x4.CreateScale(tarScale) *

@@ -41,7 +41,7 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
                 using var _ = chunk.UseLock();
                 foreach (var entityId in chunk.Entities)
                 {
-                    if (!ecs.TryGetRenderMesh(entityId, out var renderMesh)) continue;
+                    if (!ecs.RenderMesh.TryGet(entityId, out var renderMesh)) continue;
 
                     var key = (coord, renderMesh.MeshId);
                     seenChunks.Add(key);
@@ -153,22 +153,22 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         }
     }
 
-    public void CoreLoop(List<EntityId> tmpEntities, PbrInstancedMeshBuffer meshBuffer, ClientEcsWorld ecs,
+    public void CoreLoop(List<EntityId> tmpEntities, PbrInstancedMeshBuffer meshBuffer, NClientEcsWorld ecs,
         bool nonSlide, f32 sFrame, Vector4 chunkColor) =>
         CoreLoop2(tmpEntities, meshBuffer, ecs, nonSlide, sFrame, chunkColor);
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     [ExcludeFromInterception]
-    private void CoreLoop2(List<EntityId> tmpEntities, PbrInstancedMeshBuffer meshBuffer, ClientEcsWorld ecs,
+    private void CoreLoop2(List<EntityId> tmpEntities, PbrInstancedMeshBuffer meshBuffer, NClientEcsWorld ecs,
         bool nonSlide, f32 sFrame, Vector4 chunkColor)
     {
         var i = 0;
         foreach (var entity in tmpEntities)
         {
             ref var instance = ref meshBuffer.InstanceInfos[i];
-            if (ecs.TryGetPosition(entity, out var pos) &&
-                ecs.TryGetRotation(entity, out var rot) &&
-                ecs.TryGetScale(entity, out var scale))
+            if (ecs.Position.TryGet(entity, out var pos) &&
+                ecs.Rotation.TryGet(entity, out var rot) &&
+                ecs.Scale.TryGet(entity, out var scale))
             {
                 var currentTransform = instance.GetTransform();
                 Matrix4x4 matrix;

@@ -28,7 +28,7 @@ public partial class ClientGameLogic : IDisposable
 
     private readonly ILogger<ClientGameLogic> _logger;
 
-    public ClientGameLogic(ClientEcsWorld world, Scene scene, EntityAssetRegistry assetRegistry,
+    public ClientGameLogic(NClientEcsWorld world, Scene scene, EntityAssetRegistry assetRegistry,
         ILogger<ClientGameLogic> logger, PeriodicUpdater updater)
     {
         _logger = logger;
@@ -43,9 +43,9 @@ public partial class ClientGameLogic : IDisposable
         _lastTick = updateInfo.Ticks;
         if (Grid is null) return;
         var delCount = 0;
-        foreach (var entityId in World.GetEntitiesWithNetState())
+        foreach (var pair in World.NetState)
         {
-            if (TryCleanUpEntity(entityId))
+            if (TryCleanUpEntity(pair.Key))
                 delCount++;
 
             if (delCount % 50 == 0)
@@ -57,7 +57,7 @@ public partial class ClientGameLogic : IDisposable
     }
 
 
-    public ClientEcsWorld World { get; }
+    public NClientEcsWorld World { get; }
 
     public SpatialGrid? Grid { get; private set; }
 
@@ -87,19 +87,14 @@ public partial class ClientGameLogic : IDisposable
 
     public NetEntId? GetNetworkId(EntityId ecsEntity)
     {
-        return World.TryGetNetState(ecsEntity, out var netState) ? netState.Id : null;
-    }
-
-    public IEnumerable<EntityId> GetAllEntities()
-    {
-        return World.GetEntitiesWithPosition();
+        return World.NetState.TryGet(ecsEntity, out var netState) ? netState.Id : null;
     }
 
     private bool TryHandleLocalEntityDeletion(EntityId entity)
     {
-        if (World.HasNetState(entity))
+        if (World.NetState.Has(entity))
         {
-            World.UpdateNetState(entity).DeletedTick = _lastTick;
+            World.NetState.Update(entity).DeletedTick = _lastTick;
             return true;
         }
 
@@ -129,9 +124,9 @@ public partial class ClientGameLogic : IDisposable
 
     private bool TryMarkEntityForDeletion(EntityId entity, NetEntId netEntId)
     {
-        if (World.HasNetState(entity))
+        if (World.NetState.Has(entity))
         {
-            ref var updateNetState = ref World.UpdateNetState(entity);
+            ref var updateNetState = ref World.NetState.Update(entity);
             if (updateNetState.CreatedTick == _lastTick) return false;
             updateNetState.DeletedTick = _lastTick;
         }
@@ -145,8 +140,8 @@ public partial class ClientGameLogic : IDisposable
 
     private bool TryResurrectEntity(NetEntId netId, out EntityId id)
     {
-        if (!_networkToEcs.TryGetValue(netId, out id) || !World.HasNetState(id)) return false;
-        ref var state = ref World.UpdateNetState(id);
+        if (!_networkToEcs.TryGetValue(netId, out id) || !World.NetState.Has(id)) return false;
+        ref var state = ref World.NetState.Update(id);
         state.DeletedTick = null;
         state.CreatedTick = _lastTick;
         if (state.GhostChunk is not { } chunk) return true;
@@ -157,11 +152,11 @@ public partial class ClientGameLogic : IDisposable
 
     private bool TryCleanUpEntity(EntityId entityId)
     {
-        ref var netState = ref World.UpdateNetState(entityId);
+        ref var netState = ref World.NetState.Update(entityId);
         if (!netState.DeletedTick.HasValue || netState.DeletedTick.Value + 100 >= _lastTick) return false;
         netState.GhostChunk?.Remove(entityId);
         netState.GhostChunk = null;
-        var pos = World.GetPosition(entityId);
+        var pos = World.Position.Get(entityId);
         _logger.LogDebug("Auto-deleting entity {EntityId} due to inactivity", netState.Id);
 
         Lock.Scope scope = default;
@@ -199,21 +194,21 @@ public partial class ClientGameLogic : IDisposable
         var entity = World.CreateEntity();
         Debug.Assert(!_networkToEcs.ContainsValue(entity), "Entity with the same EntityId already exists.");
         _networkToEcs.Add(netEntId, entity);
-        World.AddNetState(entity, new NetState { Id = netEntId, CreatedTick = _lastTick });
-        World.AddEntityType(entity, new EntityType { TypeId = typeId });
+        World.NetState.Add(entity, new NetState { Id = netEntId, CreatedTick = _lastTick });
+        World.EntityType.Add(entity, new EntityType { TypeId = typeId });
 
-        World.AddRotation(entity, new Rotation(Quaternion.Identity)); // todo: rotation on assets?
+        World.Rotation.Add(entity, new Rotation(Quaternion.Identity)); // todo: rotation on assets?
 
         // Add render components based on entity type using asset registry
         if (_assetRegistry.GetAssetDefinition(typeId) is { } assetDef)
         {
-            World.AddScale(entity, new Scale { Value = assetDef.Scale });
+            World.Scale.Add(entity, new Scale { Value = assetDef.Scale });
             // Apply position offset if defined
-            World.AddPosition(entity,
-                assetDef.PositionOffset != default ? new Position(assetDef.PositionOffset) : default);
+            World.Position.Add(entity,
+                assetDef.PositionOffset != default ?  new Position(assetDef.PositionOffset) : default);
 
             // Add RenderAsset component for asset streaming
-            World.AddRenderAsset(entity, new RenderAsset
+            World.RenderAsset.Add(entity, new RenderAsset
             {
                 AssetPath = assetDef.MeshPath,
                 MaterialPath = assetDef.MaterialPath,
@@ -223,12 +218,12 @@ public partial class ClientGameLogic : IDisposable
         else
         {
             // Fallback: use transform scale and basic render mesh
-            World.AddScale(entity, default);
-            World.AddPosition(entity, default);
+            World.Scale.Add(entity, default);
+            World.Position.Add(entity, default);
         }
 
         // Add RenderMesh component 
-        World.AddRenderMesh(entity, new RenderMesh
+        World.RenderMesh.Add(entity, new RenderMesh
         {
             MeshId = typeId,
             EntityId = (u32)entity.Value
@@ -238,9 +233,9 @@ public partial class ClientGameLogic : IDisposable
 
     private void UpdateEntity(EntityId entity, Transform transform)
     {
-        World.UpdateRotation(entity) = new Rotation { Value = transform.Rotation };
-        World.UpdatePosition(entity) = new Position { Value = transform.Position };
-        World.UpdateScale(entity) = new Scale { Value = transform.Scale };
+        World.Rotation.Update(entity) = new Rotation { Value = transform.Rotation };
+        World.Position.Update(entity) = new Position { Value = transform.Position };
+        World.Scale.Update(entity) = new Scale { Value = transform.Scale };
     }
 
     [MemberNotNullWhen(true, nameof(Grid))]
