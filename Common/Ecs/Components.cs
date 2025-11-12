@@ -8,17 +8,17 @@ namespace Common.Ecs;
 // Core transform components - separated for better granularity and MMO optimization
 [EcsComponent(ComponentScope.Shared, ComponentSync.ServerToClient,
     ComponentFlags.Dense | ComponentFlags.UnreliableSync)]
-public partial struct Position : IComponent
+public partial struct Position(Vector3 value) : IComponent
 {
-    public Vector3 Value;
+    public Vector3 Value = value;
     public i32 Level;
 }
 
 [EcsComponent(ComponentScope.Shared, ComponentSync.ServerToClient,
     ComponentFlags.Dense | ComponentFlags.DirtyTracked | ComponentFlags.UnreliableSync)]
-public partial struct Rotation : IComponent
+public partial struct Rotation(Quaternion value) : IComponent
 {
-    public Quaternion Value;
+    public Quaternion Value = value;
 }
 
 [EcsComponent(ComponentScope.Shared, ComponentSync.ServerToClient,
@@ -59,6 +59,25 @@ public partial struct SpatialData : IComponent
     public ChunkCoord PreviousChunk;
 }
 
+// Server-only entity ownership component - tracks which server is authoritative
+[EcsComponent(ComponentScope.Server, ComponentSync.None, ComponentFlags.Dense)]
+public partial struct EntityOwnership : IComponent
+{
+    public ServerId OwnerServerId; // Which server owns this entity
+    public bool IsProxy; // True if this is a proxy entity from another server
+    public bool IsInProxyRange; // True if entity is in proxy range of neighboring servers
+    public i64 LastSyncTick; // Last time we received an update (for proxies)
+}
+
+// Server-only authority transfer component - for entities moving between server regions
+[EcsComponent(ComponentScope.Server, ComponentSync.None, ComponentFlags.Sparse)]
+public partial struct AuthorityTransfer : IComponent
+{
+    public ServerId TargetServerId; // Server we're transferring to
+    public i64 InitiatedAt; // When the transfer started
+    public bool IsTransferring; // Transfer in progress
+}
+
 // Client-only rendering components
 [EcsComponent(ComponentScope.Client, ComponentSync.None, ComponentFlags.Dense)]
 public partial struct RenderMesh : IComponent
@@ -93,6 +112,14 @@ public partial struct Health : IComponent
     public i32 Max;
 }
 
+[EcsComponent(ComponentScope.Client, ComponentSync.None, ComponentFlags.Dense)]
+public partial struct NetState : IComponent
+{
+    public NetEntId Id;
+    public u64? DeletedTick;
+    public u64 CreatedTick;
+    public SpatialChunk? GhostChunk;
+}
 
 [MemoryPackable]
 public partial struct Transform() : IComponent
@@ -100,5 +127,4 @@ public partial struct Transform() : IComponent
     public Vector3 Position { get; set; } = Vector3.Zero;
     public Quaternion Rotation { get; set; } = Quaternion.Identity;
     public Vector3 Scale { get; set; } = Vector3.One;
-
 }
