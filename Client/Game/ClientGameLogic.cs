@@ -1,11 +1,12 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Ajiva.Ecs;
 using Client.Assets;
+using Client.LayerSystem;
 using Client.Renderer;
 using Common.Ecs;
-using Common.Networking;
 using Common.SpacialPartitioning;
 
 namespace Client.Game;
@@ -14,168 +15,67 @@ namespace Client.Game;
 /// Client-side game logic using EcsV2 with simple entity management.
 /// No spatial partitioning needed since server pre-filters entities within range.
 /// </summary>
-public class ClientGameLogic(
-    ClientEcsWorld world,
-    Scene scene,
-    EntityAssetRegistry assetRegistry,
-    ILogger<ClientGameLogic> logger)
+public partial class ClientGameLogic : IDisposable
 {
-    private readonly Scene _scene = scene;
-    private readonly EntityAssetRegistry _assetRegistry = assetRegistry;
+    private readonly Scene _scene;
+    private readonly EntityAssetRegistry _assetRegistry;
     private readonly Dictionary<NetEntId, EntityId> _networkToEcs = new();
-    private readonly Dictionary<EntityId, NetEntId> _ecsToNetwork = new();
-    public u64 RenderEntityVersion { get; private set; } = 0;
+    public u64 RenderEntityVersion { get; private set; }
 
-    public NetEntId? LocalPlayerNetworkId { get; private set; }
-    public EntityId? LocalPlayerEntityId { get; private set; }
+    /*public NetEntId? LocalPlayerNetworkId { get; private set; }
+    public EntityId? LocalPlayerEntityId { get; private set; }*/
+    private readonly PeriodicUpdater.UpdateHandle _updateHandle;
 
-    public ClientEcsWorld World { get; } = world;
+    private readonly ILogger<ClientGameLogic> _logger;
+
+    public ClientGameLogic(ClientEcsWorld world, Scene scene, EntityAssetRegistry assetRegistry,
+        ILogger<ClientGameLogic> logger, PeriodicUpdater updater)
+    {
+        _logger = logger;
+        _scene = scene;
+        _assetRegistry = assetRegistry;
+        World = world;
+        _updateHandle = updater.RegisterUpdate(UpdateCycle.Update, Update);
+    }
+
+    private void Update(UpdateInfo updateInfo)
+    {
+        _lastTick = updateInfo.Ticks;
+        if (Grid is null) return;
+        var delCount = 0;
+        foreach (var entityId in World.GetEntitiesWithNetState())
+        {
+            if (TryCleanUpEntity(entityId))
+                delCount++;
+
+            if (delCount % 50 == 0)
+                IncrementRenderVersion("Auto-delete batch");
+        }
+
+        if (delCount > 0)
+            IncrementRenderVersion("Auto-delete final");
+    }
+
+
+    public ClientEcsWorld World { get; }
 
     public SpatialGrid? Grid { get; private set; }
 
     public i32 EntityCount => _networkToEcs.Count;
+    private u64 _lastTick;
 
     private void IncrementRenderVersion([CallerMemberName] string caller = "")
     {
-        logger.LogDebug("Incrementing RenderEntityVersion due to {Caller}", caller);
+        _logger.LogDebug("Incrementing RenderEntityVersion due to {Caller}", caller);
         RenderEntityVersion++;
-    }
-
-    public void SetLocalPlayerEntityId(NetEntId networkEntityId)
-    {
-        LocalPlayerNetworkId = networkEntityId;
-
-        if (_networkToEcs.TryGetValue(networkEntityId, out var ecsEntityId))
-        {
-            LocalPlayerEntityId = ecsEntityId;
-        }
-    }
-
-    public void HandleEntityCreated(ToClientPackets.EntityCreatedPacket packet)
-    {
-        logger.LogTrace("Entity created: {EntityId}", packet.Id);
-        if (_networkToEcs.ContainsKey(packet.Id))
-        {
-            HandleEntityUpdate(new ToClientPackets.EntityUpdatePacket(packet.Id, packet.Transform));
-            return;
-        }
-
-        var entity = World.CreateEntity();
-
-        // Store network <-> ECS mapping
-        _networkToEcs[packet.Id] = entity;
-        _ecsToNetwork[entity] = packet.Id;
-
-        World.AddRotation(entity, new Rotation { Value = packet.Transform.Rotation });
-        World.AddPosition(entity, new Position { Value = packet.Transform.Position });
-
-        World.AddEntityType(entity, new EntityType { TypeId = packet.TypeId });
-
-        // Add render components based on entity type using asset registry
-        if (_assetRegistry.GetAssetDefinition(packet.TypeId) is { } assetDef)
-        {
-            // Apply asset-specific scale if defined, otherwise use transform scale
-            var finalScale = assetDef.Scale == default ? packet.Transform.Scale : assetDef.Scale;
-            World.AddScale(entity, new Scale { Value = finalScale });
-
-            // Apply position offset if defined
-            if (assetDef.PositionOffset != default)
-            {
-                World.UpdatePosition(entity).Value += assetDef.PositionOffset;
-            }
-
-            // Add RenderAsset component for asset streaming
-            World.AddRenderAsset(entity, new RenderAsset
-            {
-                AssetPath = assetDef.MeshPath,
-                MaterialPath = assetDef.MaterialPath,
-                IsLoaded = false
-            });
-
-            // Add RenderMesh component 
-            World.AddRenderMesh(entity, new RenderMesh
-            {
-                MeshId = packet.TypeId,
-                EntityId = (u32)entity.Value
-            });
-        }
-        else
-        {
-            // Fallback: use transform scale and basic render mesh
-            World.AddScale(entity, new Scale { Value = packet.Transform.Scale });
-            World.AddRenderMesh(entity, new RenderMesh
-            {
-                MeshId = packet.TypeId,
-                EntityId = (u32)entity.Value
-            });
-        }
-
-        // Update local player reference if this is our entity
-        if (LocalPlayerNetworkId == packet.Id)
-        {
-            LocalPlayerEntityId = entity;
-        }
-
-        IncrementRenderVersion();
-    }
-
-    public void HandleEntityUpdate(ToClientPackets.EntityUpdatePacket packet)
-    {
-        if (!_networkToEcs.TryGetValue(packet.Id, out var entity))
-            return; // Entity not found
-
-        // Update components
-        if (World.HasPosition(entity))
-        {
-            World.UpdatePosition(entity).Value = packet.Transform.Position;
-        }
-
-        if (World.HasRotation(entity))
-        {
-            World.UpdateRotation(entity).Value = packet.Transform.Rotation;
-        }
-
-        if (World.HasScale(entity))
-        {
-            World.UpdateScale(entity).Value = packet.Transform.Scale;
-        }
-    }
-
-    public void HandleEntityDestroyed(ToClientPackets.EntityDestroyedPacket packet)
-    {
-        logger.LogTrace("Entity destroyed: {EntityId}", packet.Id);
-        if (!_networkToEcs.Remove(packet.Id, out var entity))
-            return;
-
-        // Clean up mappings
-        _ecsToNetwork.Remove(entity);
-
-        // Clear local player reference if this was our entity
-        if (LocalPlayerNetworkId == packet.Id)
-        {
-            LocalPlayerEntityId = null;
-            LocalPlayerNetworkId = null;
-        }
-
-        World.DeleteEntity(entity);
-        RenderEntityVersion++;
-    }
-
-    public void HandleBeginWorldState(ToClientPackets.BeginWorldStatePacket packet)
-    {
-        ClearWorld();
-        IncrementRenderVersion();
     }
 
     private void ClearWorld()
     {
+        _logger.LogWarning("Clearing entire world state");
         // Clear all mappings
         _networkToEcs.Clear();
-        _ecsToNetwork.Clear();
 
-        // Reset local player
-        LocalPlayerEntityId = null;
-        LocalPlayerNetworkId = null;
         Grid = null;
         World.ClearAllEntities();
 
@@ -187,7 +87,7 @@ public class ClientGameLogic(
 
     public NetEntId? GetNetworkId(EntityId ecsEntity)
     {
-        return _ecsToNetwork.TryGetValue(ecsEntity, out var networkId) ? networkId : null;
+        return World.TryGetNetState(ecsEntity, out var netState) ? netState.Id : null;
     }
 
     public IEnumerable<EntityId> GetAllEntities()
@@ -195,214 +95,152 @@ public class ClientGameLogic(
         return World.GetEntitiesWithPosition();
     }
 
-
-    public void LoadLevel(string levelName)
+    private bool TryHandleLocalEntityDeletion(EntityId entity)
     {
-        _scene.LoadLevel(levelName);
-    }
-
-    public void HandleChunkUpdate(ToClientPackets.ChunkUpdatePacket packet)
-    {
-        logger.LogTrace("Chunk update received: {ChunkCoord} with {Type}", packet.Coord, packet.Data.GetType());
-
-        if (!GridCheck()) return;
-        if (!Grid.TryGetChunk(packet.Coord, out var chunk)) return;
-        switch (packet.Data)
+        if (World.HasNetState(entity))
         {
-            // todo make a universal handler that checks if IndexOverride is used
-            case ChunkData<PositionChunkData> posUpdate:
-                using (var _ = chunk.UseLock())
-                {
-                    foreach (var (id, delta) in chunk.Entities.Zip(posUpdate.Data))
-                    {
-                        if (!World.HasPosition(id)) continue;
-                        World.UpdatePosition(id).Value = delta.Restore(packet.Coord, Grid.GridInfo);
-                    }
+            World.UpdateNetState(entity).DeletedTick = _lastTick;
+            return true;
+        }
 
-                    break;
-                }
+        const i32 maxFind = 10;
+        var i = 0;
+        Span<NetEntId> keys = stackalloc NetEntId[maxFind];
+        foreach (var keyValuePair in _networkToEcs)
+        {
+            if (keyValuePair.Value != entity) continue;
 
-            case ChunkData<RotationChunkData> rotUpdate:
-                using (var _ = chunk.UseLock())
-                {
-                    var entEnum = chunk.Entities.GetEnumerator();
-                    var entEnumIndex = 0;
-                    var i = 0;
-                    foreach (var index in rotUpdate.IndexOverride!)
-                    {
-                        while (entEnumIndex < index)
-                        {
-                            entEnum.MoveNext();
-                            entEnumIndex++;
-                        }
-
-                        if (!entEnum.MoveNext()) break;
-                        entEnumIndex++;
-                        var id = entEnum.Current;
-                        if (!World.HasRotation(id)) continue;
-                        World.UpdateRotation(id).Value = rotUpdate.Data[i].Restore();
-                        i++;
-                    }
-                }
-
+            keys[i++] = keyValuePair.Key;
+            if (i >= maxFind)
+            {
+                _logger.LogWarning("Exceeded max find limit when deleting local entity {EntityId}", entity);
                 break;
-            case ChunkData<ScaleChunkData> rotUpdate:
-                using (var _ = chunk.UseLock())
-                {
-                    var entEnum = chunk.Entities.GetEnumerator();
-                    var entEnumIndex = 0;
-                    var i = 0;
-                    foreach (var index in rotUpdate.IndexOverride!)
-                    {
-                        while (entEnumIndex < index)
-                        {
-                            entEnum.MoveNext();
-                            entEnumIndex++;
-                        }
-
-                        if (!entEnum.MoveNext()) break;
-                        entEnumIndex++;
-                        var id = entEnum.Current;
-                        if (!World.HasScale(id)) continue;
-                        World.UpdateScale(id).Value = rotUpdate.Data[i].Value;
-                        i++;
-                    }
-                }
-
-                break;
-            default:
-                return;
-        }
-
-        chunk.MarkDirty();
-    }
-
-    public void HandleChunkUnload(ToClientPackets.ChunkUnloadPacket packet)
-    {
-        logger.LogTrace("Chunk unload received: {ChunkCoord}", packet.ChunkCoord);
-        if (!GridCheck()) return;
-        var anyRemoved = false;
-        if (Grid.TryDeleteChunk(packet.ChunkCoord, out var chunk))
-        {
-            anyRemoved = true;
-            using var _ = chunk.UseLock();
-            foreach (var entity in chunk.Entities)
-            {
-                anyRemoved |= TryDelEntity(entity);
-            }
-
-            chunk.Entities.Clear();
-        }
-
-        foreach (var entityId in packet.NetEntIds)
-        {
-            if (!_networkToEcs.Remove(entityId, out var ecsEntity)) continue;
-            anyRemoved |= TryDelEntity(ecsEntity);
-        }
-
-        if (anyRemoved)
-            IncrementRenderVersion();
-    }
-
-    private bool TryDelEntity(EntityId entity)
-    {
-        if (!_ecsToNetwork.Remove(entity, out var netEntId)) return false;
-        _networkToEcs.Remove(netEntId);
-        World.DeleteEntity(entity);
-        // Clear local player reference if this was our entity
-        if (LocalPlayerEntityId == entity) LocalPlayerEntityId = null;
-        if (LocalPlayerNetworkId == netEntId) LocalPlayerNetworkId = null;
-        return true;
-    }
-
-    public void HandleChunkDelta(ToClientPackets.ChunkDeltaPacket message)
-    {
-        logger.LogTrace("Chunk delta received: {ChunkCoord} with {NewCount} new and {RemovedCount} removed entities",
-            message.Coord, message.NewIds.Count, message.RemovedIds.Count);
-
-        if (!GridCheck()) return;
-        if (!Grid.TryGetChunk(message.Coord, out var chunk)) return;
-        using var _ = chunk.UseLock();
-        if (message.NewIds is { Count: > 0 } newIds)
-        {
-            foreach (var netEntId in newIds)
-            {
-                if (_networkToEcs.TryGetValue(netEntId, out var id))
-                {
-                    chunk.Entities.Add(id);
-                }
-                else
-                {
-                    HandleEntityCreated(new ToClientPackets.EntityCreatedPacket(netEntId, TryGetTransform(netEntId), 1));
-                }
             }
         }
 
-        if (message.RemovedIds is { Count: > 0 } removedIds)
+        var res = false;
+        for (var j = 0; j < i; j++)
         {
-            foreach (var entId in removedIds)
-            {
-                if (!_networkToEcs.TryGetValue(entId, out var local)) continue;
-                //HandleEntityDestroyed(new EntityDestroyedPacket(entId));
-                chunk.Entities.Remove(local);
-            }
+            res |= TryDeleteEntity(entity, keys[j]);
         }
 
-        chunk.MarkDirty();
-        //IncrementRenderVersion();
+        return res;
     }
 
-    private Transform TryGetTransform(NetEntId entId)
+    private bool TryMarkEntityForDeletion(EntityId entity, NetEntId netEntId)
     {
-        if (!_networkToEcs.TryGetValue(entId, out var entity)) return new Transform();
-
-        if (!World.TryGetPosition(entity, out var pos))
-            pos = default;
-        if (!World.TryGetRotation(entity, out var rot))
-            rot = default;
-        if (!World.TryGetScale(entity, out var scl))
-            scl = default;
-
-        return new Transform
+        if (World.HasNetState(entity))
         {
-            Position = pos.Value,
-            Rotation = rot.Value,
-            Scale = scl.Value == Vector3.Zero ? Vector3.One : scl.Value
-        };
-    }
-
-    public void HandleChunkLoad(ToClientPackets.ChunkLoadPacket message)
-    {
-        var entityCount = message.NetEntIds.Count;
-        logger.LogTrace("Chunk load received: {ChunkCoord} with {EntityCount} entities",
-            message.Coord, entityCount);
-        if (!GridCheck()) return;
-        if (entityCount == 0)
-        {
-            if (!Grid.TryGetChunk(message.Coord, out var chunk) || chunk is not { Entities.Count: > 0 }) return;
-            using var _ = chunk.UseLock();
-            chunk.Entities.Clear();
-            IncrementRenderVersion();
-            chunk.MarkDirty();
+            ref var updateNetState = ref World.UpdateNetState(entity);
+            if (updateNetState.CreatedTick == _lastTick) return false;
+            updateNetState.DeletedTick = _lastTick;
         }
         else
         {
-            var chunk = Grid.GetChunkData(message.Coord);
-            using var _ = chunk.UseLock();
-            var beforeCount = chunk.Entities.Count;
-            if (beforeCount > 0)
-                chunk.Entities.Clear();
+            return TryDeleteEntity(entity, netEntId);
+        }
 
-            foreach (var entId in message.NetEntIds)
+        return true;
+    }
+
+    private bool TryResurrectEntity(NetEntId netId, out EntityId id)
+    {
+        if (!_networkToEcs.TryGetValue(netId, out id) || !World.HasNetState(id)) return false;
+        ref var state = ref World.UpdateNetState(id);
+        state.DeletedTick = null;
+        state.CreatedTick = _lastTick;
+        if (state.GhostChunk is not { } chunk) return true;
+        chunk.Remove(id);
+        state.GhostChunk = null;
+        return true;
+    }
+
+    private bool TryCleanUpEntity(EntityId entityId)
+    {
+        ref var netState = ref World.UpdateNetState(entityId);
+        if (!netState.DeletedTick.HasValue || netState.DeletedTick.Value + 100 >= _lastTick) return false;
+        netState.GhostChunk?.Remove(entityId);
+        netState.GhostChunk = null;
+        var pos = World.GetPosition(entityId);
+        _logger.LogDebug("Auto-deleting entity {EntityId} due to inactivity", netState.Id);
+
+        Lock.Scope scope = default;
+        try
+        {
+            if (Grid is not null && Grid.TryGetChunk(Grid.GetChunkCoord(pos.Value, pos.Level), out var chunk))
             {
-                HandleEntityCreated(new ToClientPackets.EntityCreatedPacket(entId, new Transform(), 1));
-                chunk.Entities.Add(_networkToEcs[entId]);
+                scope = chunk.UseLock();
             }
 
-            if (beforeCount > 0)
-                IncrementRenderVersion();
-            chunk.MarkDirty();
+            return TryDeleteEntity(entityId, netState.Id);
         }
+        finally
+        {
+            scope.Dispose();
+        }
+    }
+
+
+    private bool TryDeleteEntity(EntityId id, NetEntId netId)
+    {
+        _networkToEcs.Remove(netId, out var entity);
+        Debug.Assert(entity == id, "EntityId mismatch on deletion");
+        World.DeleteEntity(id);
+        return true;
+    }
+
+    private EntityId CreateEntity(NetEntId netEntId, u32 typeId)
+    {
+        if (_networkToEcs.TryGetValue(netEntId, out var id))
+            return id;
+
+        Debug.Assert(!_networkToEcs.ContainsKey(netEntId), "Entity with the same NetEntId already exists.");
+        // Store network -> ECS mapping
+        var entity = World.CreateEntity();
+        Debug.Assert(!_networkToEcs.ContainsValue(entity), "Entity with the same EntityId already exists.");
+        _networkToEcs.Add(netEntId, entity);
+        World.AddNetState(entity, new NetState { Id = netEntId, CreatedTick = _lastTick });
+        World.AddEntityType(entity, new EntityType { TypeId = typeId });
+
+        World.AddRotation(entity, new Rotation(Quaternion.Identity)); // todo: rotation on assets?
+
+        // Add render components based on entity type using asset registry
+        if (_assetRegistry.GetAssetDefinition(typeId) is { } assetDef)
+        {
+            World.AddScale(entity, new Scale { Value = assetDef.Scale });
+            // Apply position offset if defined
+            World.AddPosition(entity,
+                assetDef.PositionOffset != default ? new Position(assetDef.PositionOffset) : default);
+
+            // Add RenderAsset component for asset streaming
+            World.AddRenderAsset(entity, new RenderAsset
+            {
+                AssetPath = assetDef.MeshPath,
+                MaterialPath = assetDef.MaterialPath,
+                IsLoaded = false
+            });
+        }
+        else
+        {
+            // Fallback: use transform scale and basic render mesh
+            World.AddScale(entity, default);
+            World.AddPosition(entity, default);
+        }
+
+        // Add RenderMesh component 
+        World.AddRenderMesh(entity, new RenderMesh
+        {
+            MeshId = typeId,
+            EntityId = (u32)entity.Value
+        });
+        return entity;
+    }
+
+    private void UpdateEntity(EntityId entity, Transform transform)
+    {
+        World.UpdateRotation(entity) = new Rotation { Value = transform.Rotation };
+        World.UpdatePosition(entity) = new Position { Value = transform.Position };
+        World.UpdateScale(entity) = new Scale { Value = transform.Scale };
     }
 
     [MemberNotNullWhen(true, nameof(Grid))]
@@ -410,7 +248,7 @@ public class ClientGameLogic(
     {
         if (Grid is null)
         {
-            logger.LogWarning("Spatial grid not initialized. Cannot process chunk load.");
+            _logger.LogWarning("Spatial grid not initialized. Cannot process chunk load.");
             return false;
         }
 
@@ -419,7 +257,13 @@ public class ClientGameLogic(
 
     public void InitializeSpacialGrid(SpacialGridInfo gridInfo)
     {
+        if (Grid?.GridInfo == gridInfo) return;
         ClearWorld();
         Grid = new SpatialGrid(gridInfo);
+    }
+
+    public void Dispose()
+    {
+        _updateHandle.Dispose();
     }
 }
