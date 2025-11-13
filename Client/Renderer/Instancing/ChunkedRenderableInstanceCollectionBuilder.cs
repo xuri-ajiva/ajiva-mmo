@@ -166,20 +166,20 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         foreach (var entity in tmpEntities)
         {
             ref var instance = ref meshBuffer.InstanceInfos[i];
-            if (ecs.Position.TryGet(entity, out var pos) &&
-                ecs.Rotation.TryGet(entity, out var rot) &&
-                ecs.Scale.TryGet(entity, out var scale))
+            if (ecs.Transform.TryGet(entity, out var transform))
             {
                 var currentTransform = instance.GetTransform();
                 Matrix4x4 matrix;
                 if (nonSlide || currentTransform == default)
                 {
-                    matrix = Matrix4x4.CreateScale(scale.Value) *
-                             Matrix4x4.CreateFromQuaternion(rot.Value) * Matrix4x4.CreateTranslation(pos.Value);
+                    matrix = Matrix4x4.CreateScale(transform.Scale) *
+                             Matrix4x4.CreateFromQuaternion(transform.Rotation) *
+                             Matrix4x4.CreateTranslation(transform.Position);
                 }
                 else
                 {
-                    matrix = SmoothStep(currentTransform, scale.Value, rot.Value, pos.Value, sFrame);
+                    matrix = SmoothStep(currentTransform, transform.Scale, transform.Rotation,
+                        transform.Position, sFrame);
                 }
 
                 instance.SetTransform(matrix);

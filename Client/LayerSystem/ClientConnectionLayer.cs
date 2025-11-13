@@ -98,7 +98,7 @@ public class ClientConnectionLayer(
             ImGui.Text($"RenderVersion: {gameLogic.RenderEntityVersion}");
             ImGui.SameLine();
             ImGui.Text($"EntityCount: {gameLogic.EntityCount}");
-            
+
             ImGui.Text($"Player Position: {inputSystem.CurrentPosition}");
             ImGui.Text($"Player Rotation: {inputSystem.CurrentRotation}");
 
@@ -120,16 +120,8 @@ public class ClientConnectionLayer(
                 foreach (var entityId in gameLogic.World.Take(200))
                 {
                     var networkId = gameLogic.GetNetworkId(entityId);
+                    var transform = gameLogic.World.Transform.Get(entityId);
 
-                    var position = gameLogic.World.Position.TryGet(entityId, out var posVal)
-                        ? posVal.Value.ToString()
-                        : "<none>";
-                    var rotation = gameLogic.World.Rotation.TryGet(entityId, out var rotVal)
-                        ? rotVal.Value.ToString()
-                        : "<none>";
-                    var scale = gameLogic.World.Scale.TryGet(entityId, out var scaleVal)
-                        ? scaleVal.Value.ToString()
-                        : "<none>";
                     var entityType = gameLogic.World.EntityType.TryGet(entityId, out var typeVal)
                         ? $"{typeVal.TypeId}"
                         : "<none>";
@@ -142,11 +134,11 @@ public class ClientConnectionLayer(
                     ImGui.TableSetColumnIndex(2);
                     ImGui.Text($"{entityType}");
                     ImGui.TableSetColumnIndex(3);
-                    ImGui.Text($"{position}");
+                    ImGui.Text($"{transform.Position.ToString()}");
                     ImGui.TableSetColumnIndex(4);
-                    ImGui.Text($"{rotation}");
+                    ImGui.Text($"{transform.Rotation.ToString()}");
                     ImGui.TableSetColumnIndex(5);
-                    ImGui.Text($"{scale}");
+                    ImGui.Text($"{transform.Scale.ToString()}");
                 }
 
                 ImGui.EndTable();

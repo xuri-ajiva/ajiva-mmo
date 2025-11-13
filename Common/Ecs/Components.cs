@@ -28,14 +28,6 @@ public partial struct Scale : IComponent
     public Vector3 Value;
 }
 
-public struct TransformData
-{
-    public Vector3 Position;
-    public i32 Level;
-    public Quaternion Rotation;
-    public Vector3 Scale;
-}
-
 [EcsComponent(ComponentScope.Shared, ComponentSync.ServerToClient,
     ComponentFlags.Dense | ComponentFlags.DirtyTracked | ComponentFlags.UnreliableSync)]
 public partial struct Velocity : IComponent
@@ -132,7 +124,8 @@ public partial struct NetState : IComponent
 [MemoryPackable]
 public partial struct Transform() : IComponent
 {
-    public Vector3 Position { get; set; } = Vector3.Zero;
-    public Quaternion Rotation { get; set; } = Quaternion.Identity;
-    public Vector3 Scale { get; set; } = Vector3.One;
+    public Vector3 Position;
+    public i32 Level;
+    public Quaternion Rotation = Quaternion.Identity;
+    public Vector3 Scale = Vector3.One;
 }

@@ -8,8 +8,8 @@ public class NClientEcsWorld
     public DenseStore<NetState> NetState;
     public DenseStore<Position> Position;
     public DenseStore<Rotation> Rotation;
-    public DenseStore<TransformData> Transform;
     public DenseStore<Scale> Scale;
+    public DenseStore<Transform> Transform;
     public DenseStore<Velocity> Velocity;
     public SparseStore<EntityType> EntityType;
     public DenseStore<RenderAsset> RenderAsset;
@@ -19,6 +19,7 @@ public class NClientEcsWorld
         nameof(EntityType), nameof(RenderAsset), nameof(RenderMesh))]
     public void ClearAllEntities()
     {
+        Transform = new();
         NetState = new();
         Position = new();
         Rotation = new();
@@ -55,7 +56,7 @@ public class NClientEcsWorld
         public Iterator GetEnumerator() => this;
     }
 
-    public ref struct TakeIterator(DenseStore<Position>.Iterator iterator, i32 limit = int.MaxValue)
+    public ref struct TakeIterator(DenseStore<Position>.Iterator iterator, i32 limit = i32.MaxValue)
     {
         private DenseStore<Position>.Iterator _iterator = iterator;
         private i32 _remaining = limit;
@@ -78,6 +79,7 @@ public class NClientEcsWorld
     public void DeleteEntity(EntityId id)
     {
         _entityIdFreeList.ReleaseId(id.Value);
+        Transform.Remove(id);
         NetState.Remove(id);
         Position.Remove(id);
         Rotation.Remove(id);

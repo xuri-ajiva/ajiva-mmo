@@ -94,7 +94,7 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     }
 
     internal void CoreLoop(List<EntityId> entities, PbrInstancedMeshBuffer dynamicMesh, NClientEcsWorld ecs,
-        f32 sFrame) => _CoreLoop(entities, dynamicMesh, ecs, sFrame);
+        f32 sFrame) => _CoreLoopV2(entities, dynamicMesh, ecs, sFrame);
 
     [ExcludeFromInterception]
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
@@ -123,6 +123,32 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
         }
     }
 
+    [ExcludeFromInterception]
+    [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+    private void _CoreLoopV2(List<EntityId> entities, PbrInstancedMeshBuffer dynamicMesh, NClientEcsWorld ecs,
+        f32 sFrame)
+    {
+        for (var i = 0; i < entities.Count; i++)
+        {
+            var entity = entities[i];
+            ref var instance = ref dynamicMesh.InstanceInfos[i];
+            if (ecs.Transform.TryGet(entity, out var transform))
+            {
+                var cc = gameLogic.Grid!.GetChunkCoord(transform.Position, 0);
+                const f32 max = 10.0f;
+                instance.HighlightColorRef = new Vector4(cc.X / max, cc.Y / max, cc.Z / max, 1f);
+                var currentTransform = instance.GetTransform();
+                var blended = SmoothStep(currentTransform, transform.Scale, transform.Rotation,
+                    transform.Position, sFrame);
+                instance.SetTransform(blended);
+            }
+            else
+            {
+                instance.SetTransform(default);
+            }
+        }
+    }
+    
     private f32 _smoothingFrames = 10f;
     public ref f32 SmoothingFrames => ref _smoothingFrames;
 

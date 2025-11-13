@@ -368,34 +368,18 @@ public class Instanced3dDeferredRenderer(
         if (ImGui.Begin("Entity Inspector"))
         {
             ImGui.DragInt("##EntityId", ref Unsafe.As<EntityId, i32>(ref _selectedEntityId));
-            if (_selectedEntityId != EntityId.Invalid && _gameLogic.World.HasPosition(_selectedEntityId))
+            if (_selectedEntityId != EntityId.Invalid &&
+                _gameLogic.World.Transform.TryGet(_selectedEntityId, out var transform))
             {
-                ref var pos = ref _gameLogic.World.UpdatePosition(_selectedEntityId);
-                ImGui.DragFloat3("##EntityPosition", ref pos.Value);
+                ImGui.DragFloat3("##EntityPosition", ref transform.Position);
 
-                if (_gameLogic.World.HasRotation(_selectedEntityId))
-                {
-                    ref var rot = ref _gameLogic.World.UpdateRotation(_selectedEntityId);
-                    ImGui.DragFloat4("##EntityRotation", ref Unsafe.As<Quaternion, Vector4>(ref rot.Value));
-                }
-                else
-                {
-                    ImGui.Text("Entity has no Rotation component");
-                }
+                ImGui.DragFloat4("##EntityRotation", ref Unsafe.As<Quaternion, Vector4>(ref transform.Rotation));
 
-                if (_gameLogic.World.HasScale(_selectedEntityId))
-                {
-                    ref var scale = ref _gameLogic.World.UpdateScale(_selectedEntityId);
-                    ImGui.DragFloat3("##EntityScale", ref scale.Value);
-                }
-                else
-                {
-                    ImGui.Text("Entity has no Transform components");
-                }
+                ImGui.DragFloat3("##EntityScale", ref transform.Scale);
 
-                if (_gameLogic.World.HasNetState(_selectedEntityId))
+                if (_gameLogic.World.NetState.Has(_selectedEntityId))
                 {
-                    var netState = _gameLogic.World.GetNetState(_selectedEntityId);
+                    var netState = _gameLogic.World.NetState.Get(_selectedEntityId);
                     ImGui.Text($"Network ID: {netState.Id}");
                     ImGui.Text($"CreatedTick: {netState.CreatedTick}");
                     ImGui.Text($"DeletedTick: {netState.DeletedTick}");
@@ -406,7 +390,7 @@ public class Instanced3dDeferredRenderer(
                     ImGui.Text("No Network State");
                 }
 
-                if (_gameLogic.Grid?.GetChunkCoord(pos.Value, 0) is { } chunk)
+                if (_gameLogic.Grid?.GetChunkCoord(transform.Position, transform.Level) is { } chunk)
                 {
                     ImGui.Text($"Chunk Coord: {chunk}");
                     var spatialChunk = _gameLogic.Grid.GetChunkData(chunk);

@@ -156,13 +156,13 @@ public partial class ClientGameLogic : IDisposable
         if (!netState.DeletedTick.HasValue || netState.DeletedTick.Value + 100 >= _lastTick) return false;
         netState.GhostChunk?.Remove(entityId);
         netState.GhostChunk = null;
-        var pos = World.Position.Get(entityId);
+        var trans = World.Transform.Get(entityId);
         _logger.LogDebug("Auto-deleting entity {EntityId} due to inactivity", netState.Id);
 
         Lock.Scope scope = default;
         try
         {
-            if (Grid is not null && Grid.TryGetChunk(Grid.GetChunkCoord(pos.Value, pos.Level), out var chunk))
+            if (Grid is not null && Grid.TryGetChunk(Grid.GetChunkCoord(trans.Position, trans.Level), out var chunk))
             {
                 scope = chunk.UseLock();
             }
@@ -197,15 +197,14 @@ public partial class ClientGameLogic : IDisposable
         World.NetState.Add(entity, new NetState { Id = netEntId, CreatedTick = _lastTick });
         World.EntityType.Add(entity, new EntityType { TypeId = typeId });
 
-        World.Rotation.Add(entity, new Rotation(Quaternion.Identity)); // todo: rotation on assets?
+        World.Transform.Add(entity, new Transform());
 
         // Add render components based on entity type using asset registry
         if (_assetRegistry.GetAssetDefinition(typeId) is { } assetDef)
         {
-            World.Scale.Add(entity, new Scale { Value = assetDef.Scale });
+            World.Transform.Update(entity).Scale *= assetDef.Scale;
             // Apply position offset if defined
-            World.Position.Add(entity,
-                assetDef.PositionOffset != default ?  new Position(assetDef.PositionOffset) : default);
+            World.Transform.Update(entity).Position += assetDef.PositionOffset;
 
             // Add RenderAsset component for asset streaming
             World.RenderAsset.Add(entity, new RenderAsset
@@ -215,12 +214,11 @@ public partial class ClientGameLogic : IDisposable
                 IsLoaded = false
             });
         }
-        else
-        {
-            // Fallback: use transform scale and basic render mesh
-            World.Scale.Add(entity, default);
-            World.Position.Add(entity, default);
-        }
+
+        var transform = World.Transform.Get(entity);
+        World.Position.Add(entity, new Position { Value = transform.Position });
+        World.Rotation.Add(entity, new Rotation { Value = transform.Rotation });
+        World.Scale.Add(entity, new Scale { Value = transform.Scale });
 
         // Add RenderMesh component 
         World.RenderMesh.Add(entity, new RenderMesh
@@ -233,9 +231,7 @@ public partial class ClientGameLogic : IDisposable
 
     private void UpdateEntity(EntityId entity, Transform transform)
     {
-        World.Rotation.Update(entity) = new Rotation { Value = transform.Rotation };
-        World.Position.Update(entity) = new Position { Value = transform.Position };
-        World.Scale.Update(entity) = new Scale { Value = transform.Scale };
+        World.Transform.Update(entity) = transform;
     }
 
     [MemberNotNullWhen(true, nameof(Grid))]
