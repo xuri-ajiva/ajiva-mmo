@@ -23,6 +23,7 @@
   </Folder>
   <Project Path="ajiva-mmo.AppHost/ajiva-mmo.AppHost.csproj" />
   <Project Path="Client/Client.csproj" />
+  <Project Path="ClusterManager\ClusterManager.csproj" />
   <Project Path="Common/Common.csproj" />
   <Project Path="Server/Server.csproj" />
 </Solution>

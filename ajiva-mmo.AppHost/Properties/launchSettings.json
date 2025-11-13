@@ -22,7 +22,9 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "DOTNET_ENVIRONMENT": "Development",
         "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "http://localhost:19073",
-        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "http://localhost:20007"
+        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "http://localhost:20007",
+        "Dashboard__TelemetryLimits__MaxSpanEventCount": "10000",
+        "Dashboard__TelemetryLimits__MaxAttributeCount": "10000"
       }
     }
   }

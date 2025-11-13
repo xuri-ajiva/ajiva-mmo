@@ -31,8 +31,8 @@ public class FreeCamera(AjivaWindow window) : ICamera
     private IInputContext? _inputContext;
     private Vector2 _lastMousePosition = Vector2.Zero;
 
-    public f32 MovementSpeed { get; set; } = 3.0f;
-    public f32 SprintMultiplier { get; set; } = 2.5f;
+    public f32 MovementSpeed { get; set; } = 10.0f;
+    public f32 SprintMultiplier { get; set; } = 25f;
     public f32 MouseSensitivity { get; set; } = 0.002f;
     public f32 MinPitchRadians { get; set; } = -MathF.PI / 2.0f + 0.01f; // Limit looking straight down
     public f32 MaxPitchRadians { get; set; } = MathF.PI / 2.0f - 0.01f; // Limit looking straight up

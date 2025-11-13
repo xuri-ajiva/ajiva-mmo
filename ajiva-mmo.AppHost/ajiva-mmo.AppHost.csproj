@@ -11,7 +11,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aspire.Hosting.AppHost" Version="9.4.1"/>
+        <PackageReference Include="Aspire.Hosting.AppHost" Version="9.4.1" />
+        <PackageReference Include="Aspire.Hosting.Docker" Version="9.5.2-preview.1.25522.3" />
     </ItemGroup>
 
     <ItemGroup>

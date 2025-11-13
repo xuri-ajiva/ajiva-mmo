@@ -3,6 +3,8 @@ using System.Reflection.Metadata;
 using Microsoft.Extensions.Configuration;
 
 var builder = DistributedApplication.CreateBuilder(args);
+builder.AddDockerComposeEnvironment("compose");
+
 
 var clientConfig = builder.Configuration.GetSection("ClientConfiguration");
 var clients = clientConfig.GetValue("Count", 1);

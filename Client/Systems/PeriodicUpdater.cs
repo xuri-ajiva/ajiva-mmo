@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Client.Helpers;
 using Client.Platform;
 using Common;
 
@@ -43,10 +44,7 @@ public enum UpdateCycle
     Blocking,
 }
 
-public class PeriodicUpdater(
-    IConfiguration configuration,
-    ILogger<PeriodicUpdater> logger,
-    Instrumentation instrumentation) : IHostedLifecycleService
+public class PeriodicUpdater : IHostedLifecycleService
 {
     public delegate void UpdateRunnerDelegate(UpdateInfo info);
 
@@ -141,6 +139,19 @@ public class PeriodicUpdater(
     private Thread? _renderCycle;
     private readonly AutoResetEvent _resetEvent = new(false);
     private readonly SemaphoreSlim _globalHandle = new(0, 9999);
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<PeriodicUpdater> _logger;
+    private readonly Instrumentation _instrumentation;
+
+    public PeriodicUpdater(IConfiguration configuration,
+        ILogger<PeriodicUpdater> logger,
+        Instrumentation instrumentation)
+    {
+        _configuration = configuration;
+        _logger = logger;
+        _instrumentation = instrumentation;
+        InitRunners();
+    }
 
     private Task InitRunners()
     {
@@ -148,7 +159,7 @@ public class PeriodicUpdater(
             return Task.CompletedTask;
         Running = true;
 
-        var updaterSection = configuration.GetRequiredSection("PeriodicUpdater");
+        var updaterSection = _configuration.GetRequiredSection("PeriodicUpdater");
 
         // populate the dictionary with empty lists
         foreach (var cycle in Enum.GetValues<UpdateCycle>())
@@ -191,8 +202,8 @@ public class PeriodicUpdater(
             if (TraceUpdate)
             {
                 TraceUpdate = false;
-                using var activityRenderer = instrumentation.StartActivity(ActivityKind.Client);
-                Instrumentation.Instance = instrumentation;
+                using var activityRenderer = _instrumentation.StartActivity(ActivityKind.Client);
+                Instrumentation.Instance = _instrumentation;
                 updateRunner.RunOnce();
                 Instrumentation.Instance = null!;
             }
@@ -213,14 +224,14 @@ public class PeriodicUpdater(
             if (TraceRenderer)
             {
                 TraceRenderer = false;
-                using var activityRenderer = instrumentation.StartActivity(ActivityKind.Client);
-                Instrumentation.Instance = instrumentation;
+                using var activityRenderer = _instrumentation.StartActivity(ActivityKind.Client);
+                Instrumentation.Instance = _instrumentation;
                 updateRunner.RunOnce();
                 Instrumentation.Instance = null!;
             }
             else
             {
-                updateRunner.RunOnce();
+                GCHelper.RunGCFree(updateRunner.RunOnce);
             }
         }
     }
@@ -298,7 +309,7 @@ public class PeriodicUpdater(
         thread.Interrupt();
         if (thread.IsAlive)
         {
-            logger.LogCritical("PeriodicUpdater thread {ThreadName} did not stop gracefully, handle will be lost!",
+            _logger.LogCritical("PeriodicUpdater thread {ThreadName} did not stop gracefully, handle will be lost!",
                 thread.Name);
         }
     }
