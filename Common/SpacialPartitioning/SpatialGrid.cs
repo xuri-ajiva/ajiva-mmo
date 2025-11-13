@@ -19,7 +19,7 @@ public readonly partial record struct ChunkCoord(i32 X, i32 Y, i32 Z, i32 Level)
         Math.Abs(X - playerChunk.X) + Math.Abs(Y - playerChunk.Y) + Math.Abs(Z - playerChunk.Z);
 }
 
-public record SpatialChunk(SortedSet<EntityId> Entities)
+public record SpatialChunk(List<EntityId> Entities)
 {
     private Lock _lock = new();
     public bool IsDirty;
@@ -55,7 +55,7 @@ public class SpatialGrid(SpacialGridInfo spacialGridInfo)
     private readonly ConcurrentDictionary<ChunkCoord, List<EntityId>> _deltaAdded = new();
     private readonly ConcurrentDictionary<ChunkCoord, List<EntityId>> _deltaRemoved = new();
 
-    //   [ExcludeFromInterception]
+    [ExcludeFromInterception]
     public ChunkCoord GetChunkCoord(Vector3 position, i32 level)
     {
         var x = (i32)Math.Floor(position.X / GridInfo.ChunkSize.X);
