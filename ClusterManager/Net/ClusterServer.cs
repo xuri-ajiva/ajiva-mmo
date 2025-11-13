@@ -34,7 +34,7 @@ public partial class ClusterServer(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _serverThread = new Thread(RunServers) { IsBackground = true };
+        _serverThread = new Thread(RunServers) { IsBackground = true, Name = "ClusterManager Server Thread" };
         _serverThread.Start();
         gatewayServer.Cluster = this;
         return Task.CompletedTask;

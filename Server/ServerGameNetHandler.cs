@@ -62,12 +62,12 @@ public partial class ServerGameNetHandler(
             histogram: instrumentation.Meter?.CreateHistogram<f64>("server.tick.duration",
                 unit: "ms", description: "Duration of server tick"),
             lockedAction: Update, tps: 50f)
-        );
+        ) { Name = "Server Update Thread" };
         _serverNetworkTask = new Thread(() => RunLoop(_stoppingCts.Token, loopName: "NetworkTick",
             histogram: instrumentation.Meter?.CreateHistogram<f64>("server.network.duration",
                 unit: "ms", description: "Duration of server net tick"),
             lockedAction: Poll, tps: 100f)
-        );
+        ) { Name = "Server Network Thread" };
         _serverUpdateTask?.Start();
         _serverNetworkTask?.Start();
         await _server.WaitForReady();
@@ -286,7 +286,8 @@ public partial class ServerGameNetHandler(
         foreach (var (chunkCoord, chunk) in dirtyChunks)
         {
             //if (chunk.Entities.Count == 0) continue; we still need to delta removed entities
-            if(chunk.Entities.Count == 0 && !_spatialGrid.TryGetDeltaInfo(chunkCoord, out var added, out var removed)) continue;
+            if (chunk.Entities.Count == 0 &&
+                !_spatialGrid.TryGetDeltaInfo(chunkCoord, out var added, out var removed)) continue;
             visibleChunksSnapshot.Clear();
             foreach (var context in _connectionContexts.Values)
             {

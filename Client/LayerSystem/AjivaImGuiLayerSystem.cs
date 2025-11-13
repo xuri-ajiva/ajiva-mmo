@@ -359,7 +359,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
                                     Interlocked.Add(ref allocations, (u64)array.LongLength * 4);
                                 });
                         }
-                    });
+                    }) { Name = "GC Testing Thread", IsBackground = true };
                     GCStressTest.Start();
                 }
             }

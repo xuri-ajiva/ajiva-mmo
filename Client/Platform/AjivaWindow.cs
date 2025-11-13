@@ -66,11 +66,14 @@ public class AjivaWindow : IHostedLifecycleService
         options.VSync = _config.VSync;
         options.WindowBorder = _config.FullscreenBorderless
             ? WindowBorder.Hidden
-            : _config.Resizable ? WindowBorder.Resizable : WindowBorder.Fixed;
+            : _config.Resizable
+                ? WindowBorder.Resizable
+                : WindowBorder.Fixed;
 
         Window = Silk.NET.Windowing.Window.Create(options);
         Window.Load += Load;
-        windowThread = new Thread(MainWindow);
+        windowThread = new Thread(MainWindow)
+            { IsBackground = false, Name = "Ajiva Main Window Thread", Priority = ThreadPriority.AboveNormal };
         windowThread.Start();
 
         return Task.CompletedTask;

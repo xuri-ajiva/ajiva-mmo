@@ -168,10 +168,12 @@ public class PeriodicUpdater : IHostedLifecycleService
             switch (cycle)
             {
                 case UpdateCycle.Render:
-                    _renderCycle = new Thread(() => RenderUpdate(r));
+                    _renderCycle = new Thread(() => RenderUpdate(r))
+                        { Name = "Render Loop", Priority = ThreadPriority.Highest };
                     break;
                 case UpdateCycle.Update:
-                    _updateCycle = new Thread(() => UpdateUpdate(r));
+                    _updateCycle = new Thread(() => UpdateUpdate(r))
+                        { Name = "Update Loop", Priority = ThreadPriority.AboveNormal };
                     break;
                 default:
                 {
