@@ -1,10 +1,12 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Client.Helpers;
-using Client.Platform;
-using Common;
+using Client.LayerSystem;
+using Common.Helpers;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-namespace Client.LayerSystem;
+namespace Common.Systems;
 
 public enum UpdateCycle
 {

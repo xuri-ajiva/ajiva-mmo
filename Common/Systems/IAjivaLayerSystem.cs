@@ -1,12 +1,10 @@
-﻿using Client.Platform;
-using Silk.NET.WebGPU.Extensions.ImGui;
-using Silk.NET.WebGPU.Safe;
+﻿using Common.Systems;
 
 namespace Client.LayerSystem;
 
-public interface IAjivaLayerSystem
+public interface IAjivaLayerSystem<TParent>
 {
-    void Attach(AjivaWindow parent);
+    void Attach(TParent parent);
     void Update(UpdateInfo info);
     void PushLayer<T>(T? layer = default) where T : IAjivaLayer;
     void PopLayer<T>() where T : IAjivaLayer;
@@ -28,11 +26,7 @@ public ref struct UpdateInfo(u64 ticks, f32 deltaTime, f32 totalTime)
     public readonly f32 TotalTime = totalTime;
 }
 
-public ref struct RenderTarget(QueuePtr queuePtr, ImGuiController imguiController)
-{
-    public readonly QueuePtr QueuePtr = queuePtr;
-    public readonly ImGuiController ImguiController = imguiController;
-}
+
 
 public interface IAjivaLayer
 {
@@ -42,10 +36,6 @@ public interface IAjivaLayer
     ref bool Enabled { get; }
 }
 
-public interface IRenderLayer : IAjivaLayer
-{
-    void Render(UpdateInfo info, RenderTarget target);
-}
 
 public interface IUiRenderLayer : IAjivaLayer
 {

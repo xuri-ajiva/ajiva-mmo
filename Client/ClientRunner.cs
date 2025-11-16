@@ -1,7 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Net.Quic;
-using System.Net.Security;
-using Ajiva.Ecs;
 using Client.Assets;
 using Client.Game;
 using Client.LayerSystem;
@@ -15,8 +12,7 @@ using Client.Wgsl;
 using Common;
 using Common.Config;
 using Common.Ecs;
-using Common.Networking;
-using Common.Networking.AjivaQuic;
+using Common.Systems;
 
 namespace Client;
 
@@ -43,7 +39,7 @@ public class ClientRunner
         services.AddService<PlayerInputSystem>();
 
         // UI/Rendering
-        services.AddSingleton<IAjivaLayerSystem, AjivaImGuiLayerSystem>();
+        services.AddSingleton<IAjivaLayerSystem<AjivaWindow>, AjivaImGuiLayerSystem>();
         services.AddSingleton<Instanced3dDeferredRenderer>();
         services.AddSingleton<ClientConnectionLayer>();
 

@@ -1,4 +1,5 @@
 using Client.LayerSystem;
+using Client.Platform;
 using Client.Renderer.PbrRenderer;
 
 namespace Client;
@@ -6,12 +7,12 @@ namespace Client;
 public class Application(
     ILogger<Application> logger,
     IServiceProvider serviceProvider,
-    IAjivaLayerSystem layerSystem)
+    IAjivaLayerSystem<AjivaWindow> layerSystem)
     : IHostedLifecycleService
 {
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly ILogger<Application> _logger = logger;
-    private readonly IAjivaLayerSystem _layerSystem = layerSystem;
+    private readonly IAjivaLayerSystem<AjivaWindow> _layerSystem = layerSystem;
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {

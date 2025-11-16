@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace Client.Platform;
+namespace Common.Systems;
 
 public struct AjivaClock
 {

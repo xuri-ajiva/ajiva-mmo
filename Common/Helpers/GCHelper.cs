@@ -1,6 +1,6 @@
 ﻿using System.Runtime.CompilerServices;
 
-namespace Client.Helpers;
+namespace Common.Helpers;
 
 public static class GCHelper
 {

@@ -5,6 +5,7 @@ using System.Reflection;
 using Client.Platform;
 using Client.Renderer;
 using Common;
+using Common.Systems;
 using ImGuiNET;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU;
@@ -15,7 +16,7 @@ using SurfaceConfiguration = Silk.NET.WebGPU.Safe.SurfaceConfiguration;
 
 namespace Client.LayerSystem;
 
-public class AjivaImGuiLayerSystem : IAjivaLayerSystem, IDisposable
+public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
 {
     private bool _initialized, _attatched;
 

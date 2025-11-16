@@ -1,6 +1,7 @@
 ﻿using Client.Config;
 using Client.LayerSystem;
 using Client.Renderer;
+using Common.Systems;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU.Safe;
@@ -15,7 +16,7 @@ public class AjivaWindow : IHostedLifecycleService
     private readonly RendererApi _api;
     private readonly WindowConfig _config;
     private readonly PeriodicUpdater _updater;
-    private readonly IAjivaLayerSystem _layerSystem;
+    private readonly IAjivaLayerSystem<AjivaWindow> _layerSystem;
     private readonly IHostApplicationLifetime _lifetime;
 
     public IWindow Window = null!;
@@ -26,7 +27,7 @@ public class AjivaWindow : IHostedLifecycleService
     private bool _isClosing;
 
     public AjivaWindow(ILogger<AjivaWindow> logger, RendererApi api, WindowConfig config, PeriodicUpdater updater,
-        IAjivaLayerSystem layerSystem, IHostApplicationLifetime lifetime)
+        IAjivaLayerSystem<AjivaWindow> layerSystem, IHostApplicationLifetime lifetime)
     {
         _logger = logger;
         _api = api;
