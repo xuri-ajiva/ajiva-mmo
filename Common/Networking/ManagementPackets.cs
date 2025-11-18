@@ -37,7 +37,7 @@ public partial class ManagementPackets
 
     [NetworkPacket(101)]
     [MemoryPackable]
-    public partial record struct InitServer(ServerId ServerId, SpacialGridInfo GridInfo, RegionAssignment Assignment);
+    public partial record struct InitServer(ServerId ServerId, SpacialGridInfo GridInfo, RegionAssignment Assignment, TimeSpan TickInterval);
 
     [NetworkPacket(102)]
     [MemoryPackable]
