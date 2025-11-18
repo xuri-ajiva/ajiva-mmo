@@ -9,9 +9,9 @@ using Common.Networking.AjivaQuic;
 using MemoryPack;
 using NetworkPackets;
 
-namespace Server;
+namespace Server.Systems;
 
-public partial class ServerGameNetHandler
+public partial class NetworkSystem : IServerPacketHandler<ConnectionContext>, QServerEventListener
 {
     public void DispatchPacket(PacketType packetType, scoped ref MemoryPackReader reader, QConnection connection)
     {
@@ -74,6 +74,19 @@ public partial class ServerGameNetHandler
         else
         {
             logger.LogWarning("Received PlayerMovementPacket from {Client}", context);
+        }
+    }
+
+    public void HandleEntityUpdate(EntityId entity, Transform transform)
+    {
+        if (!world.Position.Has(entity)) return;
+
+        world.Position.Update(entity).Value = transform.Position;
+        world.Rotation.Update(entity).Value = transform.Rotation;
+        world.Scale.Update(entity).Value = transform.Scale;
+        if (world.Spacial.TryGet(entity, out var spacialData))
+        {
+            world.Grid.GetChunkData(spacialData.CurrentChunk).MarkDirty();
         }
     }
 
