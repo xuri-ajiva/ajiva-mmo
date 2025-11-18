@@ -97,6 +97,11 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
         }
     }
 
+    public void Stop()
+    {
+        _cts.Cancel();
+    }
+
     public void SetEndpoint(IPEndPoint endPoint)
     {
         options.ListenEndPoint = endPoint;
@@ -107,5 +112,17 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
     public async Task WaitForReady()
     {
         await _readyHandle.Task;
+    }
+
+    public async Task WaitForShutdown()
+    {
+        while (!_cts.IsCancellationRequested)
+        {
+            await Task.Delay(100, cancellationToken: _cts.Token)
+                .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+
+        if (_listenTask is not null)
+            await _listenTask;
     }
 }
