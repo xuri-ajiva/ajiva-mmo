@@ -53,7 +53,7 @@ public partial struct EntityType : IComponent
 
 // Server-only spatial partitioning component
 [EcsComponent(ComponentScope.Server, ComponentSync.None, ComponentFlags.Dense)]
-public partial struct SpatialData : IComponent
+public partial struct SpacialData : IComponent
 {
     public ChunkCoord CurrentChunk;
     public ChunkCoord PreviousChunk;

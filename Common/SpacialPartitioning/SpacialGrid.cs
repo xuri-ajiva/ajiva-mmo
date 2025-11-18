@@ -48,7 +48,7 @@ public record SpatialChunk(List<EntityId> Entities)
     }
 }
 
-public class SpatialGrid(SpacialGridInfo spacialGridInfo)
+public class SpacialGrid(SpacialGridInfo spacialGridInfo)
 {
     public SpacialGridInfo GridInfo { get; } = spacialGridInfo;
     private readonly ConcurrentDictionary<ChunkCoord, SpatialChunk> _chunks = new();
