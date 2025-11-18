@@ -46,7 +46,7 @@ public partial class ClusterServer
         ServerIdToConnection[serverId] = userData.Connection;
 
         // Send region assignment to the server
-        new ManagementPackets.InitServer(serverId, _spacialInfo, assignment).Send(userData.Connection);
+        new ManagementPackets.InitServer(serverId, _spacialInfo, assignment, configuration.TickInterval).Send(userData.Connection);
 
 
         // Broadcast server map update to all other servers

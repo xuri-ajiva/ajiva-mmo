@@ -9,20 +9,14 @@ namespace ClusterManager;
 /// Manages the cluster map and assigns regions to game servers
 /// Uses quadrant-based assignment for world regions
 /// </summary>
-public class ClusterMapService
+public class ClusterMapService(ILogger<ClusterMapService> logger)
 {
-    private readonly ILogger<ClusterMapService> _logger;
     private readonly ClusterMap _clusterMap = new();
     private readonly ServerMap _serverMap = new();
     private readonly Lock _lock = new();
 
     private u16 _nextServerId = 1; // ServerId 0 is reserved for Invalid
     private i32 _nextQuadrant = 0; // 0=+X+Z, 1=-X+Z, 2=-X-Z, 3=+X-Z, then repeat with different Y ranges
-
-    public ClusterMapService(ILogger<ClusterMapService> logger)
-    {
-        _logger = logger;
-    }
 
     public ClusterMap ClusterMap => _clusterMap;
     public ServerMap ServerMap => _serverMap;
@@ -51,14 +45,14 @@ public class ClusterMapService
         );
 
         _serverMap.RegisterServer(serverInfo);
-        _logger.LogInformation("Registered server {ServerId} ({Name}) at {Address}:{Port}",
+        logger.LogInformation("Registered server {ServerId} ({Name}) at {Address}:{Port}",
             serverId, name, managementAddress, managementPort);
 
         // Assign a region (quadrant-based)
         var assignment = AllocateNextQuadrant(serverId);
         _clusterMap.AssignRegion(assignment);
 
-        _logger.LogInformation("Assigned region to server {ServerId}: {MinChunk} to {MaxChunk}",
+        logger.LogInformation("Assigned region to server {ServerId}: {MinChunk} to {MaxChunk}",
             serverId, assignment.MinChunk, assignment.MaxChunk);
 
         return (serverId, assignment);
@@ -77,11 +71,11 @@ public class ClusterMapService
                 GamePort = messageGamePort
             };
             _serverMap.RegisterServer(serverInfo);
-            _logger.LogInformation("Server {ServerId} is now ready", serverId);
+            logger.LogInformation("Server {ServerId} is now ready", serverId);
         }
         else
         {
-            _logger.LogWarning("Attempted to mark unknown server {ServerId} as ready", serverId);
+            logger.LogWarning("Attempted to mark unknown server {ServerId} as ready", serverId);
         }
     }
 
@@ -92,12 +86,13 @@ public class ClusterMapService
     {
         using var _ = _lock.EnterScope();
 
-        var regions = _clusterMap.GetServerRegions(serverId).ToList();
-        _clusterMap.UnassignServer(serverId);
-        _serverMap.UnregisterServer(serverId);
+        if (_clusterMap.GetServerRegion(serverId, out var region))
+        {
+            _clusterMap.UnassignServer(serverId);
+            _serverMap.UnregisterServer(serverId);
 
-        _logger.LogWarning("Unregistered server {ServerId}, freed {Count} regions",
-            serverId, regions.Count);
+            logger.LogWarning("Unregistered server {ServerId}, freed {Region}", serverId, region);
+        }
 
         // TODO: Implement region reassignment to other servers
     }
@@ -115,7 +110,7 @@ public class ClusterMapService
         );
     }
 
-    /// <summary>
+    /*/// <summary>
     /// Find neighboring servers for a given server (based on region borders)
     /// Uses the optimized ClusterMap method that works on region boundaries
     /// </summary>
@@ -134,7 +129,7 @@ public class ClusterMapService
         }
 
         return neighbors;
-    }
+    }*/
 
     /// <summary>
     /// Allocate regions in quadrants for world partitioning

@@ -20,7 +20,7 @@ public partial class ClusterServer(
     private readonly QServer _managementServer = factory.CreateServer(configuration.ManagementPort);
     private Thread _serverThread = null!;
     private readonly CancellationTokenSource _cts = new();
-    private SpacialGridInfo _spacialInfo = new(configuration.GridSize);
+    private readonly SpacialGridInfo _spacialInfo = new(configuration.GridSize);
     private ConcurrentDictionary<QConnection, GameServerInfo> GameServers { get; } = [];
     private ConcurrentDictionary<ServerId, QConnection> ServerIdToConnection { get; } = [];
 
