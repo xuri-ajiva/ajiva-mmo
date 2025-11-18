@@ -38,37 +38,7 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
             foreach (var (coord, chunk) in _gameLogic.Grid.Chunks)
             {
                 if (chunk.Entities.Count < 0) continue;
-                using var _ = chunk.UseLock();
-                foreach (var entityId in chunk.Entities)
-                {
-                    if (!ecs.RenderMesh.TryGet(entityId, out var renderMesh)) continue;
-
-                    var key = (coord, renderMesh.MeshId);
-                    seenChunks.Add(key);
-                    if (!_chunkToInstance.ContainsKey(key))
-                    {
-                        if (_freeList.Count > 0)
-                        {
-                            var instanceIndex = _freeList.Dequeue();
-                            _chunkToInstance[key] = instanceIndex;
-                        }
-                        else
-                        {
-                            var instanceIndex = _chunkToInstance.Count;
-                            _chunkToInstance[key] = instanceIndex;
-                        }
-                    }
-
-                    var index = _chunkToInstance[key];
-                    max = Math.Max(max, index);
-                    if (index < target.OpaqueMeshes.Count) continue;
-
-                    var dynamicMesh = new PbrInstancedMeshBuffer(_loader.DefaultPbrCubeMesh,
-                        ModelHelper.PbrMaterialExamples.WornLeather(),
-                        _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
-                            BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"));
-                    target.OpaqueMeshes.Add(dynamicMesh);
-                }
+                max = ChunkLoop(target, chunk, ecs, coord, seenChunks, max);
             }
 
         // Remove old chunks that are no longer seen
@@ -100,6 +70,47 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
             target.OpaqueMeshes.RemoveAt(idx);
             countToRemove--;
         }
+    }
+    
+    internal i32 ChunkLoop(RenderableInstanceCollection target, SpatialChunk chunk, NClientEcsWorld ecs, ChunkCoord coord,
+        List<(ChunkCoord chunk, u32 meshId)> seenChunks, i32 max) => _ChunkLoop(target, chunk, ecs, coord, seenChunks, max);
+    [ExcludeFromInterception]
+    private i32 _ChunkLoop(RenderableInstanceCollection target, SpatialChunk chunk, NClientEcsWorld ecs, ChunkCoord coord,
+        List<(ChunkCoord chunk, u32 meshId)> seenChunks, i32 max)
+    {
+        using var _ = chunk.UseLock();
+        foreach (var entityId in chunk.Entities)
+        {
+            if (!ecs.RenderMesh.TryGet(entityId, out var renderMesh)) continue;
+
+            var key = (coord, renderMesh.MeshId);
+            seenChunks.Add(key);
+            if (!_chunkToInstance.ContainsKey(key))
+            {
+                if (_freeList.Count > 0)
+                {
+                    var instanceIndex = _freeList.Dequeue();
+                    _chunkToInstance[key] = instanceIndex;
+                }
+                else
+                {
+                    var instanceIndex = _chunkToInstance.Count;
+                    _chunkToInstance[key] = instanceIndex;
+                }
+            }
+
+            var index = _chunkToInstance[key];
+            max = Math.Max(max, index);
+            if (index < target.OpaqueMeshes.Count) continue;
+
+            var dynamicMesh = new PbrInstancedMeshBuffer(_loader.DefaultPbrCubeMesh,
+                ModelHelper.PbrMaterialExamples.WornLeather(),
+                _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
+                    BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"));
+            target.OpaqueMeshes.Add(dynamicMesh);
+        }
+
+        return max;
     }
 
     public void UpdateDrawEntities(UpdateInfo info, RenderableInstanceCollection target)
@@ -146,8 +157,6 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
                 instances.RemoveRange(entitiesCount, instances.Count - entitiesCount);
                 nonSlide = true;
             }
-
-            nonSlide = true;
 
             CoreLoop(tmpEntities, meshBuffer, ecs, nonSlide, sFrame, chunkColor);
         }

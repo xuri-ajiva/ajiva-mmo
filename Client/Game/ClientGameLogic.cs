@@ -60,14 +60,14 @@ public partial class ClientGameLogic : IDisposable
 
     public NClientEcsWorld World { get; }
 
-    public SpatialGrid? Grid { get; private set; }
+    public SpacialGrid? Grid { get; private set; }
 
     public i32 EntityCount => _networkToEcs.Count;
     private u64 _lastTick;
 
     private void IncrementRenderVersion([CallerMemberName] string caller = "")
     {
-        _logger.LogDebug("Incrementing RenderEntityVersion due to {Caller}", caller);
+        // _logger.LogDebug("Incrementing RenderEntityVersion due to {Caller}", caller);
         RenderEntityVersion++;
     }
 
@@ -251,7 +251,7 @@ public partial class ClientGameLogic : IDisposable
     {
         if (Grid?.GridInfo == gridInfo) return;
         ClearWorld();
-        Grid = new SpatialGrid(gridInfo);
+        Grid = new SpacialGrid(gridInfo);
     }
 
     public void Dispose()
