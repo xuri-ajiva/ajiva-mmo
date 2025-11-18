@@ -1,9 +1,11 @@
 ﻿using System.Collections;
+using System.Runtime.CompilerServices;
 
 namespace Common.Ecs;
 
 public interface IEcsStore<T>
 {
+    const i32 InitialSize = 1024;
     i32 MaxStored { get; }
     Span<T> Data { get; }
     void Resize(i32 newSize);
@@ -42,23 +44,23 @@ public struct FreeList
     }
 }
 
-public readonly ref struct PairKv<K, V>(K key, ref readonly V value)
+public readonly ref struct PairKv<K, V>(K key, ref V value)
 {
     public readonly K Key = key;
-    public readonly ref readonly V Value = ref value;
+    public readonly ref V Value = ref value;
 
-    public void Deconstruct(out K k,  out V v)
+    public void Deconstruct(out K k, out V v)
     {
         k = Key;
         v = Value;
     }
 }
 
-public class DenseStore<T>(i32 initialSize = 1024) : IEcsStore<T>
+public class DenseStore<T> : IEcsStore<T>
 {
-    private T[] _data = new T[initialSize];
-    private i32 _maxStored = 0;
-    private readonly BitArray _used = new BitArray(initialSize);
+    private T[] _data = new T[IEcsStore<T>.InitialSize];
+    private i32 _maxStored;
+    private readonly BitArray _used = new(IEcsStore<T>.InitialSize);
 
     public i32 MaxStored => _maxStored;
     public Span<T> Data => _data.AsSpan(0, _maxStored);
@@ -132,6 +134,7 @@ public class DenseStore<T>(i32 initialSize = 1024) : IEcsStore<T>
     {
         public PairKv<EntityId, T> Current { get; set; }
         private i32 _index = -1;
+
         public bool MoveNext()
         {
             while (true)
@@ -153,9 +156,9 @@ public class DenseStore<T>(i32 initialSize = 1024) : IEcsStore<T>
     }
 }
 
-public class SparseStore<T>(i32 initialSize = 1024) : IEcsStore<T>
+public class SparseStore<T> : IEcsStore<T>
 {
-    private readonly DenseStore<T> _denseStore = new(initialSize);
+    private readonly DenseStore<T> _denseStore = new();
     private readonly Dictionary<EntityId, i32> _sparseToDense = new();
     private FreeList _freeList = new();
 
@@ -244,10 +247,10 @@ public class SparseStore<T>(i32 initialSize = 1024) : IEcsStore<T>
     }
 }
 
-public class DirtyTrackedStore<T, U>(U underlying) : IEcsStore<T> where U : IEcsStore<T>
+public class DirtyTrackedStore<T, U>(U underlying) : IEcsStore<T> where U : IEcsStore<T>, new()
 {
     private U Underlying { get; } = underlying;
-    private readonly BitArray _dirtyFlags = new(underlying.MaxStored);
+    private readonly BitArray _dirtyFlags = new(IEcsStore<T>.InitialSize);
 
     public i32 MaxStored => Underlying.MaxStored;
     public Span<T> Data => Underlying.Data;
@@ -260,12 +263,18 @@ public class DirtyTrackedStore<T, U>(U underlying) : IEcsStore<T> where U : IEcs
 
     public void Add(EntityId id, T item)
     {
+        if (id.Value >= _dirtyFlags.Length)
+        {
+            Resize(id.Value * 2);
+        }
+
         Underlying.Add(id, item);
         _dirtyFlags.Set(id.Value, true);
     }
 
     public void Remove(EntityId id)
     {
+        if (id.Value >= _dirtyFlags.Length) return;
         Underlying.Remove(id);
         _dirtyFlags.Set(id.Value, false);
     }
