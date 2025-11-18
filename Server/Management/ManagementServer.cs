@@ -1,26 +1,26 @@
 ﻿using System.Collections.Concurrent;
 using System.Net;
+using Amazon.Runtime.Internal.Util;
 using Common;
-using Common.Ecs;
+using Common.Helpers;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
 using Common.SpacialPartitioning;
-using MemoryPack;
 using NetworkPackets;
+using Server.Core;
 
-namespace Server;
+namespace Server.Management;
 
 /// <summary>
 /// Manages server-to-server connections for proxy entity synchronization
 /// </summary>
 public class ManagementServer(
     ILogger<ManagementServer> logger,
-    IServiceProvider services,
+    IServiceProvider provider,
     Instrumentation instrumentation,
     QFactory factory) : IHostedService, IManagementPacketHandler<ServerContext>, QServerEventListener
 {
     public QServer Server { get; } = factory.CreateServer(0);
-    private readonly ServerContext _localContext = new(null!);
 
     private readonly ConcurrentDictionary<ServerId, QConnection> _serverConnections = new();
     private readonly ConcurrentDictionary<QConnection, ServerContext> _connectionContexts = new();
@@ -32,24 +32,42 @@ public class ManagementServer(
     public IPEndPoint? LocalEndPoint => Server.LocalEndPoint;
     public ManagementClient Client { get; set; } = null!;
 
-    private ServerGameNetHandler? _worker;
+    private GameServerInstance? _worker;
+    private AsyncServiceScope _workerScope;
 
-    private bool _hasServerMap = false;
-    private bool _hasClusterMap = false;
+    private bool _hasServerMap;
+    private bool _hasClusterMap;
 
     public void InitServer(ManagementPackets.InitServer init)
     {
         AssignedRegion = init.Assignment;
         LocalServerId = init.ServerId;
-        _localContext.ServerId = init.ServerId;
-        
-        Task.Run(async () =>
+
+        AsyncHelper.Run(async () =>
         {
             if (_worker is not null)
+            {
                 await _worker.DisposeAsync();
-            _worker = ActivatorUtilities.CreateInstance<ServerGameNetHandler>(services);
-            Client.ReadyServer(LocalServerId, await _worker.InitAsync(LocalServerId, this, AssignedRegion, init.GridInfo));
-        });
+                await _workerScope.DisposeAsync();
+            }
+
+            _workerScope = provider.CreateAsyncScope();
+            var services = _workerScope.ServiceProvider;
+
+            var config = services.GetRequiredService<GameServerInstanceConfig>();
+
+            config.GridInfo = init.GridInfo;
+            config.Id = LocalServerId;
+            config.TickInterval = init.TickInterval;
+            config.InitialRegion = AssignedRegion;
+            config.ManagementServer = this;
+
+            _worker = services.GetRequiredService<GameServerInstance>();
+
+            await _worker.InitializeAsync();
+            await _worker.StartAsync();
+            Client.ReadyServer(LocalServerId, _worker.ClientEndPoint!);
+        }, logger);
     }
 
     public void OnClusterMapUpdated(RegionAssignment[] assignments)
@@ -60,7 +78,7 @@ public class ManagementServer(
         }
 
         logger.LogInformation("Cluster map updated with {Count} assignments", assignments.Length);
-        
+
         _hasClusterMap = true;
         TryConnectToNeighbors();
     }
@@ -141,30 +159,7 @@ public class ManagementServer(
             return new HashSet<ServerId>();
         return ClusterMap.GetNeighboringServersByRegion(AssignedRegion);
     }
-
-    public bool IsChunkOwned(ChunkCoord chunk)
-    {
-        if (LocalServerId == ServerId.Invalid)
-            return false;
-
-        return ClusterMap.TryGetChunkOwner(chunk, out var owner) && owner.Value == LocalServerId.Value;
-    }
-
-    public void BroadcastProxyUpdate(ManagementPackets.ProxyEntityUpdate update)
-    {
-        foreach (var connection in _serverConnections.Values)
-        {
-            update.Send(connection);
-        }
-    }
-
-    public void SendProxyUpdateToServer(ServerId serverId, ManagementPackets.ProxyEntityUpdate update)
-    {
-        if (_serverConnections.TryGetValue(serverId, out var connection))
-        {
-            update.Send(connection);
-        }
-    }
+    
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -200,7 +195,7 @@ public class ManagementServer(
         }
     }
 
-    public void OnConnectionFailed(System.Net.Quic.QuicListener server, System.Net.IPEndPoint? connection,
+    public void OnConnectionFailed(System.Net.Quic.QuicListener server, IPEndPoint? connection,
         Exception exception)
     {
         logger.LogWarning(exception, "Server connection failed: {RemoteEndPoint}", connection);

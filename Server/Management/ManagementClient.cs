@@ -5,11 +5,10 @@ using Common.Config;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
 using Common.SpacialPartitioning;
-using Polly;
 using NetworkPackets;
-using MemoryPack;
+using Polly;
 
-namespace Server;
+namespace Server.Management;
 
 public partial class ManagementClient(
     ILogger<ManagementClient> logger,
