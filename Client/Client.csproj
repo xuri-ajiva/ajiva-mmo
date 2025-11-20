@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
     <PropertyGroup>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <InvariantGlobalization>true</InvariantGlobalization>
@@ -18,22 +18,22 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <InternalsVisibleTo Include="Composer"/>
+        <InternalsVisibleTo Include="Composer" />
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="GlmSharp-netstandard" Version="0.9.8.1" />
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" />
-        <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.3" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0-2.final" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
 
-        <PackageReference Include="Silk.NET.Maths" Version="2.22.0"/>
-        <PackageReference Include="Silk.NET.WebGPU" Version="2.22.0"/>
-        <PackageReference Include="Silk.NET.WebGPU.Native.WGPU" Version="2.22.0"/>
-        <PackageReference Include="Silk.NET.WebGPU.Extensions.Disposal" Version="2.22.0"/>
-        <PackageReference Include="NativeFileDialogExtendedSharp" Version="0.1.0"/>
+        <PackageReference Include="Silk.NET.Maths" Version="2.22.0" />
+        <PackageReference Include="Silk.NET.WebGPU" Version="2.22.0" />
+        <PackageReference Include="Silk.NET.WebGPU.Native.WGPU" Version="2.22.0" />
+        <PackageReference Include="Silk.NET.WebGPU.Extensions.Disposal" Version="2.22.0" />
+        <PackageReference Include="NativeFileDialogExtendedSharp" Version="0.1.0" />
 
-        <PackageReference Include="Silk.NET.Assimp" Version="2.22.0"/>
-        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+        <PackageReference Include="Silk.NET.Assimp" Version="2.22.0" />
+        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     </ItemGroup>
 
     <ItemGroup>
@@ -52,9 +52,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
-        <ProjectReference Include="..\Generators\WgslGenerator\WgslGenerator.csproj" OutputItemType="Analyzer"/>
-        <ProjectReference Include="..\Common\Common.csproj"/>
-        <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Extensions.ImGui\Silk.NET.WebGPU.Extensions.ImGui.csproj"/>
+        <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer" />
+        <ProjectReference Include="..\Generators\WgslGenerator\WgslGenerator.csproj" OutputItemType="Analyzer" />
+        <ProjectReference Include="..\Common\Common.csproj" />
+        <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Extensions.ImGui\Silk.NET.WebGPU.Extensions.ImGui.csproj" />
     </ItemGroup>
 </Project>

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
 
         <IsPackable>false</IsPackable>
@@ -10,19 +10,19 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
         <PackageReference Include="xunit" Version="2.9.3" />
-        <PackageReference Include="xunit.runner.visualstudio" Version="3.1.3">
+        <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
-        <PackageReference Include="GlmSharp-netstandard" Version="0.9.8.1"/>
+        <PackageReference Include="GlmSharp-netstandard" Version="0.9.8.1" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Safe\Silk.NET.WebGPU.Safe.csproj"/>
+        <ProjectReference Include="..\..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Safe\Silk.NET.WebGPU.Safe.csproj" />
         <ProjectReference Include="..\AjivaGenerator\AjivaGenerator.csproj" />
-        <ProjectReference Include="..\WgslGenerator\WgslGenerator.csproj"/>
+        <ProjectReference Include="..\WgslGenerator\WgslGenerator.csproj" />
     </ItemGroup>
 
 </Project>

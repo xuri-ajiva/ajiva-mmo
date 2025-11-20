@@ -370,8 +370,9 @@ public class Instanced3dDeferredRenderer(
         {
             ImGui.DragInt("##EntityId", ref Unsafe.As<EntityId, i32>(ref _selectedEntityId));
             if (_selectedEntityId != EntityId.Invalid &&
-                _gameLogic.World.Transform.TryGet(_selectedEntityId, out var transform))
+                _gameLogic.World.Transform.Has(_selectedEntityId))
             {
+                ref var transform = ref _gameLogic.World.Transform.Update(_selectedEntityId);
                 ImGui.DragFloat3("##EntityPosition", ref transform.Position);
 
                 ImGui.DragFloat4("##EntityRotation", ref Unsafe.As<Quaternion, Vector4>(ref transform.Rotation));
