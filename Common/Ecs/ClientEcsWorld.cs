@@ -11,7 +11,7 @@ public class NClientEcsWorld
     public DenseStore<Scale> Scale;
     public DenseStore<Transform> Transform;
     public DenseStore<Velocity> Velocity;
-    public SparseStore<EntityType> EntityType;
+    public SparseSetStore<EntityType> EntityType;
     public DenseStore<RenderAsset> RenderAsset;
     public DenseStore<RenderMesh> RenderMesh;
 

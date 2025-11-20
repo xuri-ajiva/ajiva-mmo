@@ -10,11 +10,11 @@ public class NServerEcs
 {
     public DenseStore<NetState> NetState;
     public DenseStore<Position> Position;
-    public DirtyTrackedStore<Rotation, DenseStore<Rotation>> Rotation;
-    public DirtyTrackedStore<Scale, DenseStore<Scale>> Scale;
+    public DirtyTrackedStore<Rotation, DenseStore<Rotation>, DenseStore<Rotation>.Iterator> Rotation;
+    public DirtyTrackedStore<Scale, DenseStore<Scale>, DenseStore<Scale>.Iterator> Scale;
     public DenseStore<Velocity> Velocity;
     public DenseStore<SpacialData> Spacial;
-    public SparseStore<EntityType> EntityType;
+    public SparseSetStore<EntityType> EntityType;
     public DenseStore<EntityOwnership> EntityOwnership;
     public SpacialGrid Grid = null!;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
