@@ -29,6 +29,7 @@ public class ServerRunner
         services.AddScoped<ChunkSystem>();
         services.AddScoped<GameLogicSystem>();
         services.AddScoped<SimplePhysicsSystem>();
+        services.AddScoped<TransactionSystem>();
 
         // System manager
         services.AddScoped<ISystemManager, ServerSystemManager>();

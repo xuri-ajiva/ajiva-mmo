@@ -41,6 +41,7 @@ public class GameServerInstance(
 {
     // Systems
     private NetworkSystem _networkSystem = null!;
+    internal TransactionSystem TransactionSystem = null!;
 
     private bool _isInitialized;
     private bool _isRunning;
@@ -70,6 +71,7 @@ public class GameServerInstance(
         systemManager.RegisterSystem(serviceProvider.GetRequiredService<ChunkSystem>());
         systemManager.RegisterSystem(serviceProvider.GetRequiredService<GameLogicSystem>());
         systemManager.RegisterSystem(serviceProvider.GetRequiredService<SimplePhysicsSystem>());
+        systemManager.RegisterSystem(TransactionSystem = serviceProvider.GetRequiredService<TransactionSystem>());
 
         await systemManager.InitializeAsync();
         _highResolutionTicker.OnTick = RunTick;
