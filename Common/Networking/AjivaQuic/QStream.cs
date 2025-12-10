@@ -10,8 +10,7 @@ using Serilog;
 namespace Common.Networking.AjivaQuic;
 
 public delegate void PacketHandleDelegate<in TUserData>(PacketType packetType,
-    scoped ref global::MemoryPack.MemoryPackReader reader,
-    TUserData userData);
+    scoped ref MemoryPack.MemoryPackReader reader, TUserData userData);
 
 public class QStream(
     QuicStream stream,
@@ -32,8 +31,9 @@ public class QStream(
 
     internal record struct RentedPartialBuffer(u8[] Buffer, i32 Length);
 
-    private readonly Channel<RentedPartialBuffer> _channel = Channel.CreateBounded<RentedPartialBuffer>(new BoundedChannelOptions(20)
-        { FullMode = BoundedChannelFullMode.Wait, SingleWriter = true });
+    private readonly Channel<RentedPartialBuffer> _channel = Channel.CreateBounded<RentedPartialBuffer>(
+        new BoundedChannelOptions(20)
+            { FullMode = BoundedChannelFullMode.Wait, SingleWriter = true });
 
     [ExcludeFromInterception]
     public async ValueTask ReadMessages(CancellationToken token = default)
