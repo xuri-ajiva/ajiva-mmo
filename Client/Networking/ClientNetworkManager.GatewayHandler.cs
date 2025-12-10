@@ -31,6 +31,8 @@ public partial class ClientNetworkManager
                 .WaitAndRetryAsync(10, _ => TimeSpan.FromSeconds(5))
                 .ExecuteAsync(async ct => await Client.ConnectAsync(instrumentation, address, ct),
                     CancellationToken.None);
+
+            new GatewayPackets.ConnectPacket(handler.ClientId).Send(Client.Connection!);
         }
 
         public async Task DisconnectGateway()

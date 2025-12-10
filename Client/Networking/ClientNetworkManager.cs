@@ -39,8 +39,8 @@ public partial class ClientNetworkManager(
     : IHostedLifecycleService, IClientPacketHandler<ClientConnectionContext>
 {
     public GatewayHandler Gateway { get; private set; } = null!;
+    public Guid ClientId { get; } = Guid.NewGuid();
 
-    //public QClient Client { get; } = factory.CreateClient();
     private ClientConnectionContext _primaryContext = new(Packets.ServerType.GameServer);
     private readonly ClientConnectionContext _gatewayContext = new(Packets.ServerType.EntryPoint);
     private readonly ConcurrentBag<ClientConnectionContext> _clients = [];

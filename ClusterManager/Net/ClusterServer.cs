@@ -15,7 +15,7 @@ public partial class ClusterServer(
     ClusterConfiguration configuration,
     Instrumentation instrumentation,
     GatewayServer gatewayServer,
-    ClusterMapService clusterMapService) : IHostedService, IManagementPacketHandler<GameServerInfo>, QServerEventListener
+    ClusterMapService clusterMapService) : IHostedService, IClusterGatewayPacketHandler<GameServerInfo>, QServerEventListener
 {
     private readonly QServer _managementServer = factory.CreateServer(configuration.ManagementPort);
     private Thread _serverThread = null!;
