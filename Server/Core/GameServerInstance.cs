@@ -15,7 +15,7 @@ public class GameServerInstanceConfig
     public ServerId Id { get; set; } = ServerId.Invalid;
     public SpacialGridInfo GridInfo { get; set; } = new();
     public RegionAssignment InitialRegion { get; set; } = new();
-    public ManagementServer? ManagementServer { get; set; }
+    public WorkerManagementServer? ManagementServer { get; set; }
     public TimeSpan TickInterval { get; set; } = TimeSpan.FromMilliseconds(50);
 
     public void Validate()

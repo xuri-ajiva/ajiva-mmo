@@ -15,8 +15,10 @@ public class ServerRunner
         services.AddSingleton(config);
 
         // Core services
-        services.AddService<ManagementServer>();
-        services.AddService<ManagementClient>();
+        services.AddService<WorkerManagementServer>();
+        services.AddService<ClusterManagerClient>();
+        
+        services.AddSingleton<ClusterStateCache>();
         services.AddSingleton<NServerEcs>();
 
         services.AddScoped<GameServerInstanceConfig>();

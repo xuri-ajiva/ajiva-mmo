@@ -253,7 +253,6 @@ public class ChunkSystem(
         world.DeleteEntity(playerEntity);
     }
 
-
     private void SendToPlayersInRange(Vector3 position, i32 level, SerializedMessage packet)
     {
         // Calculate which chunk this position is in
