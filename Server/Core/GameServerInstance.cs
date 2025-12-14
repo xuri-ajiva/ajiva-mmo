@@ -1,7 +1,9 @@
 ﻿using System.Net;
 using Client.LayerSystem;
 using Common;
+using Common.Networking;
 using Common.SpacialPartitioning;
+using Common.Systems;
 using Server.Management;
 using Server.Systems;
 
@@ -16,7 +18,7 @@ public class GameServerInstanceConfig
     public SpacialGridInfo GridInfo { get; set; } = new();
     public RegionAssignment InitialRegion { get; set; } = new();
     public WorkerManagementServer? ManagementServer { get; set; }
-    public TimeSpan TickInterval { get; set; } = TimeSpan.FromMilliseconds(50);
+    public GlobalTickInfo TickInfo { get; set; } = new(TimeSpan.FromMilliseconds(50), 0, 0, 0);
 
     public void Validate()
     {
@@ -47,7 +49,8 @@ public class GameServerInstance(
     private bool _isRunning;
 
     private readonly HighResolutionTicker _highResolutionTicker =
-        new(config.TickInterval, instrumentation: instrumentation);
+        new(config.TickInfo.TickInterval, config.TickInfo.TickServer, config.TickInfo.TimestampServer,
+            instrumentation: instrumentation);
 
     public RegionAssignment AssignedRegion => config.InitialRegion;
     public IPEndPoint? ClientEndPoint => _networkSystem?.LocalEndPoint;

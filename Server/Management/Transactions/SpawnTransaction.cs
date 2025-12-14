@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
 using Common.Assets;
+using Common.Ecs;
 using Common.Networking;
 
 namespace Server.Management.Transactions;
@@ -23,7 +24,10 @@ public class SpawnTransaction(ILogger<SpawnTransaction> logger, NServerEcs ecs) 
 
         var worldWrapper = new GameWorldWrapper(ecs);
 
+        logger.LogInformation("Spawn transaction {TransactionId}", Id);
+
         // TODO use a proper generator system
+        var count = 0;
         ecs.DoLocked(() =>
         {
             // Simple grid spawn logic
@@ -40,13 +44,17 @@ public class SpawnTransaction(ILogger<SpawnTransaction> logger, NServerEcs ecs) 
                         var entity = prefab.Generator(worldWrapper, pos, Quaternion.Identity);
                         var chunkCoord = ecs.Grid.GetChunkCoord(pos, 0);
                         var spatialChunk = ecs.Grid.GetChunkData(chunkCoord);
+                        ecs.Spacial.Add(entity,
+                            new SpacialData { CurrentChunk = chunkCoord, PreviousChunk = chunkCoord });
                         spatialChunk.Add(entity);
                         spatialChunk.MarkDirty();
+                        count++;
                     }
                 }
             }
         });
 
+        logger.LogInformation("Spawned {EntityCount} instances of prefab {PrefabId}", count, Prefab);
         logger.LogInformation("Executed spawn transaction {TransactionId} at tick {Tick}", Id, currentTick);
     }
 
@@ -54,7 +62,7 @@ public class SpawnTransaction(ILogger<SpawnTransaction> logger, NServerEcs ecs) 
     {
         // TODO Load asset to ensure it's available
         // assetSystem.LoadPrefabsRecursively(root: prefabId);
-        await Task.Delay(1000);
+        await Task.Delay(Random.Shared.Next(200, 1000)); // Simulate some loading time
         logger.LogInformation("Prepared spawn transaction {TransactionId} for prefab {PrefabId}", Id, Prefab);
         ReadyTick = tickAccessor() + 10;
     }

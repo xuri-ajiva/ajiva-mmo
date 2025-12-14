@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Diagnostics;
+using System.Net;
 using System.Net.Quic;
 using Common;
 using Common.Config;
@@ -49,7 +50,7 @@ public partial class ClusterManagerClient(
         logger.LogInformation("Registering server with ClusterManager");
         new ClusterManagementPackets.RegisterServer(
             Guid.NewGuid().ToString("D"),
-            mmServer.LocalEndPoint!.Port
+            mmServer.LocalEndPoint!.Port, Stopwatch.GetTimestamp()
         ).Send(_client.Connection!);
 
         // Start handling management packets

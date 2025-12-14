@@ -14,7 +14,7 @@ public class SimplePhysicsSystem(NServerEcs world) : IServerSystem
 
     private void UpdateVelocity(f32 deltaTime)
     {
-        using var act = Instrumentation.NamedTrace("Bouncing");
+        using var act = Instrumentation.NamedTrace("PhysicsSystem.UpdateVelocity");
         foreach (var kv in world.Velocity)
         {
             var entityId = kv.Key;

@@ -11,19 +11,19 @@ using Server.Management.Transactions;
 
 namespace Server.Systems;
 
-public class TransactionSystem(NServerEcs world, IServiceProvider provider) : IServerSystem
+public class TransactionSystem(NServerEcs world, ILogger<TransactionSystem> logger, IServiceProvider provider)
+    : IServerSystem
 {
     private u64 _currentTick;
     private readonly Dictionary<TransactionId, IServerTransaction> _pendingTransactions = new();
-
 
     private void ProcessPendingSpawns(u64 currentTick)
     {
         List<TransactionId> toRemove = [];
         foreach (var kvp in _pendingTransactions)
         {
-            if (kvp.Value.ExecuteTick > currentTick || kvp.Value.ReadyTick < currentTick) continue;
-            
+            if (currentTick >= kvp.Value.ExecuteTick && kvp.Value.ReadyTick <= currentTick) continue;
+
             kvp.Value.Execute(currentTick);
             toRemove.Add(kvp.Key);
         }
@@ -33,7 +33,6 @@ public class TransactionSystem(NServerEcs world, IServiceProvider provider) : IS
             _pendingTransactions.Remove(id);
         }
     }
-
 
     public void PrepareSpawn(TransactionId tid, PrefabId prefabId, Vector3 min, Vector3 max, float spacing,
         Action<u64> onReady)
@@ -59,6 +58,10 @@ public class TransactionSystem(NServerEcs world, IServiceProvider provider) : IS
         if (_pendingTransactions.TryGetValue(tid, out var transaction))
         {
             transaction.ExecuteTick = tick;
+        }
+        else
+        {
+            logger.LogWarning("Attempted to set execution tick for unknown transaction {TransactionId}", tid);
         }
     }
 

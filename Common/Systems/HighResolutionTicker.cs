@@ -1,10 +1,9 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Client.LayerSystem;
-using Common;
 using Interception;
 
-namespace Server;
+namespace Common.Systems;
 
 /// <summary>
 /// Produces periodic, high-resolution ticks with minimal drift.
@@ -46,8 +45,9 @@ public sealed class HighResolutionTicker : IDisposable
     /// <param name="initialTick">The starting tick count.</param>
     /// <param name="baseTimestamp">The reference Stopwatch timestamp for tick 0. If null, uses the current time.</param>
     /// <param name="instrumentation">Optional instrumentation for tracing.</param>
+    /// <param name="start">If true, starts the ticker immediately upon creation.</param>
     public HighResolutionTicker(TimeSpan tickInterval, u64 initialTick = 0, i64? baseTimestamp = null,
-        Instrumentation? instrumentation = null)
+        Instrumentation? instrumentation = null, bool start = false)
     {
         _tickIntervalStopwatchTicks = (i64)(tickInterval.TotalSeconds * StopwatchFrequency);
         _currentTick = initialTick;
@@ -60,6 +60,10 @@ public sealed class HighResolutionTicker : IDisposable
             "Delta time of each tick");
         _meterTickDuration = instrumentation?.Meter?.CreateHistogram<f32>("HighResolutionTicker.OnTick.Duration",
             "ms", "Duration of OnTick handler");
+        if (start)
+        {
+            Start();
+        }
     }
 
     /// <summary>
@@ -123,6 +127,13 @@ public sealed class HighResolutionTicker : IDisposable
         return _baseTimestamp + (i64)(tick * (f64)_tickIntervalStopwatchTicks);
     }
 
+    public (u64 NextTick, i64 NextTickTimestamp) GetNextTickInfo()
+    {
+        var nextTick = _currentTick + 1;
+        var nextTickTimestamp = CalculateNextTickTimestamp();
+        return (nextTick, nextTickTimestamp);
+    }
+    
     private void TickLoop()
     {
         while (_isRunning)

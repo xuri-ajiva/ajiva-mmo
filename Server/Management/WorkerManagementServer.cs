@@ -59,7 +59,7 @@ public partial class WorkerManagementServer(
 
             config.GridInfo = init.GridInfo;
             config.Id = LocalServerId;
-            config.TickInterval = init.TickInterval;
+            config.TickInfo = init.TickInfo;
             config.InitialRegion = AssignedRegion;
             config.ManagementServer = this;
 
