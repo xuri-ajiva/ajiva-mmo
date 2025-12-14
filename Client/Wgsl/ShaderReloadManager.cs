@@ -31,6 +31,7 @@ public class ShaderReloadManager : IHostedService, IShaderManager
     private List<SyntaxTree> _syntaxTrees = [];
     private List<PortableExecutableReference> _references = [];
     private u32 _counter = 0;
+    private readonly string _watcherPath;
 
     public T GetCurrentShader<T>() where T : IWgslShader
     {
@@ -69,7 +70,8 @@ public class ShaderReloadManager : IHostedService, IShaderManager
     {
         _config = config.GetSection(nameof(ShaderReloadManager));
         _logger = logger;
-        _watcher = new FileSystemWatcher(Path.Combine(environment.ContentRootPath, _config["Path"] ?? "Shaders"))
+        _watcherPath = Path.Combine(environment.ContentRootPath, _config["Path"] ?? "Shaders");
+        _watcher = new FileSystemWatcher(_watcherPath)
         {
             NotifyFilter = NotifyFilters.LastWrite,
             Filter = "*.wgsl.cs",
@@ -100,6 +102,7 @@ public class ShaderReloadManager : IHostedService, IShaderManager
         _watcher.Changed += OnFileChanged;
         _watcher.Error += OnError;
         _watcher.EnableRaisingEvents = true;
+        _logger.LogInformation("Watching Path {Path}", _watcherPath);
         _shaderTask = ShaderThread();
 
         var configurationSection = _config.GetRequiredSection("RequiredFiles");
