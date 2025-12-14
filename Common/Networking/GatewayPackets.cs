@@ -34,6 +34,10 @@ public partial class ClusterManagementPackets
     [NetworkPacket(101)]
     [MemoryPackable]
     public partial record struct ServerReady(ServerId ServerId, i32 GamePort);
+    
+    [NetworkPacket(200)]
+    [MemoryPackable]
+    public partial record struct RegisterObserver();
 }
 
 [NetworkPacketGroup("ClusterWorker")]

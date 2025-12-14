@@ -15,18 +15,18 @@ public partial class ClusterServer(
     ClusterConfiguration configuration,
     Instrumentation instrumentation,
     GatewayServer gatewayServer,
-    ClusterMapService clusterMapService) : IHostedService, IClusterGatewayPacketHandler<GameServerInfo>, QServerEventListener
+    ClusterMapService clusterMapService) : IHostedService, IClusterGatewayPacketHandler<ManagementConnectionContext>, QServerEventListener
 {
     private readonly QServer _managementServer = factory.CreateServer(configuration.ManagementPort);
     private Thread _serverThread = null!;
     private readonly CancellationTokenSource _cts = new();
     private readonly SpacialGridInfo _spacialInfo = new(configuration.GridSize);
-    private ConcurrentDictionary<QConnection, GameServerInfo> GameServers { get; } = [];
+    private ConcurrentDictionary<QConnection, ManagementConnectionContext> Connections { get; } = [];
     private ConcurrentDictionary<ServerId, QConnection> ServerIdToConnection { get; } = [];
 
     public string[] FindServersForConnection(QConnection connection)
     {
-        return GameServers.Values
+        return Connections.Values
             .Where(x => x.IsReady)
             .Select(gs => new IPEndPoint(gs.Connection.RemoteEndPoint.Address, gs.GamePort).ToString())
             .ToArray();
@@ -46,7 +46,6 @@ public partial class ClusterServer(
         _serverThread.Join();
         return Task.CompletedTask;
     }
-
 
     private void RunServers()
     {

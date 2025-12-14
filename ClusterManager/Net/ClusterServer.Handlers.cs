@@ -16,8 +16,8 @@ public partial class ClusterServer
     {
         try
         {
-            if (!GameServers.TryGetValue(userData, out var context)) return;
-            ((IClusterGatewayPacketHandler<GameServerInfo>)this).AutoHandle(packetType, ref reader, context);
+            if (!Connections.TryGetValue(userData, out var context)) return;
+            ((IClusterGatewayPacketHandler<ManagementConnectionContext>)this).AutoHandle(packetType, ref reader, context);
         }
         catch (Exception e)
         {
@@ -25,7 +25,16 @@ public partial class ClusterServer
         }
     }
 
-    public void Handle(ClusterManagementPackets.RegisterServer message, GameServerInfo userData)
+    public void Handle(ClusterManagementPackets.RegisterObserver message, ManagementConnectionContext userData)
+    {
+        userData.IsObserver = true;
+        logger.LogInformation("Registering observer server at {RemoteEndPoint}", userData.Connection.RemoteEndPoint);
+        var (assignments, servers) = clusterMapService.GetClusterState();
+        new ClusterManagementPackets.ServerMapUpdate(servers).Send(userData.Connection);
+        new ClusterManagementPackets.ClusterMapUpdate(assignments).Send(userData.Connection);
+    }
+
+    public void Handle(ClusterManagementPackets.RegisterServer message, ManagementConnectionContext userData)
     {
         logger.LogInformation("Registering game server {ServerName} at {RemoteEndPoint}", message.Name,
             userData.Connection.RemoteEndPoint);
@@ -46,8 +55,8 @@ public partial class ClusterServer
         ServerIdToConnection[serverId] = userData.Connection;
 
         // Send region assignment to the server
-        new ClusterManagementPackets.InitServer(serverId, _spacialInfo, assignment, configuration.TickInterval).Send(userData.Connection);
-
+        new ClusterManagementPackets.InitServer(serverId, _spacialInfo, assignment, configuration.TickInterval).Send(
+            userData.Connection);
 
         // Broadcast server map update to all other servers
         BroadcastMapUpdates();
@@ -57,7 +66,6 @@ public partial class ClusterServer
         logger.LogInformation("Game server {ServerName} ({ServerId}) registered successfully",
             message.Name, serverId);
     }
-    
 
     private void BroadcastMapUpdates()
     {
@@ -67,14 +75,14 @@ public partial class ClusterServer
         using var pServers = new ClusterManagementPackets.ServerMapUpdate(servers).ToMessage();
         using var pAssignments = new ClusterManagementPackets.ClusterMapUpdate(assignments).ToMessage();
 
-        foreach (var gameServer in GameServers.Values.Where(gs => gs.IsReady))
+        foreach (var gameServer in Connections.Values.Where(gs => gs.IsReady || gs.IsObserver))
         {
             gameServer.Connection.Send(pAssignments);
             gameServer.Connection.Send(pServers);
         }
     }
 
-    public void Handle(ClusterManagementPackets.ServerReady message, GameServerInfo userData)
+    public void Handle(ClusterManagementPackets.ServerReady message, ManagementConnectionContext userData)
     {
         userData.GamePort = message.GamePort;
         userData.IsReady = true;
@@ -89,7 +97,7 @@ public partial class ClusterServer
         BroadcastMapUpdates();
     }
 
-    public void Handle(Packets.Disconnect message, GameServerInfo userData)
+    public void Handle(Packets.Disconnect message, ManagementConnectionContext userData)
     {
         logger.LogInformation("Received disconnect from {RemoteEndPoint}: {Reason}",
             userData.Connection.RemoteEndPoint, message.Reason);
@@ -100,7 +108,7 @@ public partial class ClusterServer
 
     public void OnClientConnected(QuicListener server, QConnection connection)
     {
-        while (!GameServers.TryAdd(connection, new GameServerInfo(connection)))
+        while (!Connections.TryAdd(connection, new ManagementConnectionContext(connection)))
         {
             Thread.Yield();
         }
@@ -111,7 +119,7 @@ public partial class ClusterServer
 
     public void OnClientDisconnected(QConnection connection)
     {
-        if (GameServers.TryRemove(connection, out var gameServer))
+        if (Connections.TryRemove(connection, out var gameServer))
         {
             // Unregister server from cluster map
             if (gameServer.ServerId.HasValue)
@@ -130,8 +138,8 @@ public partial class ClusterServer
         logger.LogWarning(exception, "Connection failed: {RemoteEndPoint}", connection);
     }
 
-    public void Handle(Packets.Ping message, GameServerInfo userData) => Ignore();
-    public void Handle(Packets.Hello message, GameServerInfo userData) => Ignore();
+    public void Handle(Packets.Ping message, ManagementConnectionContext userData) => Ignore();
+    public void Handle(Packets.Hello message, ManagementConnectionContext userData) => Ignore();
 
     private static void Ignore()
     {
