@@ -148,8 +148,8 @@ public partial class ManagementClient(
             {
                 await serverInfoAndRegion.Connect(factory, instrumentation);
                 new WorkerManagement.SpawnPrefabRequest(transactionId, new PrefabId(0),
-                    spawnArea.MinCoord.ToVector4().AsVector3() * size,
-                    spawnArea.MaxCoord.ToVector4().AsVector3() * size, 1).Send(serverInfoAndRegion.Client!.Connection!);
+                    spawnArea.Min.ToVector4().AsVector3() * size,
+                    spawnArea.Max.ToVector4().AsVector3() * size, 1).Send(serverInfoAndRegion.Client!.Connection!);
             });
 
             logger.LogInformation("Sent SpawnPrefabRequest to server {ServerId} for area {Area}",

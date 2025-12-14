@@ -7,129 +7,131 @@ namespace Common.SpacialPartitioning;
 [MemoryPackable]
 public readonly partial record struct HyperAreaCoord(ChunkCoord Pos, ChunkExtent Extent)
 {
+    // --------------------------------------------------------------------------
+    // 1. Helpers to convert to "Long" Min/Max for safe math
+    //    Using inclusive Min, EXCLUSIVE Max (Standard for grids/arrays)
+    // --------------------------------------------------------------------------
+
+    // Min is just Pos
+    private i64 MinX => Pos.X;
+    private i64 MinY => Pos.Y;
+    private i64 MinZ => Pos.Z;
+    private i64 MinL => Pos.Level;
+    public ChunkCoord Min => Pos;
+
+    // Max is Pos + Extent (Exclusive)
+    // Example: Pos 0, Extent 10 -> Max 10. Valid range: [0, 9]
+    private i64 MaxX => Pos.X + Extent.X;
+    private i64 MaxY => Pos.Y + Extent.Y;
+    private i64 MaxZ => Pos.Z + Extent.Z;
+    private i64 MaxL => Pos.Level + Extent.Level;
+    public ChunkCoord Max => new ChunkCoord((i32)MaxX, (i32)MaxY, (i32)MaxZ, (i32)MaxL);
+
+    // A standard "Empty" value to return when math fails
+    public static HyperAreaCoord Empty => new HyperAreaCoord(new ChunkCoord(0, 0, 0, 0), new ChunkExtent(0, 0, 0, 0));
+
+    public bool IsEmpty => Extent.X == 0 || Extent.Y == 0 || Extent.Z == 0 || Extent.Level == 0;
+
+    // --------------------------------------------------------------------------
+    // 2. Geometric Operations
+    // --------------------------------------------------------------------------
+
     public bool Contains(ChunkCoord coord)
     {
-        return (i64)coord.X >= (i64)Pos.X && (i64)coord.X <= ((i64)Pos.X + (i64)Extent.X) &&
-               (i64)coord.Y >= (i64)Pos.Y && (i64)coord.Y <= ((i64)Pos.Y + (i64)Extent.Y) &&
-               (i64)coord.Z >= (i64)Pos.Z && (i64)coord.Z <= ((i64)Pos.Z + (i64)Extent.Z) &&
-               (i64)coord.Level >= (i64)Pos.Level && (i64)coord.Level <= (i64)((i64)Pos.Level + (i64)Extent.Level);
+        return coord.X >= MinX && coord.X < MaxX &&
+               coord.Y >= MinY && coord.Y < MaxY &&
+               coord.Z >= MinZ && coord.Z < MaxZ &&
+               coord.Level >= MinL && coord.Level < MaxL;
     }
 
     public bool Contains(HyperAreaCoord other)
     {
-        return ((i64)other.Pos.X >= (i64)Pos.X) &&
-               ((i64)other.Pos.X + (i64)other.Extent.X <= (i64)Pos.X + (i64)Extent.X) &&
-               ((i64)other.Pos.Y >= (i64)Pos.Y) &&
-               ((i64)other.Pos.Y + (i64)other.Extent.Y <= (i64)Pos.Y + (i64)Extent.Y) &&
-               ((i64)other.Pos.Z >= (i64)Pos.Z) &&
-               ((i64)other.Pos.Z + (i64)other.Extent.Z <= (i64)Pos.Z + (i64)Extent.Z) &&
-               ((i64)other.Pos.Level >= (i64)Pos.Level) && ((i64)other.Pos.Level + (i64)other.Extent.Level <=
-                                                            (i64)Pos.Level + (i64)Extent.Level);
+        return MinX <= other.MinX && MaxX >= other.MaxX &&
+               MinY <= other.MinY && MaxY >= other.MaxY &&
+               MinZ <= other.MinZ && MaxZ >= other.MaxZ &&
+               MinL <= other.MinL && MaxL >= other.MaxL;
     }
 
-    public HyperAreaCoord Min(HyperAreaCoord other)
-    {
-        return new HyperAreaCoord(
-            new ChunkCoord(
-                Math.Min(Pos.X, other.Pos.X),
-                Math.Min(Pos.Y, other.Pos.Y),
-                Math.Min(Pos.Z, other.Pos.Z),
-                Math.Min(Pos.Level, other.Pos.Level)
-            ),
-            new ChunkExtent(
-                Math.Min(Extent.X, other.Extent.X),
-                Math.Min(Extent.Y, other.Extent.Y),
-                Math.Min(Extent.Z, other.Extent.Z),
-                Math.Min(Extent.Level, other.Extent.Level)
-            )
-        );
-    }
-    
+    /// <summary>
+    /// Returns the Bounding Box that covers both areas (Union).
+    /// </summary>
     public HyperAreaCoord Union(HyperAreaCoord other)
     {
-        return new HyperAreaCoord(
-            new ChunkCoord(
-                Math.Min(Pos.X, other.Pos.X),
-                Math.Min(Pos.Y, other.Pos.Y),
-                Math.Min(Pos.Z, other.Pos.Z),
-                Math.Min(Pos.Level, other.Pos.Level)
-            ),
-            new ChunkExtent(
-                (u32)(Math.Max(Pos.X + (i64)Extent.X, other.Pos.X + (i64)other.Extent.X) - Math.Min(Pos.X, other.Pos.X)),
-                (u32)(Math.Max(Pos.Y + (i64)Extent.Y, other.Pos.Y + (i64)other.Extent.Y) - Math.Min(Pos.Y, other.Pos.Y)),
-                (u32)(Math.Max(Pos.Z + (i64)Extent.Z, other.Pos.Z + (i64)other.Extent.Z) - Math.Min(Pos.Z, other.Pos.Z)),
-                (u32)(Math.Max(Pos.Level + (i64)Extent.Level, other.Pos.Level + (i64)other.Extent.Level) - Math.Min(Pos.Level, other.Pos.Level))
-            )
-        );
+        if (IsEmpty) return other;
+        if (other.IsEmpty) return this;
+
+        var unionMinX = Math.Min(MinX, other.MinX);
+        var unionMinY = Math.Min(MinY, other.MinY);
+        var unionMinZ = Math.Min(MinZ, other.MinZ);
+        var unionMinL = Math.Min(MinL, other.MinL);
+
+        var unionMaxX = Math.Max(MaxX, other.MaxX);
+        var unionMaxY = Math.Max(MaxY, other.MaxY);
+        var unionMaxZ = Math.Max(MaxZ, other.MaxZ);
+        var unionMaxL = Math.Max(MaxL, other.MaxL);
+
+        return FromMinMax(unionMinX, unionMinY, unionMinZ, unionMinL,
+            unionMaxX, unionMaxY, unionMaxZ, unionMaxL);
     }
 
+    /// <summary>
+    /// Returns the Area where the two boxes overlap. Returns Empty if none.
+    /// </summary>
     public HyperAreaCoord Intersect(HyperAreaCoord other)
     {
-        var newMinX = Math.Max(Pos.X, other.Pos.X);
-        var newMinY = Math.Max(Pos.Y, other.Pos.Y);
-        var newMinZ = Math.Max(Pos.Z, other.Pos.Z);
-        var newMinLevel = Math.Max(Pos.Level, other.Pos.Level);
+        var intMinX = Math.Max(MinX, other.MinX);
+        var intMinY = Math.Max(MinY, other.MinY);
+        var intMinZ = Math.Max(MinZ, other.MinZ);
+        var intMinL = Math.Max(MinL, other.MinL);
 
-        var newMaxX = Math.Min(Pos.X + (i64)Extent.X, other.Pos.X + (i64)other.Extent.X);
-        var newMaxY = Math.Min(Pos.Y + (i64)Extent.Y, other.Pos.Y + (i64)other.Extent.Y);
-        var newMaxZ = Math.Min(Pos.Z + (i64)Extent.Z, other.Pos.Z + (i64)other.Extent.Z);
-        var newMaxLevel = Math.Min(Pos.Level + (i64)Extent.Level, other.Pos.Level + (i64)other.Extent.Level);
+        var intMaxX = Math.Min(MaxX, other.MaxX);
+        var intMaxY = Math.Min(MaxY, other.MaxY);
+        var intMaxZ = Math.Min(MaxZ, other.MaxZ);
+        var intMaxL = Math.Min(MaxL, other.MaxL);
 
-        if (newMinX >= newMaxX || newMinY >= newMaxY || newMinZ >= newMaxZ || newMinLevel >= newMaxLevel)
+        // If any dimension has a negative or zero size, there is no intersection
+        if (intMinX >= intMaxX || intMinY >= intMaxY || intMinZ >= intMaxZ || intMinL >= intMaxL)
         {
-            // No intersection, return an empty area
-            return new HyperAreaCoord(new ChunkCoord(0, 0, 0, 0), new ChunkExtent(0, 0, 0, 0));
+            return Empty;
         }
 
-        return new HyperAreaCoord(
-            new ChunkCoord(newMinX, newMinY, newMinZ, newMinLevel),
-            new ChunkExtent(
-                (u32)(newMaxX - newMinX),
-                (u32)(newMaxY - newMinY),
-                (u32)(newMaxZ - newMinZ),
-                (u32)(newMaxLevel - newMinLevel)
-            )
-        );
+        return FromMinMax(intMinX, intMinY, intMinZ, intMinL,
+            intMaxX, intMaxY, intMaxZ, intMaxL);
     }
-
 
     public bool IsAdjacentTo(HyperAreaCoord other)
     {
-        var adjacentX = IsAdjacentInDimension(Pos.X, Extent.X, other.Pos.X, other.Extent.X) &&
-                        OverlapsInDimension(Pos.Y, Extent.Y, other.Pos.Y, other.Extent.Y) &&
-                        OverlapsInDimension(Pos.Z, Extent.Z, other.Pos.Z, other.Extent.Z) &&
-                        OverlapsInDimension(Pos.Level, Extent.Level, other.Pos.Level, other.Extent.Level);
+        // Adjacent means:
+        // 1. Touching in exactly ONE dimension (gap == 0)
+        // 2. Overlapping in ALL other dimensions
 
-        var adjacentY = IsAdjacentInDimension(Pos.Y, Extent.Y, other.Pos.Y, other.Extent.Y) &&
-                        OverlapsInDimension(Pos.X, Extent.X, other.Pos.X, other.Extent.X) &&
-                        OverlapsInDimension(Pos.Z, Extent.Z, other.Pos.Z, other.Extent.Z) &&
-                        OverlapsInDimension(Pos.Level, Extent.Level, other.Pos.Level, other.Extent.Level);
+        var touchX = (MaxX == other.MinX) || (MinX == other.MaxX);
+        var touchY = (MaxY == other.MinY) || (MinY == other.MaxY);
+        var touchZ = (MaxZ == other.MinZ) || (MinZ == other.MaxZ);
+        var touchL = (MaxL == other.MinL) || (MinL == other.MaxL);
 
-        var adjacentZ = IsAdjacentInDimension(Pos.Z, Extent.Z, other.Pos.Z, other.Extent.Z) &&
-                        OverlapsInDimension(Pos.X, Extent.X, other.Pos.X, other.Extent.X) &&
-                        OverlapsInDimension(Pos.Y, Extent.Y, other.Pos.Y, other.Extent.Y) &&
-                        OverlapsInDimension(Pos.Level, Extent.Level, other.Pos.Level, other.Extent.Level);
+        var overlapX = (MinX < other.MaxX) && (other.MinX < MaxX);
+        var overlapY = (MinY < other.MaxY) && (other.MinY < MaxY);
+        var overlapZ = (MinZ < other.MaxZ) && (other.MinZ < MaxZ);
+        var overlapL = (MinL < other.MaxL) && (other.MinL < MaxL);
 
-        var adjacentLevel = IsAdjacentInDimension(Pos.Level, Extent.Level, other.Pos.Level, other.Extent.Level) &&
-                            OverlapsInDimension(Pos.X, Extent.X, other.Pos.X, other.Extent.X) &&
-                            OverlapsInDimension(Pos.Y, Extent.Y, other.Pos.Y, other.Extent.Y) &&
-                            OverlapsInDimension(Pos.Z, Extent.Z, other.Pos.Z, other.Extent.Z);
-
-        return adjacentX || adjacentY || adjacentZ || adjacentLevel;
-
-        bool IsAdjacentInDimension(i64 pos1, u32 extent1, i64 pos2, u32 extent2)
-        {
-            return (pos1 + extent1 == pos2) || (pos2 + extent2 == pos1);
-        }
-
-        bool OverlapsInDimension(i64 pos1, u32 extent1, i64 pos2, u32 extent2)
-        {
-            return (pos1 < pos2 + extent2) && (pos2 < pos1 + extent1);
-        }
+        return (touchX && overlapY && overlapZ && overlapL) ||
+               (touchY && overlapX && overlapZ && overlapL) ||
+               (touchZ && overlapX && overlapY && overlapL) ||
+               (touchL && overlapX && overlapY && overlapZ);
     }
 
-    public ChunkCoord MinCoord => Pos;
-    public ChunkCoord MaxCoord => new((i32)(Pos.X + Extent.X), (i32)(Pos.Y + Extent.Y), (i32)(Pos.Z + Extent.Z), (i32)(Pos.Level + Extent.Level));
+    // --------------------------------------------------------------------------
+    // 3. Private Construction Helper
+    // --------------------------------------------------------------------------
+    private static HyperAreaCoord FromMinMax(i64 minX, i64 minY, i64 minZ, i64 minL,
+        i64 maxX, i64 maxY, i64 maxZ, i64 maxL)
+    {
+        return new HyperAreaCoord(
+            new ChunkCoord((i32)minX, (i32)minY, (i32)minZ, (i32)minL),
+            new ChunkExtent((u32)(maxX - minX), (u32)(maxY - minY), (u32)(maxZ - minZ), (u32)(maxL - minL))
+        );
+    }
 
     public string ToReadableSpan()
     {

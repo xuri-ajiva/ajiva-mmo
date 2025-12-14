@@ -20,25 +20,25 @@ public class DemoLevel
         var area = region.Area;
       
         // Find the chunk coordinates closest to the world origin (0,0) that are within the region's bounds.
-        var closestChunkX = Math.Clamp(0, area.MinCoord.X, area.MaxCoord.X);
-        var closestChunkZ = Math.Clamp(0, area.MinCoord.Z, area.MaxCoord.Z);
-        var closestChunk = new Vector3(closestChunkX, area.MinCoord.Y, closestChunkZ);
+        var closestChunkX = Math.Clamp(0, area.Min.X, area.Max.X);
+        var closestChunkZ = Math.Clamp(0, area.Min.Z, area.Max.Z);
+        var closestChunk = new Vector3(closestChunkX, area.Min.Y, closestChunkZ);
 
         const i32 chunks = 16;
-        var desiredMinChunk = new Vector3(closestChunk.X - chunks, area.MinCoord.Y, closestChunk.Z - chunks);
-        var desiredMaxChunk = new Vector3(closestChunk.X + chunks, area.MaxCoord.Y, closestChunk.Z + chunks);
+        var desiredMinChunk = new Vector3(closestChunk.X - chunks, area.Min.Y, closestChunk.Z - chunks);
+        var desiredMaxChunk = new Vector3(closestChunk.X + chunks, area.Max.Y, closestChunk.Z + chunks);
 
         // Clamp the desired 3x3 area to the actual region bounds. This handles regions smaller than 3x3.
         var placementMinChunk = new Vector3(
-            Math.Max(area.MinCoord.X, desiredMinChunk.X),
-            area.MinCoord.Y,
-            Math.Max(area.MinCoord.Z, desiredMinChunk.Z)
+            Math.Max(area.Min.X, desiredMinChunk.X),
+            area.Min.Y,
+            Math.Max(area.Min.Z, desiredMinChunk.Z)
         );
 
         var placementMaxChunk = new Vector3(
-            Math.Min(area.MaxCoord.X, desiredMaxChunk.X),
-            area.MaxCoord.Y,
-            Math.Min(area.MaxCoord.Z, desiredMaxChunk.Z)
+            Math.Min(area.Max.X, desiredMaxChunk.X),
+            area.Max.Y,
+            Math.Min(area.Max.Z, desiredMaxChunk.Z)
         );
 
         // --- Place the Rotating Box ---
