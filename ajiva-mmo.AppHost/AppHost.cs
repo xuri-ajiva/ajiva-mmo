@@ -15,8 +15,10 @@ var managementPort = clusterConf.GetValue("ManagementPort", 3310);
 var defaultServerInstances = clusterConf.GetValue("DefaultInstanceCount", 1);
 
 var clusterManager = builder.AddProject<Projects.ClusterManager>("clusterManager")
-    .WithArgs("--ClusterConfiguration:EntryPort", entryPort.ToString(),
-        "--ClusterConfiguration:ManagementPort", managementPort.ToString())
+    .WithArgs(
+        "--ClusterConfiguration:EntryPort", entryPort.ToString(),
+        "--ClusterConfiguration:ManagementPort", managementPort.ToString()
+    )
     .WithEndpoint(port: managementPort - 1, targetPort: managementPort, protocol: ProtocolType.Udp, name: "management")
     .WithEndpoint(port: entryPort - 1, targetPort: entryPort, protocol: ProtocolType.Udp, name: "clients")
     .WithReplicas(1);
@@ -32,8 +34,10 @@ var server = builder.AddProject<Projects.Server>("server")
 builder.AddProject<Projects.Client>("client")
     .WaitFor(clusterManager)
     .WithReplicas(clients)
-    .WithArgs("--ClientConfiguration:AutoConnect=true", "--ClientConfiguration:AutoConnectAddress",
-        clusterManager.GetEndpoint("clients"));
+    .WithArgs("--ClientConfiguration:AutoConnect=true",
+        "--ClientConfiguration:AutoConnectAddress", clusterManager.GetEndpoint("clients"),
+        "--ClientConfiguration:ClusterManagerAddress", clusterManager.GetEndpoint("management")
+    );
 
 
 builder.Build().Run();
