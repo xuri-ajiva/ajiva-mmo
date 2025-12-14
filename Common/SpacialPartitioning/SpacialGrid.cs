@@ -11,43 +11,6 @@ namespace Common.SpacialPartitioning;
 [MemoryPackable]
 public readonly partial record struct SpacialGridInfo(ChunkCoord ChunkSize);
 
-[ExcludeFromInterception]
-[MemoryPackable]
-public readonly partial record struct ChunkCoord(i32 X, i32 Y, i32 Z, i32 Level)
-{
-    public i32 PosDistanceTo(ChunkCoord playerChunk) =>
-        Math.Abs(X - playerChunk.X) + Math.Abs(Y - playerChunk.Y) + Math.Abs(Z - playerChunk.Z);
-}
-
-public record SpatialChunk(List<EntityId> Entities)
-{
-    private Lock _lock = new();
-    public bool IsDirty;
-
-    public void Add(EntityId entityId)
-    {
-        using var _ = UseLock();
-        Entities.Add(entityId);
-        MarkDirty();
-    }
-
-    public void Remove(EntityId entityId)
-    {
-        using var _ = UseLock();
-        Entities.Remove(entityId);
-        MarkDirty();
-    }
-
-    public void MarkDirty() => IsDirty = true;
-
-    public void ClearDirty() => IsDirty = false;
-
-    public Lock.Scope UseLock()
-    {
-        return _lock.EnterScope();
-    }
-}
-
 public class SpacialGrid(SpacialGridInfo spacialGridInfo)
 {
     public SpacialGridInfo GridInfo { get; } = spacialGridInfo;

@@ -52,8 +52,8 @@ public class ClusterMapService(ILogger<ClusterMapService> logger)
         var assignment = AllocateNextQuadrant(serverId);
         _clusterMap.AssignRegion(assignment);
 
-        logger.LogInformation("Assigned region to server {ServerId}: {MinChunk} to {MaxChunk}",
-            serverId, assignment.MinChunk, assignment.MaxChunk);
+        logger.LogInformation("Assigned region to server {ServerId}: {Area}",
+            serverId, assignment.Area.ToReadableSpan());
 
         return (serverId, assignment);
     }
@@ -141,38 +141,29 @@ public class ClusterMapService(ILogger<ClusterMapService> logger)
     /// </summary>
     private RegionAssignment AllocateNextQuadrant(ServerId serverId)
     {
-        const i32 min = i32.MinValue, max = i32.MaxValue;
-        ChunkCoord minChunk, maxChunk;
+        const u32 length = 100000;
+        const i32 minusLength = (i32)(-length);
 
-        switch (_nextQuadrant % 4)
+        var pos = (_nextQuadrant % 4) switch
         {
-            case 0: // +X, +Z quadrant
-                minChunk = new ChunkCoord(0, min, 0, 0);
-                maxChunk = new ChunkCoord(max, max, max, 0);
-                break;
-            case 1: // -X, +Z quadrant
-                minChunk = new ChunkCoord(min, min, 0, 0);
-                maxChunk = new ChunkCoord(-1, max, max, 0);
-                break;
-            case 2: // -X, -Z quadrant
-                minChunk = new ChunkCoord(min, min, min, 0);
-                maxChunk = new ChunkCoord(-1, max, -1, 0);
-                break;
-            case 3: // +X, -Z quadrant
-                minChunk = new ChunkCoord(0, min, min, 0);
-                maxChunk = new ChunkCoord(max, max, -1, 0);
-                break;
-            default:
-                throw new InvalidOperationException("Invalid quadrant");
-        }
+            0 => // +X, +Z quadrant
+                new ChunkCoord(0, minusLength, 0, 0),
+            1 => // -X, +Z quadrant
+                new ChunkCoord(minusLength, minusLength, 0, 0),
+            2 => // -X, -Z quadrant
+                new ChunkCoord(minusLength, minusLength, minusLength, 0),
+            3 => // +X, -Z quadrant
+                new ChunkCoord(0, minusLength, minusLength, 0),
+            _ => throw new InvalidOperationException("Invalid quadrant")
+        };
+
+        var size = new ChunkExtent(length, length * 2, length, 1);
 
         _nextQuadrant++;
 
         return new RegionAssignment(
             serverId,
-            minChunk,
-            maxChunk,
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            new HyperAreaCoord(pos, size), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         );
     }
 }

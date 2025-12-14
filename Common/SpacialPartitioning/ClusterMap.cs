@@ -25,10 +25,12 @@ public readonly partial record struct ServerId(u16 Value)
 [MemoryPackable]
 public readonly partial record struct RegionAssignment(
     ServerId ServerId,
-    ChunkCoord MinChunk,
-    ChunkCoord MaxChunk,
+    HyperAreaCoord Area,
     i64 AssignedAt
-);
+)
+{
+    public string ReadableSpan() => $"Region[{Area.ToReadableSpan()}]";
+}
 
 /// <summary>
 /// Maps chunk coordinates to the responsible server
@@ -59,7 +61,7 @@ public class ClusterMap
 
         foreach (var (sid, region) in _serverRegions)
         {
-            if (!IsChunkInRegion(chunk, region)) continue;
+            if (!region.Area.Contains(chunk)) continue;
 
             serverId = sid;
             return true;
@@ -67,26 +69,6 @@ public class ClusterMap
 
         serverId = ServerId.Invalid;
         return false;
-    }
-
-    /// <summary>
-    /// Check if a chunk is within a region's bounds (4D check including level)
-    /// </summary>
-    private bool IsChunkInRegion(ChunkCoord chunk, RegionAssignment region)
-    {
-        // Level check - handle special cases
-        // If region spans all levels (MinChunk.Level == i32.MinValue, MaxChunk.Level == i32.MaxValue)
-        // Or if chunk level is within region level bounds
-        var levelMatches = (region.MinChunk.Level == i32.MinValue && region.MaxChunk.Level == i32.MaxValue) ||
-                           (chunk.Level >= region.MinChunk.Level && chunk.Level <= region.MaxChunk.Level);
-
-        if (!levelMatches)
-            return false;
-
-        // 3D spatial check
-        return chunk.X >= region.MinChunk.X && chunk.X <= region.MaxChunk.X &&
-               chunk.Y >= region.MinChunk.Y && chunk.Y <= region.MaxChunk.Y &&
-               chunk.Z >= region.MinChunk.Z && chunk.Z <= region.MaxChunk.Z;
     }
 
     /// <summary>
@@ -164,56 +146,12 @@ public class ClusterMap
             if (serverId == myRegion.ServerId)
                 continue;
 
-            if (!AreRegionsAdjacent(myRegion, region)) continue;
+            if (!myRegion.Area.IsAdjacentTo(region.Area)) continue;
             neighbors.Add(serverId);
             break; // No need to check other regions for this server
         }
 
         return neighbors;
-    }
-
-    /// <summary>
-    /// Check if two regions are adjacent (within 1 chunk distance) or overlapping
-    /// </summary>
-    private bool AreRegionsAdjacent(RegionAssignment region1, RegionAssignment region2)
-    {
-        // Check if levels overlap or are adjacent
-        var levelOverlaps = !(region1.MaxChunk.Level < region2.MinChunk.Level - 1 ||
-                              region1.MinChunk.Level > region2.MaxChunk.Level + 1);
-        if (!levelOverlaps)
-            return false;
-
-        // Check if regions are within 1 chunk distance in 3D space
-        // Regions are adjacent if they overlap or their boundaries are within 1 chunk
-        // Special handling for int.MaxValue/int.MinValue to avoid overflow
-        var xAdjacent = AreRangesAdjacent(region1.MinChunk.X, region1.MaxChunk.X,
-            region2.MinChunk.X, region2.MaxChunk.X);
-        var yAdjacent = AreRangesAdjacent(region1.MinChunk.Y, region1.MaxChunk.Y,
-            region2.MinChunk.Y, region2.MaxChunk.Y);
-        var zAdjacent = AreRangesAdjacent(region1.MinChunk.Z, region1.MaxChunk.Z,
-            region2.MinChunk.Z, region2.MaxChunk.Z);
-
-        return xAdjacent && yAdjacent && zAdjacent;
-    }
-
-    /// <summary>
-    /// Check if two 1D ranges are within 1 unit of each other (adjacent or overlapping)
-    /// Handles int.MaxValue/int.MinValue without overflow
-    /// </summary>
-    private bool AreRangesAdjacent(i32 min1, i32 max1, i32 min2, i32 max2)
-    {
-        // Check if ranges are separated by more than 1 unit
-        // Range1 is too far to the left: max1 < min2 - 1
-        // But we need to avoid overflow when min2 == int.MinValue
-        if (min2 > i32.MinValue && max1 < min2 - 1)
-            return false;
-
-        // Range1 is too far to the right: min1 > max2 + 1
-        // But we need to avoid overflow when max2 == int.MaxValue
-        if (max2 < i32.MaxValue && min1 > max2 + 1)
-            return false;
-
-        return true;
     }
 
     /// <summary>
