@@ -30,6 +30,7 @@ public interface IEcsStore<T, out TEnumerator> : IEcsStore
     bool TryGet(EntityId id, out T item);
     ref T Update(EntityId id);
     public TEnumerator GetEnumerator();
+    public ref T this[EntityId id] => ref Update(id);
 }
 
 public struct FreeList
@@ -203,7 +204,12 @@ public class DenseStore<T> : IEcsStore<T, DenseStore<T>.Iterator>
         return false;
     }
 
-    public ref T Update(EntityId id) => ref _data[id.Value];
+    public ref T Update(EntityId id)
+    {
+        if (id.Value >= _data.Length) Resize(Math.Max(id.Value * 2, IEcsStore.InitialSize));
+        _used.Set(id.Value, true);
+        return ref _data[id.Value];
+    }
 
     public Iterator GetEnumerator() => new(this);
 
@@ -229,6 +235,8 @@ public class DenseStore<T> : IEcsStore<T, DenseStore<T>.Iterator>
         public void Reset() => _index = -1;
         public Iterator GetEnumerator() => this;
     }
+
+    public ref T this[EntityId id] => ref Update(id);
 }
 
 /// <summary>
@@ -254,9 +262,9 @@ public class SparseSetStore<T> : IEcsStore<T, SparseSetStore<T>.Iterator>
 
     public void Add(EntityId id, T item)
     {
-        if (_entityToDense.ContainsKey(id))
+        if (_entityToDense.TryGetValue(id, out var value))
         {
-            _dense[_entityToDense[id]] = item;
+            _dense[value] = item;
             return;
         }
 
@@ -301,7 +309,15 @@ public class SparseSetStore<T> : IEcsStore<T, SparseSetStore<T>.Iterator>
         return false;
     }
 
-    public ref T Update(EntityId id) => ref _dense[_entityToDense[id]];
+    public ref T Update(EntityId id)
+    {
+        if (!_entityToDense.TryGetValue(id, out var denseIndex))
+        {
+            Add(id, default!);
+        }
+
+        return ref _dense[_entityToDense[id]];
+    }
 
     public Iterator GetEnumerator() => new(this);
     public SparseIndexIterator GetSparseIndexEnumerator() => new(this);
@@ -339,6 +355,8 @@ public class SparseSetStore<T> : IEcsStore<T, SparseSetStore<T>.Iterator>
         public void Reset() => _index = 0;
         public SparseIndexIterator GetEnumerator() => this;
     }
+
+    public ref T this[EntityId id] => ref Update(id);
 }
 
 /// <summary>
@@ -447,4 +465,6 @@ public class DirtyTrackedStore<T, U, I>(U underlying)
 
         public DirtyIterator GetEnumerator() => this;
     }
+
+    public ref T this[EntityId id] => ref Update(id);
 }
