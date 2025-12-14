@@ -13,6 +13,7 @@ namespace Client.LayerSystem;
 [ExcludeFromInterception]
 public class ClientConnectionLayer(
     ClientNetworkManager networkManager,
+    ManagementClient managementClient,
     ClientGameLogic gameLogic,
     PlayerInputSystem inputSystem)
     : IUiRenderLayer
@@ -145,6 +146,27 @@ public class ClientConnectionLayer(
             }
 
             ImGui.End();
+        }
+
+        if (ImGui.Begin("Management"))
+        {
+            ImGui.Text($"Cluster State: {managementClient.ClusterManager.State}");
+            ImGui.Text($"Connected Servers: {managementClient.Servers.Count}:");
+            foreach (var server in managementClient.Servers)
+            {
+                var region = server.Value.Region;
+                var serverInfo = server.Value.Server;
+                ImGui.Text($"ServerId: {server.Key}");
+                ImGui.Text($"  {region.ReadableSpan()}");
+                ImGui.Text($"  Ready: {serverInfo.IsReady}");
+                ImGui.Text($"  Connected: {serverInfo.ConnectedAt}");
+                ImGui.Separator();
+            }
+            
+            if(ImGui.Button("Spawn Test Entities"))
+            {
+                managementClient.SpawnTestEntities();
+            }
         }
     }
 }

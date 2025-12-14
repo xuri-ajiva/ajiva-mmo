@@ -51,6 +51,8 @@ public class ClientRunner
         services.AddService<PeriodicUpdater>();
         services.AddService<ShaderReloadManager, IShaderManager>();
 
+        services.AddService<ManagementClient>();
+        
         // Background services
         services.AddHostedService<Application>();
         // Networking
