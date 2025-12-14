@@ -37,7 +37,11 @@ public class SpawnTransaction(ILogger<SpawnTransaction> logger, NServerEcs ecs) 
                     {
                         // Use Y from bounds or raycast? For now use MinBounds.Y
                         var pos = new Vector3(x, MinBounds.Y, z);
-                        prefab.Generator(worldWrapper, pos, Quaternion.Identity);
+                        var entity = prefab.Generator(worldWrapper, pos, Quaternion.Identity);
+                        var chunkCoord = ecs.Grid.GetChunkCoord(pos, 0);
+                        var spatialChunk = ecs.Grid.GetChunkData(chunkCoord);
+                        spatialChunk.Add(entity);
+                        spatialChunk.MarkDirty();
                     }
                 }
             }
@@ -51,6 +55,7 @@ public class SpawnTransaction(ILogger<SpawnTransaction> logger, NServerEcs ecs) 
         // TODO Load asset to ensure it's available
         // assetSystem.LoadPrefabsRecursively(root: prefabId);
         await Task.Delay(1000);
+        logger.LogInformation("Prepared spawn transaction {TransactionId} for prefab {PrefabId}", Id, Prefab);
         ReadyTick = tickAccessor() + 10;
     }
 

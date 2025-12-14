@@ -98,7 +98,7 @@ public class GameServerInstance(
         logger.LogInformation("Starting game server instance {ServerId}", config.Id);
 
         // Create and demo entities
-        DemoLevel.LoadLevel(serviceProvider.GetRequiredService<NServerEcs>(), AssignedRegion, config.Id);
+        // DemoLevel.LoadLevel(serviceProvider.GetRequiredService<NServerEcs>(), AssignedRegion, config.Id);
 
         await systemManager.StartAsync();
         _highResolutionTicker.Start();

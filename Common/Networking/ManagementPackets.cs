@@ -53,7 +53,7 @@ public partial class WorkerManagement
     public partial record struct SpawnPrefabReady(
         TransactionId Transaction,
         ServerId Server,
-        u64 ExecutionTick
+        u64 ReadyTick
     );
 
     [NetworkPacket(262)]
