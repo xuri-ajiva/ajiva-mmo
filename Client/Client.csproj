@@ -22,33 +22,19 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="GlmSharp-netstandard" Version="0.9.8.1" />
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0-2.final" />
-        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+        <PackageReference Include="GlmSharp-netstandard"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting"/>
+        <PackageReference Include="Polly" />
 
-        <PackageReference Include="Silk.NET.Maths" Version="2.22.0" />
-        <PackageReference Include="Silk.NET.WebGPU" Version="2.22.0" />
-        <PackageReference Include="Silk.NET.WebGPU.Native.WGPU" Version="2.22.0" />
-        <PackageReference Include="Silk.NET.WebGPU.Extensions.Disposal" Version="2.22.0" />
-        <PackageReference Include="NativeFileDialogExtendedSharp" Version="0.1.0" />
+        <PackageReference Include="Silk.NET.Maths"/>
+        <PackageReference Include="Silk.NET.WebGPU"/>
+        <PackageReference Include="Silk.NET.WebGPU.Native.WGPU"/>
+        <PackageReference Include="Silk.NET.WebGPU.Extensions.Disposal"/>
+        <PackageReference Include="NativeFileDialogExtendedSharp"/>
 
-        <PackageReference Include="Silk.NET.Assimp" Version="2.22.0" />
-        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <Content Update="resources\Temple\TempleStone_alb.png">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </Content>
-        <Content Update="resources\Temple\TempleStone_emm.png">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </Content>
-        <Content Update="resources\Temple\TempleStone_nrm.png">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </Content>
-        <Content Update="resources\Temple\TempleModel.glb">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </Content>
+        <PackageReference Include="Silk.NET.Assimp"/>
+        <PackageReference Include="SixLabors.ImageSharp"/>
     </ItemGroup>
 
     <ItemGroup>

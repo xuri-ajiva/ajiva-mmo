@@ -8,7 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="GlmSharp-netstandard" Version="0.9.8.1" />
+        <PackageReference Include="GlmSharp-netstandard" />
     </ItemGroup>
 
 </Project>
