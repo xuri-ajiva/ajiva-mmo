@@ -7,7 +7,9 @@ builder.AddDockerComposeEnvironment("compose");
 
 
 var clientConfig = builder.Configuration.GetSection("ClientConfiguration");
-var clients = clientConfig.GetValue("Count", 1);
+var desktopClients = clientConfig.GetValue("Desktop", 1);
+var editorClients = clientConfig.GetValue("Editor", 1);
+var webClients = clientConfig.GetValue("Web", 1);
 var clusterConf = builder.Configuration.GetSection("ClusterConfiguration");
 
 var entryPort = clusterConf.GetValue("EntryPort", 3300);
@@ -24,20 +26,37 @@ var clusterManager = builder.AddProject<Projects.ClusterManager>("clusterManager
     .WithReplicas(1);
 
 
-var server = builder.AddProject<Projects.Server>("server")
+builder.AddProject<Projects.Server>("server")
     .WaitFor(clusterManager)
     .WithReference(clusterManager)
     .WithReplicas(defaultServerInstances)
     .WithArgs("--ServerConfiguration:ManagementPort", managementPort.ToString(),
         "--ServerConfiguration:ClusterManagerAddress", clusterManager.GetEndpoint("management"));
 
-builder.AddProject<Projects.Client>("client")
-    .WaitFor(clusterManager)
-    .WithReplicas(clients)
-    .WithArgs("--ClientConfiguration:AutoConnect=true",
-        "--ClientConfiguration:AutoConnectAddress", clusterManager.GetEndpoint("clients"),
-        "--ClientConfiguration:ClusterManagerAddress", clusterManager.GetEndpoint("management")
-    );
+if (desktopClients > 0)
+    builder.AddProject<Projects.Client_Desktop>("desktopClient")
+        .WaitFor(clusterManager)
+        .WithReplicas(desktopClients)
+        .WithArgs("--ClientConfiguration:AutoConnect=true",
+            "--ClientConfiguration:AutoConnectAddress", clusterManager.GetEndpoint("clients")
+        );
+
+if (editorClients > 0)
+    builder.AddProject<Projects.Client_Editor>("client")
+        .WaitFor(clusterManager)
+        .WithReplicas(editorClients)
+        .WithArgs("--ClientConfiguration:AutoConnect=true",
+            "--ClientConfiguration:AutoConnectAddress", clusterManager.GetEndpoint("clients"),
+            "--ClientConfiguration:ClusterManagerAddress", clusterManager.GetEndpoint("management")
+        );
+
+if (webClients > 0)
+    builder.AddProject<Projects.Client_Web>("webClient")
+        .WaitFor(clusterManager)
+        .WithReplicas(webClients)
+        .WithArgs("--ClientConfiguration:AutoConnect=true",
+            "--ClientConfiguration:AutoConnectAddress", clusterManager.GetEndpoint("clients")
+        );
 
 
 builder.Build().Run();

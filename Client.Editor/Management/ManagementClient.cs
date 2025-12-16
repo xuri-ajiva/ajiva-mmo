@@ -1,12 +1,10 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Globalization;
 using System.Numerics;
 using Client.Game;
+using Client.Networking;
 using Common;
-using Common.Assets;
 using Common.Config;
-using Common.Ecs;
 using Common.Helpers;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
@@ -14,7 +12,7 @@ using Common.SpacialPartitioning;
 using NetworkPackets;
 using Polly;
 
-namespace Client.Networking;
+namespace Client.Editor.Management;
 
 public partial class ManagementClient(
     ClientConfiguration config,
@@ -129,7 +127,7 @@ public partial class ManagementClient(
 
     public void SpawnTestEntities()
     {
-        HyperAreaCoord area = new(new ChunkCoord(-3, 10, -3, 0), new ChunkExtent(6, 1, 6, 1));
+        HyperAreaCoord area = new(new ChunkCoord(-2, 5, -2, 0), new ChunkExtent(4, 1, 4, 1));
 
         var size = game.Grid?.GridInfo.ChunkSize.ToVector4().AsVector3() ?? new Vector3(16, 16, 16);
         var transactionId = new TransactionId(Guid.NewGuid());
@@ -149,7 +147,7 @@ public partial class ManagementClient(
                 await serverInfoAndRegion.Connect(factory, instrumentation);
                 new WorkerManagement.SpawnPrefabRequest(transactionId, new PrefabId(0),
                     spawnArea.Min.ToVector4().AsVector3() * size,
-                    spawnArea.Max.ToVector4().AsVector3() * size, 1).Send(serverInfoAndRegion.Client!.Connection!);
+                    spawnArea.Max.ToVector4().AsVector3() * size, 2).Send(serverInfoAndRegion.Client!.Connection!);
             });
 
             logger.LogInformation("Sent SpawnPrefabRequest to server {ServerId} for area {Area}",

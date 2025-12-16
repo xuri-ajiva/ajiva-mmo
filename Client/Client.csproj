@@ -15,10 +15,11 @@
         <LangVersion>preview</LangVersion>
         <Features>InterceptorsPreview</Features>
         <InterceptorsPreviewNamespaces>$(InterceptorsPreviewNamespaces);Microsoft.AspNetCore.Http.Generated;Client.Generated;System.Runtime.CompilerServices;Interception</InterceptorsPreviewNamespaces>
+        <OutputType>Library</OutputType>
     </PropertyGroup>
 
     <ItemGroup>
-        <InternalsVisibleTo Include="Composer" />
+        <InternalsVisibleTo Include="Composer"/>
     </ItemGroup>
 
     <ItemGroup>
@@ -38,9 +39,11 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer" />
-        <ProjectReference Include="..\Generators\WgslGenerator\WgslGenerator.csproj" OutputItemType="Analyzer" />
-        <ProjectReference Include="..\Common\Common.csproj" />
-        <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Extensions.ImGui\Silk.NET.WebGPU.Extensions.ImGui.csproj" />
+        <ProjectReference Include="..\Client.Common\Client.Common.csproj"/>
+        <ProjectReference Include="..\Client.Renderer\Client.Renderer.csproj"/>
+        <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
+        <ProjectReference Include="..\Generators\WgslGenerator\WgslGenerator.csproj" OutputItemType="Analyzer"/>
+        <ProjectReference Include="..\Common\Common.csproj"/>
+        <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Extensions.ImGui\Silk.NET.WebGPU.Extensions.ImGui.csproj"/>
     </ItemGroup>
 </Project>

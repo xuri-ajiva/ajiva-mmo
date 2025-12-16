@@ -1,11 +1,10 @@
 ﻿using System.Numerics;
 using Client.LayerSystem;
-using Client.Platform;
 using Silk.NET.Input;
 
 namespace Client.Renderer.PbrRenderer;
 
-public class FreeCamera(AjivaWindow window) : ICamera
+public class FreeCamera(Common.Accessors.IInputAccessor iInputAccessor) : ICamera
 {
     private Vector3 _position = new(0.0f, 0.0f, 3.0f); // Default position
     private f32 _aspectRatio = 16.0f / 9.0f; // Default aspect ratio
@@ -78,7 +77,7 @@ public class FreeCamera(AjivaWindow window) : ICamera
     public void Attach()
     {
         UpdateMatrices();
-        _inputContext = window.Input;
+        _inputContext = iInputAccessor.InputContext;
     }
 
 

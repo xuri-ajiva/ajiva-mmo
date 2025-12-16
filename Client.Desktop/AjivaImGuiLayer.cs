@@ -2,7 +2,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Reflection;
-using Client.Platform;
+using Client.Desktop.Platform;
+using Client.LayerSystem;
 using Client.Renderer;
 using Common;
 using Common.Systems;
@@ -14,31 +15,28 @@ using Silk.NET.WebGPU.Safe;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 using SurfaceConfiguration = Silk.NET.WebGPU.Safe.SurfaceConfiguration;
 
-namespace Client.LayerSystem;
+namespace Client.Desktop;
 
-public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
+public class AjivaImGuiLayer : IAjivaLayer, IDisposable
 {
-    private bool _initialized, _attatched;
-
-    private readonly ILogger<AjivaImGuiLayerSystem> _logger;
+    private readonly ILogger<AjivaImGuiLayer> _logger;
+    private readonly LayerStack _layerStack;
 
     private readonly RendererApi _api;
     private readonly PeriodicUpdater _periodicUpdater;
 
     private ImFontPtr _quicksandFont;
     private ImGuiController? _imguiController;
-    private AjivaWindow _window = null!;
+    private readonly AjivaWindow _window;
 
-    private List<IAjivaLayer> Layers { get; } = [];
-
-    public AjivaImGuiLayerSystem(ILogger<AjivaImGuiLayerSystem> logger, RendererApi api,
-        IServiceScopeFactory serviceProvider, PeriodicUpdater periodicUpdater)
+    public AjivaImGuiLayer(ILogger<AjivaImGuiLayer> logger, LayerStack layerStack, RendererApi api,
+        PeriodicUpdater periodicUpdater, AjivaWindow window, IServiceProvider serviceProvider)
     {
-        _scope = serviceProvider.CreateScope();
-
         _logger = logger;
+        _layerStack = layerStack;
         _api = api;
         _periodicUpdater = periodicUpdater;
+        _window = window;
         // find alll types that implement IAjivaLayer
 #if DEBUG
         _layerTypes =
@@ -50,32 +48,24 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
 #endif
     }
 
-    public void Attach(AjivaWindow parent)
+    public void Attach()
     {
-        if (_initialized) return;
-        _initialized = true;
-        _window = parent;
-        var input = parent.Input;
-
-        _imguiController = new ImGuiController(_api.Device, TextureFormat.Bgra8Unorm, parent.Window, input, SetupFonts);
+        _imguiController = new ImGuiController(_api.Device, TextureFormat.Bgra8Unorm, _window.Window,
+            _window.InputContext, SetupFonts);
 
         var io = ImGui.GetIO();
 
         io.ConfigFlags |= ImGuiConfigFlags.DockingEnable; // Enable Docking
         io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable; // Enable Multi-Viewport / Platform Windows
         _renderUpdateHandle = _periodicUpdater.RegisterUpdate(UpdateCycle.Render, Render);
-        _updateHandle = _periodicUpdater.RegisterUpdate(UpdateCycle.Update, Update);
         var style = ImGui.GetStyle();
         style.FrameRounding = 4;
         style.FrameBorderSize = 1;
         io.FontGlobalScale = 1.25f;
+    }
 
-        foreach (var layer in Layers)
-        {
-            layer.Attach();
-        }
-
-        _attatched = true;
+    public void Update(UpdateInfo info)
+    {
     }
 
     unsafe void SetupFonts()
@@ -94,48 +84,14 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
         _quicksandFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPath, 18, nativeConfig);
     }
 
-    public void Update(UpdateInfo info)
-    {
-        if (!_attatched) return;
-        foreach (var layer in Layers)
-        {
-            if (layer.Enabled)
-            {
-                layer.Update(info);
-            }
-        }
-    }
-
-    public void PushLayer<T>(T? layer = default) where T : IAjivaLayer
-    {
-        layer ??= _scope.ServiceProvider.GetRequiredService<T>();
-        Layers.Add(layer);
-        if (_initialized)
-            layer.Attach();
-    }
-
-    public void PopLayer<T>() where T : IAjivaLayer
-    {
-        var layer = Layers.OfType<T>().FirstOrDefault();
-        if (layer is null) return;
-
-        layer.Detach();
-        Layers.Remove(layer);
-    }
-
     public void Detach()
     {
-        _attatched = false;
-        foreach (var ajivaLayer in Layers)
-        {
-            ajivaLayer.Detach();
-        }
-
-        Layers.Clear();
-
         _imguiController?.Dispose();
         _imguiController = null;
     }
+
+    private bool _enabled = true;
+    public ref bool Enabled => ref _enabled;
 
     private TextureViewPtr? _swapchainView;
     private Vector2D<i32> _lastFramebufferSize = new(0, 0);
@@ -143,7 +99,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
 
     public void Render(UpdateInfo info)
     {
-        if (!_attatched) return;
         using var tracer = Instrumentation.Trace(ActivityKind.Client);
 
         var window = _window.Window;
@@ -241,7 +196,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
         using (Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Queue"))
         using (var guard = _api.EnterQueue())
         {
-            foreach (var layer in Layers)
+            foreach (var layer in _layerStack.Layers)
             {
                 using var layers =
                     Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: layer.GetType().ToString());
@@ -297,7 +252,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
             ImGui.Separator();
             ImGui.Columns(2);
             IAjivaLayer? layerToRemove = null;
-            foreach (var layer in Layers)
+            foreach (var layer in _layerStack.Layers)
             {
                 ImGui.Checkbox(layer.GetType().Name, ref layer.Enabled);
                 ImGui.NextColumn();
@@ -313,8 +268,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
 
             if (layerToRemove is not null)
             {
-                layerToRemove.Detach();
-                Layers.Remove(layerToRemove);
+                _layerStack.Remove(layerToRemove);
             }
 
             ImGui.Separator();
@@ -323,11 +277,11 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
             {
                 foreach (var layerType in _layerTypes)
                 {
-                    if (Layers.Any(l => l.GetType() == layerType)) continue;
+                    if (_layerStack.Layers.Any(l => l.GetType() == layerType)) continue;
 
                     if (ImGui.Selectable(layerType.Name))
                     {
-                        CreateLayer(layerType);
+                        _layerStack.CreateLayer(layerType);
                     }
                 }
 
@@ -386,18 +340,12 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
     private u64 allocations;
     private Thread? GCStressTest;
 
-    private void CreateLayer(TypeInfo layerType)
-    {
-        var layer = (IAjivaLayer)_scope.ServiceProvider.GetRequiredService(layerType);
-        PushLayer(layer);
-    }
 
     private i32 _location = -1;
     private bool _showOverlay = true, _demoWindow;
     private f32[] _frameTimes = new f32[100];
     private readonly TypeInfo[] _layerTypes;
-    private readonly IServiceScope _scope;
-    private PeriodicUpdater.UpdateHandle? _renderUpdateHandle, _updateHandle;
+    private PeriodicUpdater.UpdateHandle? _renderUpdateHandle;
 
     private void RenderMetrics(UpdateInfo info)
     {
@@ -451,7 +399,7 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
             }
 
             // render small graphs with fps
-            ImGui.PlotLines("", ref _frameTimes[0], _frameTimes.Length, 0, "Frame Times", 0, 50,
+            ImGui.PlotLines("##", ref _frameTimes[0], _frameTimes.Length, 0, "Frame Times", 0, 50,
                 new Vector2(300, 80));
         }
 
@@ -460,8 +408,6 @@ public class AjivaImGuiLayerSystem : IAjivaLayerSystem<AjivaWindow>, IDisposable
 
     public void Dispose()
     {
-        _scope.Dispose();
-        _updateHandle?.Dispose();
         _renderUpdateHandle?.Dispose();
         GCStressTest = null;
     }

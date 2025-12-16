@@ -21,7 +21,6 @@ public partial class ClientGameLogic : IDisposable
     private readonly Scene _scene;
     private readonly EntityAssetRegistry _assetRegistry;
     private readonly Dictionary<NetEntId, EntityId> _networkToEcs = new();
-    public u64 RenderEntityVersion { get; private set; }
 
     /*public NetEntId? LocalPlayerNetworkId { get; private set; }
     public EntityId? LocalPlayerEntityId { get; private set; }*/
@@ -60,7 +59,7 @@ public partial class ClientGameLogic : IDisposable
 
     public NClientEcsWorld World { get; }
 
-    public SpacialGrid? Grid { get; private set; }
+    public SpacialGrid? Grid => World.Grid;
 
     public i32 EntityCount => _networkToEcs.Count;
     private u64 _lastTick;
@@ -68,7 +67,7 @@ public partial class ClientGameLogic : IDisposable
     private void IncrementRenderVersion([CallerMemberName] string caller = "")
     {
         // _logger.LogDebug("Incrementing RenderEntityVersion due to {Caller}", caller);
-        RenderEntityVersion++;
+        World.RenderEntityVersion++;
     }
 
     private void ClearWorld()
@@ -77,7 +76,6 @@ public partial class ClientGameLogic : IDisposable
         // Clear all mappings
         _networkToEcs.Clear();
 
-        Grid = null;
         World.ClearAllEntities();
 
         // Note: EcsWorld doesn't have a clear method, so we'd need to implement that
@@ -251,7 +249,7 @@ public partial class ClientGameLogic : IDisposable
     {
         if (Grid?.GridInfo == gridInfo) return;
         ClearWorld();
-        Grid = new SpacialGrid(gridInfo);
+        World.InitGrid(gridInfo);
     }
 
     public void Dispose()

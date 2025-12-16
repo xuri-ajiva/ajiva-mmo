@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Diagnostics.CodeAnalysis;
+using Common.SpacialPartitioning;
 
 namespace Common.Ecs;
 
@@ -14,9 +15,11 @@ public class NClientEcsWorld
     public SparseSetStore<EntityType> EntityType;
     public DenseStore<RenderAsset> RenderAsset;
     public DenseStore<RenderMesh> RenderMesh;
+    public SpacialGrid? Grid;
+    public u64 RenderEntityVersion { get; set; }
 
     [MemberNotNull(nameof(NetState), nameof(Position), nameof(Rotation), nameof(Scale), nameof(Velocity),
-        nameof(EntityType), nameof(RenderAsset), nameof(RenderMesh))]
+        nameof(EntityType), nameof(RenderAsset), nameof(RenderMesh), nameof(Transform))]
     public void ClearAllEntities()
     {
         Transform = new();
@@ -29,6 +32,7 @@ public class NClientEcsWorld
         RenderAsset = new();
         RenderMesh = new();
         _entityIdFreeList = new();
+        Grid = null;
     }
 
     public NClientEcsWorld()
@@ -88,5 +92,10 @@ public class NClientEcsWorld
         EntityType.Remove(id);
         RenderAsset.Remove(id);
         RenderMesh.Remove(id);
+    }
+
+    public void InitGrid(SpacialGridInfo gridInfo)
+    {
+        Grid = new SpacialGrid(gridInfo);
     }
 }

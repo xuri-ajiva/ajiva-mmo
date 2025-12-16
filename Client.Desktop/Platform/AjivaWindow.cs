@@ -1,4 +1,5 @@
-﻿using Client.Config;
+﻿using Client.Common.Accessors;
+using Client.Config;
 using Client.LayerSystem;
 using Client.Renderer;
 using Common.Systems;
@@ -7,27 +8,26 @@ using Silk.NET.Maths;
 using Silk.NET.WebGPU.Safe;
 using Silk.NET.Windowing;
 
+namespace Client.Desktop.Platform;
 
-namespace Client.Platform;
-
-public class AjivaWindow : IHostedLifecycleService
+public class AjivaWindow : IHostedLifecycleService, IInputAccessor
 {
     private readonly ILogger<AjivaWindow> _logger;
     private readonly RendererApi _api;
     private readonly WindowConfig _config;
     private readonly PeriodicUpdater _updater;
-    private readonly IAjivaLayerSystem<AjivaWindow> _layerSystem;
+    private readonly LayerStack _layerSystem;
     private readonly IHostApplicationLifetime _lifetime;
 
     public IWindow Window = null!;
     private Thread windowThread = null!;
 
     public SurfacePtr Surface;
-    public IInputContext Input = null!;
+    public IInputContext InputContext { get; private set; }
     private bool _isClosing;
 
     public AjivaWindow(ILogger<AjivaWindow> logger, RendererApi api, WindowConfig config, PeriodicUpdater updater,
-        IAjivaLayerSystem<AjivaWindow> layerSystem, IHostApplicationLifetime lifetime)
+        LayerStack layerSystem, IHostApplicationLifetime lifetime)
     {
         _logger = logger;
         _api = api;
@@ -42,12 +42,13 @@ public class AjivaWindow : IHostedLifecycleService
     {
         try
         {
-            Input = Window.CreateInput();
+            InputContext = Window.CreateInput();
             Surface = Window.CreateWebGPUSurface(_api.Wgpu, _api.Instance);
             var properties = _api.Adapter.GetProperties();
             Window.Title = $"Ajiva MMO {properties.BackendType} {properties.Name}";
 
-            _layerSystem.Attach(this);
+            // todo event system
+            _layerSystem.Attach();
         }
         catch (Exception e)
         {

@@ -1,5 +1,6 @@
 ﻿using Client;
 using Client.Config;
+using Client.Desktop;
 using Client.LayerSystem;
 using Common;
 using Common.Config;
@@ -39,6 +40,6 @@ builder.Services.AddSingleton(logWidget);
 builder.Services.AddSingleton(builder.Configuration.GetSection("Window").Get<WindowConfig>() ?? new WindowConfig());
 
 var clientConfiguration = builder.Configuration.GetSection(nameof(ClientConfiguration)).Get<ClientConfiguration>();
-var client = new ClientRunner(builder, clientConfiguration);
+var client = new DesktopClientRunner<DesktopApplication>(builder, clientConfiguration);
 var host = builder.Build();
 await client.RunAsync(host);

@@ -1,7 +1,6 @@
 ﻿using System.Numerics;
 using System.Runtime.CompilerServices;
 using Ajiva.Ecs;
-using Client.Game;
 using Client.LayerSystem;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
@@ -14,10 +13,10 @@ using Silk.NET.WebGPU;
 
 namespace Client.Renderer.Instancing;
 
-public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogic, ResourceManager loader)
+public class ChunkedRenderableInstanceCollectionBuilder(NClientEcsWorld world, ResourceManager loader)
     : IRenderableInstanceCollectionBuilder
 {
-    private readonly ClientGameLogic _gameLogic = gameLogic;
+    private readonly NClientEcsWorld _world = world;
     private readonly ResourceManager _loader = loader;
 
     private u64 _renderableMeshVersion;
@@ -28,17 +27,16 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     public void PrepareDrawEntities(RenderableInstanceCollection target)
     {
         using var guard = _lock.EnterScope();
-        var ecs = _gameLogic.World;
-        if (_gameLogic.Grid is null) return;
+        if (_world.Grid is null) return;
         //if (_renderableMeshVersion == _gameLogic.RenderEntityVersion) return;
-        _renderableMeshVersion = _gameLogic.RenderEntityVersion;
+        _renderableMeshVersion = _world.RenderEntityVersion;
         List<(ChunkCoord chunk, u32 meshId)> seenChunks = [];
         var max = 0;
         using (var activity = Instrumentation.NamedTrace("Prepare"))
-            foreach (var (coord, chunk) in _gameLogic.Grid.Chunks)
+            foreach (var (coord, chunk) in _world.Grid.Chunks)
             {
                 if (chunk.Entities.Count < 0) continue;
-                max = ChunkLoop(target, chunk, ecs, coord, seenChunks, max);
+                max = ChunkLoop(target, chunk, _world, coord, seenChunks, max);
             }
 
         // Remove old chunks that are no longer seen
@@ -115,9 +113,8 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
 
     public void UpdateDrawEntities(UpdateInfo info, RenderableInstanceCollection target)
     {
-        var ecs = _gameLogic.World;
         var sFrame = 1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFrames);
-        if (_gameLogic.Grid is null) return;
+        if (_world.Grid is null) return;
         //var dirtyChunks = _gameLogic.Grid.Chunks.Where(x => x.Value.IsDirty).ToDictionary();
         //if (dirtyChunks.Count == 0) return;
         _renderingCount = 0;
@@ -128,7 +125,7 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
             var chunkColor = new Vector4(chunk.X / maxSize, chunk.Y / maxSize, chunk.Z / 3.0f, 1.0f);
             //ColorPallet[Math.Abs(chunk.GetHashCode()) % ColorPallet.Length];
             //if (!dirtyChunks.TryGetValue(chunk, out var chunkData)) continue;
-            if (!_gameLogic.Grid.Chunks.TryGetValue(chunk, out var chunkData)) continue;
+            if (!_world.Grid.Chunks.TryGetValue(chunk, out var chunkData)) continue;
 
             using (var _ = chunkData.UseLock())
             {
@@ -158,7 +155,7 @@ public class ChunkedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
                 nonSlide = true;
             }
 
-            CoreLoop(tmpEntities, meshBuffer, ecs, nonSlide, sFrame, chunkColor);
+            CoreLoop(tmpEntities, meshBuffer, _world, nonSlide, sFrame, chunkColor);
         }
     }
 

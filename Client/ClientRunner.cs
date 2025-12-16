@@ -1,9 +1,9 @@
 ﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Client.Assets;
 using Client.Game;
 using Client.LayerSystem;
 using Client.Networking;
-using Client.Platform;
 using Client.Renderer;
 using Client.Renderer.Instancing;
 using Client.Renderer.PbrRenderer;
@@ -16,7 +16,9 @@ using Common.Systems;
 
 namespace Client;
 
-public class ClientRunner
+public interface IApplication : IHostedLifecycleService;
+
+public class ClientRunner<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TApplication> where TApplication : class, IApplication
 {
     public ClientRunner(IHostApplicationBuilder builder, ClientConfiguration? clientConfiguration)
     {
@@ -24,12 +26,11 @@ public class ClientRunner
         services.AddSingleton(clientConfiguration ?? new ClientConfiguration());
 
         // Platform and core systems
-        services.AddSingleton<PlatformSystem>();
         services.AddSingleton<ModelHelper>();
         services.AddSingleton<Scene>();
         services.AddSingleton<IRenderableInstanceCollectionBuilder, UnifiedRenderableInstanceCollectionBuilder>();
         services.AddSingleton<ICamera, FreeCamera>();
-        
+
         // Asset management
         services.AddSingleton<EntityAssetRegistry>();
 
@@ -39,11 +40,10 @@ public class ClientRunner
         services.AddService<PlayerInputSystem>();
 
         // UI/Rendering
-        services.AddSingleton<IAjivaLayerSystem<AjivaWindow>, AjivaImGuiLayerSystem>();
+        services.AddSingleton<LayerStack>();
         services.AddSingleton<Instanced3dDeferredRenderer>();
         services.AddSingleton<ClientConnectionLayer>();
 
-        services.AddService<AjivaWindow>();
 
         services.AddService<RendererApi>();
         services.AddService<ResourceManager>();
@@ -51,10 +51,8 @@ public class ClientRunner
         services.AddService<PeriodicUpdater>();
         services.AddService<ShaderReloadManager, IShaderManager>();
 
-        services.AddService<ManagementClient>();
-        
         // Background services
-        services.AddHostedService<Application>();
+        services.AddHostedService<TApplication>();
         // Networking
         services.AddService<ClientNetworkManager>();
     }
@@ -67,9 +65,11 @@ public class ClientRunner
         var instrumentation = services.GetRequiredService<Instrumentation>();
         using var activity = instrumentation.StartActivity(ActivityKind.Client);
 
-        var platform = services.GetRequiredService<PlatformSystem>();
-        platform.Init();
-        await app.RunAsync();
-        platform.Shotdown();
+        await RunAsync(app, scop);
+    }
+
+    protected virtual Task RunAsync(IHost app, IServiceScope root)
+    {
+        return app.RunAsync();
     }
 }

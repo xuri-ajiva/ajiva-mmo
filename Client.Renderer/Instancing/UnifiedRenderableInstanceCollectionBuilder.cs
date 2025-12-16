@@ -1,7 +1,6 @@
 ﻿using System.Numerics;
 using System.Runtime.CompilerServices;
 using Ajiva.Ecs;
-using Client.Game;
 using Client.LayerSystem;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
@@ -12,10 +11,10 @@ using Silk.NET.WebGPU;
 
 namespace Client.Renderer.Instancing;
 
-public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogic, ResourceManager loader)
+public class UnifiedRenderableInstanceCollectionBuilder(NClientEcsWorld world, ResourceManager loader)
     : IRenderableInstanceCollectionBuilder
 {
-    private readonly ClientGameLogic _gameLogic = gameLogic;
+    private readonly NClientEcsWorld _world = world;
     private readonly ResourceManager _loader = loader;
 
     private u64 _renderableMeshVersion;
@@ -24,13 +23,12 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     [TraceInterception]
     public void PrepareDrawEntities(RenderableInstanceCollection target)
     {
-        var ecs = _gameLogic.World;
-        if (_renderableMeshVersion == _gameLogic.RenderEntityVersion) return;
-        _renderableMeshVersion = _gameLogic.RenderEntityVersion;
+        if (_renderableMeshVersion == _world.RenderEntityVersion) return;
+        _renderableMeshVersion = _world.RenderEntityVersion;
 
         // Group entities by mesh
         _entitiesByMesh.Clear();
-        ForwardScan(ecs);
+        ForwardScan(_world);
 
         // Clear the old dynamic meshes
         foreach (var mesh in target.OpaqueMeshes) mesh.Dispose();
@@ -69,7 +67,6 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
     [TraceInterception]
     public void UpdateDrawEntities(UpdateInfo info, RenderableInstanceCollection target)
     {
-        var ecs = _gameLogic.World;
         //UpdateScene(queue, _sceneRenderCollection.StaticMeshes);
         f32 sFrame = 1f - MathF.Pow(0.01f, info.DeltaTime * _smoothingFrames);
         var index = 0;
@@ -89,7 +86,7 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
                     dynamicMesh._instanceInfos.Count - entities.Count);
             }
 
-            CoreLoop(entities, dynamicMesh, ecs, sFrame);
+            CoreLoop(entities, dynamicMesh, _world, sFrame);
         }
     }
 
@@ -109,7 +106,7 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
                 ecs.Rotation.TryGet(entity, out var rot) &&
                 ecs.Scale.TryGet(entity, out var scale))
             {
-                var cc = gameLogic.Grid!.GetChunkCoord(pos.Value, 0);
+                var cc = world.Grid!.GetChunkCoord(pos.Value, 0);
                 const f32 max = 10.0f;
                 instance.HighlightColorRef = new Vector4(cc.X / max, cc.Y / max, cc.Z / max, 1f);
                 var currentTransform = instance.GetTransform();
@@ -134,7 +131,7 @@ public class UnifiedRenderableInstanceCollectionBuilder(ClientGameLogic gameLogi
             ref var instance = ref dynamicMesh.InstanceInfos[i];
             if (ecs.Transform.TryGet(entity, out var transform))
             {
-                var cc = gameLogic.Grid!.GetChunkCoord(transform.Position, 0);
+                var cc = world.Grid!.GetChunkCoord(transform.Position, 0);
                 const f32 max = 10.0f;
                 instance.HighlightColorRef = new Vector4(cc.X / max, cc.Y / max, cc.Z / max, 1f);
                 var currentTransform = instance.GetTransform();

@@ -1,18 +1,17 @@
 using Client.LayerSystem;
-using Client.Platform;
 using Client.Renderer.PbrRenderer;
 
-namespace Client;
+namespace Client.Desktop;
 
-public class Application(
-    ILogger<Application> logger,
+public class DesktopApplication(
+    ILogger<DesktopApplication> logger,
     IServiceProvider serviceProvider,
-    IAjivaLayerSystem<AjivaWindow> layerSystem)
-    : IHostedLifecycleService
+    LayerStack layerSystem)
+    : IApplication
 {
     private readonly IServiceProvider _serviceProvider = serviceProvider;
-    private readonly ILogger<Application> _logger = logger;
-    private readonly IAjivaLayerSystem<AjivaWindow> _layerSystem = layerSystem;
+    private readonly ILogger<DesktopApplication> _logger = logger;
+    private readonly LayerStack _layerSystem = layerSystem;
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
@@ -43,6 +42,7 @@ public class Application(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        _layerSystem.PushLayer<AjivaImGuiLayer>();
         _layerSystem.PushLayer<LogWidget>();
         _layerSystem.PushLayer<Instanced3dDeferredRenderer>();
         _layerSystem.PushLayer<ClientConnectionLayer>();

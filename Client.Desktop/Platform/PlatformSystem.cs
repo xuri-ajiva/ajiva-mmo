@@ -1,4 +1,4 @@
-﻿namespace Client.Platform;
+﻿namespace Client.Desktop.Platform;
 
 public class PlatformSystem
 {

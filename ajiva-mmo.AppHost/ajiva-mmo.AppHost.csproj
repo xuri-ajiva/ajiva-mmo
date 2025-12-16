@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-    <Sdk Name="Aspire.AppHost.Sdk" Version="9.4.1" />
+    <Sdk Name="Aspire.AppHost.Sdk" Version="9.4.1"/>
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -16,9 +16,11 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Client\Client.csproj" />
-      <ProjectReference Include="..\ClusterManager\ClusterManager.csproj" />
-      <ProjectReference Include="..\Server\Server.csproj" />
+        <ProjectReference Include="..\Client.Desktop\Client.Desktop.csproj" />
+        <ProjectReference Include="..\Client.Editor\Client.Editor.csproj" />
+        <ProjectReference Include="..\Client.Web\Client.Web.csproj" />
+        <ProjectReference Include="..\ClusterManager\ClusterManager.csproj"/>
+        <ProjectReference Include="..\Server\Server.csproj"/>
     </ItemGroup>
 
 </Project>

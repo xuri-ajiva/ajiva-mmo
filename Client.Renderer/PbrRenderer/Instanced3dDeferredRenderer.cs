@@ -2,7 +2,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using Client.Game;
 using Client.LayerSystem;
 using Client.Renderer.Instancing;
 using Client.Renderer.Pipelines;
@@ -29,7 +28,7 @@ public class Instanced3dDeferredRenderer(
     ICamera camera,
     Scene scene,
     IRenderableInstanceCollectionBuilder renderBuilder,
-    ClientGameLogic gameLogic,
+    NClientEcsWorld world,
     PeriodicUpdater periodicUpdater) : IRenderLayer, IUiRenderLayer, IAjivaLayer
 {
     private readonly ILogger<Instanced3dDeferredRenderer> _logger = logger;
@@ -38,10 +37,10 @@ public class Instanced3dDeferredRenderer(
     private readonly ResourceManager _loader = loader;
     private readonly Scene _scene = scene;
     private readonly IRenderableInstanceCollectionBuilder _renderBuilder = renderBuilder;
-    private readonly ClientGameLogic _gameLogic = gameLogic;
+    private readonly NClientEcsWorld _world = world;
     private readonly ICamera _camera = camera;
 
-    private readonly RenderableInstanceCollection _dynamicInstances = new();
+    internal readonly RenderableInstanceCollection _dynamicInstances = new();
     private RenderableInstanceCollection? _sceneRenderCollection;
 
     private GBuffer? _sceneGBuffer;
@@ -57,10 +56,7 @@ public class Instanced3dDeferredRenderer(
     private PixelSamplingPipeline? _samplingPipeline;
     private WboitPipeline? _transparentPipeline;
     private bool _enabled = true;
-    private ObjectSamplingShader.Result? _underCursor;
-    private u32 _selectedObjectId;
-    private u32 _selectedInstanceId;
-    private EntityId _selectedEntityId;
+    internal ObjectSamplingShader.Result? _underCursor;
     private Vector2 _mousePosition;
 
     public void Attach()
@@ -274,12 +270,6 @@ public class Instanced3dDeferredRenderer(
         if (_isSceneViewHovered)
         {
             _camera.Update(info);
-            if (_underCursor is { } pos && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
-            {
-                _selectedObjectId = pos.ObjectId;
-                _selectedInstanceId = pos.InstanceId;
-                _selectedEntityId = _renderBuilder.GetEntityId(_selectedObjectId, _selectedInstanceId);
-            }
         }
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
@@ -359,298 +349,12 @@ public class Instanced3dDeferredRenderer(
         ImGui.PopStyleVar();
     }
 
-    private f32 _textureSize = 128f;
-    private i32 _maxConcurrentLoads = 4;
+
 
     [ExcludeFromInterception]
     public void RenderUi(UpdateInfo info)
     {
-        using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Internal);
-        if (ImGui.Begin("Entity Inspector"))
-        {
-            ImGui.DragInt("##EntityId", ref Unsafe.As<EntityId, i32>(ref _selectedEntityId));
-            if (_selectedEntityId != EntityId.Invalid &&
-                _gameLogic.World.Transform.Has(_selectedEntityId))
-            {
-                ref var transform = ref _gameLogic.World.Transform.Update(_selectedEntityId);
-                ImGui.DragFloat3("##EntityPosition", ref transform.Position);
-
-                ImGui.DragFloat4("##EntityRotation", ref Unsafe.As<Quaternion, Vector4>(ref transform.Rotation));
-
-                ImGui.DragFloat3("##EntityScale", ref transform.Scale);
-
-                if (_gameLogic.World.NetState.Has(_selectedEntityId))
-                {
-                    var netState = _gameLogic.World.NetState.Get(_selectedEntityId);
-                    ImGui.Text($"Network ID: {netState.Id}");
-                    ImGui.Text($"CreatedTick: {netState.CreatedTick}");
-                    ImGui.Text($"DeletedTick: {netState.DeletedTick}");
-                    ImGui.Text($"GhostChunk: {netState.GhostChunk}");
-                }
-                else
-                {
-                    ImGui.Text("No Network State");
-                }
-
-                if (_gameLogic.Grid?.GetChunkCoord(transform.Position, transform.Level) is { } chunk)
-                {
-                    ImGui.Text($"Chunk Coord: {chunk}");
-                    var spatialChunk = _gameLogic.Grid.GetChunkData(chunk);
-                    ImGui.Text($"Chunk Entities: {spatialChunk.Entities.Count}");
-                    ImGui.Text($"Chunk Dirty: {spatialChunk.IsDirty}");
-                    ImGui.Text($"Contains Entity: {spatialChunk.Entities.Contains(_selectedEntityId)}");
-                }
-                else
-                {
-                    ImGui.Text("No Spatial Chunk");
-                }
-            }
-            else
-            {
-                ImGui.Text("Entity has no Position component");
-            }
-
-            ImGui.End();
-        }
-
-        if (ImGui.Begin("Controls"))
-        {
-            ImGui.InputFloat("SmoothingFrames", ref _renderBuilder.SmoothingFrames, 0.1f, 1f);
-            ImGui.Text(
-                $"SFrame: {1f - MathF.Pow(0.01f, info.DeltaTime * _renderBuilder.SmoothingFrames)}");
-            ImGui.Text("Rendering Stats:");
-            ImGui.Text($"Opaque Instancing: {_dynamicInstances.OpaqueMeshes.Count}");
-            ImGui.Text($"Opaque Total Instances: {_dynamicInstances.OpaqueMeshes.Sum(x => x._instanceInfos.Count)}");
-            ImGui.TextWrapped($"Instance Builder: {_renderBuilder.Stats()}");
-            if (ImGui.Button("ReInitialize Renderable Meshes"))
-            {
-                _renderBuilder.RequestReBuild();
-            }
-
-            if (ImGui.Button("Trace Renderer"))
-            {
-                periodicUpdater.TraceRenderer = true;
-            }
-
-            ImGui.SameLine();
-            if (ImGui.Button("Trace Update"))
-            {
-                periodicUpdater.TraceUpdate = true;
-            }
-
-            ImGui.Separator();
-
-            if (ImGui.Button("Collect Resources"))
-            {
-                _loader.DoCollection();
-            }
-
-            if (ImGui.Button("Load Sponza"))
-            {
-                _scene.LoadLevel("Sponza");
-            }
-
-            if (ImGui.Button("Unlaod Level"))
-            {
-                _scene.UnloadLevel();
-            }
-
-            ImGui.Text("Under Mouse Sample:");
-            ImGui.Text($"Mouse Position: {_mousePosition.X}, {_mousePosition.Y}");
-            if (_underCursor is { } selected)
-            {
-                ImGui.Text($"Object ID: {selected.ObjectId}");
-                ImGui.Text($"Instance ID: {selected.InstanceId}");
-                ImGui.Text($"Depth: {selected.Depth}");
-                var selRenderEnt = _renderBuilder.GetEntityId(_selectedObjectId, _selectedInstanceId);
-                ImGui.Text($"Entity ID: {selRenderEnt}");
-            }
-            else
-            {
-                ImGui.Text("No object under mouse");
-            }
-
-            if (_selectedObjectId != 0 && _selectedObjectId <= _dynamicInstances.OpaqueMeshes.Count)
-            {
-                var y = ImGui.GetCursorPosY();
-                ImGui.Text("Textures");
-                var imageButtonSize = ImGui.GetContentRegionAvail().X;
-                var selectedBuffer = _dynamicInstances.OpaqueMeshes[(i32)_selectedObjectId - 1];
-                if (selectedBuffer.BaseColorTexture is { } texture)
-                {
-                    if (ImGui.ImageButton("ChooseTextureA", texture.View.GetIntPtr(),
-                            new Vector2(imageButtonSize)))
-                    {
-                        Task.Run(() =>
-                        {
-                            var pickResult = Nfd.FileOpen([
-                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
-                            ]);
-
-                            if (pickResult.Status != NfdStatus.Ok) return;
-
-                            using var clone = texture.Clone("TMP_CLONE_FOR_UI");
-                            _loader.AsyncTextureLoad(pickResult.Path, clone);
-                            _loader.DisposeLater(selectedBuffer.BaseColorTexture);
-                            selectedBuffer.BaseColorTexture = clone;
-                        });
-                    }
-                }
-
-                if (selectedBuffer.NormalTexture is { } normalTexture)
-                {
-                    if (ImGui.ImageButton("ChooseTextureN", normalTexture.View.GetIntPtr(),
-                            new Vector2(imageButtonSize)))
-                    {
-                        Task.Run(() =>
-                        {
-                            var pickResult = Nfd.FileOpen([
-                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
-                            ]);
-
-                            if (pickResult.Status != NfdStatus.Ok) return;
-
-                            using var clone = normalTexture.Clone("TMP_CLONE_FOR_UI");
-                            _loader.AsyncTextureLoad(pickResult.Path, clone);
-                            _loader.DisposeLater(selectedBuffer.NormalTexture);
-                            selectedBuffer.NormalTexture = clone;
-                        });
-                    }
-                }
-
-                if (selectedBuffer.EmissiveTexture is { } emission)
-                {
-                    if (ImGui.ImageButton("ChooseTextureE", emission.View.GetIntPtr(),
-                            new Vector2(imageButtonSize)))
-                    {
-                        Task.Run(() =>
-                        {
-                            var pickResult = Nfd.FileOpen([
-                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
-                            ]);
-
-                            if (pickResult.Status != NfdStatus.Ok) return;
-
-                            using var clone = emission.Clone("TMP_CLONE_FOR_UI");
-                            _loader.AsyncTextureLoad(pickResult.Path, clone);
-                            _loader.DisposeLater(selectedBuffer.EmissiveTexture);
-                            selectedBuffer.EmissiveTexture = clone;
-                        });
-                    }
-                }
-
-                //ImGui.Text(selectedBuffer.MaterialUniform.ToString());
-
-                if (_selectedInstanceId < selectedBuffer.InstanceInfos.Length)
-                {
-                    ref var selectedInstance = ref selectedBuffer.InstanceInfos[(i32)_selectedInstanceId];
-                    ImGui.Text($"Instance");
-                    ImGui.DragFloat4($"##Position", ref selectedInstance.Transform0Ref, 0.1f);
-                    ImGui.DragFloat4($"##Rotation", ref selectedInstance.Transform1Ref, 0.1f);
-                    ImGui.DragFloat4($"##Scale", ref selectedInstance.Transform2Ref, 0.1f);
-                    ImGui.DragFloat4($"##ScaleA", ref selectedInstance.Transform3Ref, 0.1f);
-                    ImGui.Text("Highlight Color");
-                    ImGui.ColorEdit4($"##HighlightColor", ref selectedInstance.HighlightColorRef);
-                }
-            }
-
-
-            ImGui.NextColumn();
-            ImGui.Spacing();
-            ImGui.Separator();
-            ImGui.Spacing();
-            ImGui.Text("Tint");
-            ImGui.NextColumn();
-            //ImGui.ColorEdit4("##Tint", ref _cubeColor, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoAlpha);
-            ImGui.Spacing();
-            ImGui.Separator();
-
-            ImGui.Columns(1);
-            var hi = 0;
-            foreach (var buffer in _dynamicInstances.OpaqueMeshes)
-            {
-                if (hi > 50) break;
-                for (var i = 0; i < buffer.InstanceInfos.Length && i < 100; i++)
-                {
-                    ref var instance = ref buffer.InstanceInfos[i];
-                    ImGui.Text($"Instance {hi}");
-                    ImGui.DragFloat4($"##Position{hi}", ref instance.Transform0Ref, 0.1f);
-                    ImGui.DragFloat4($"##Rotation{hi}", ref instance.Transform1Ref, 0.1f);
-                    ImGui.DragFloat4($"##Scale{hi}", ref instance.Transform2Ref, 0.1f);
-                    ImGui.DragFloat4($"##ScaleA{hi}", ref instance.Transform3Ref, 0.1f);
-                    ImGui.Text("Highlight Color");
-                    ImGui.ColorEdit4($"##HighlightColor{hi}", ref instance.HighlightColorRef);
-                    hi++;
-                }
-            }
-        }
-
-        ImGui.End();
-
-        if (ImGui.Begin("ResourceLoader"))
-        {
-            var current = _maxConcurrentLoads;
-            ImGui.SliderInt("Max Concurrent Loads", ref _maxConcurrentLoads, 1, 64);
-            if (current != _maxConcurrentLoads)
-                _loader.UpdateMaxConcurrentLoads(_maxConcurrentLoads);
-
-            if (ImGui.CollapsingHeader("Textures"))
-            {
-                ImGui.SliderFloat("Size", ref _textureSize, 16, 1024);
-                const f32 padding = 10f;
-                var avail = ImGui.GetContentRegionAvail();
-                var imagesPerRow = Math.Max(1, (i32)(avail.X / (_textureSize + padding)));
-                var imageCount = 0;
-
-                ImGui.Text("Default Textures");
-
-                void RenderTexture(IntPtr texture)
-                {
-                    ImGui.Image(texture, new Vector2(_textureSize, _textureSize));
-                    imageCount++;
-                    if (imageCount % imagesPerRow != 0)
-                    {
-                        ImGui.SameLine();
-                    }
-                }
-
-                // Show default textures
-                RenderTexture(_loader.DefaultTexture.View.GetIntPtr());
-                RenderTexture(_loader.DefaultNormal.View.GetIntPtr());
-                RenderTexture(_loader.DefaultRoughness.View.GetIntPtr());
-
-                ImGui.Separator();
-                imageCount = 0;
-
-                // Show other textures
-                foreach (var ajivaTexture in _loader.GetAllTextures())
-                {
-                    RenderTexture(ajivaTexture.View.GetIntPtr());
-                }
-            }
-
-            ImGui.NewLine();
-
-            if (ImGui.CollapsingHeader("Meshes"))
-            {
-                // meshes
-                ImGui.Separator();
-                ImGui.Text("Default Meshes");
-                ImGui.Text(
-                    $"Cube: VB: {_loader.DefaultPbrCubeMesh.VertexBuffer.Size} IB: {_loader.DefaultPbrCubeMesh.IndexBuffer.Size} Refs: {_loader.DefaultPbrCubeMesh.Data.RefCount}");
-                ImGui.Text(
-                    $"TransparentCube: VB: {_loader.DefaultTransparentCubeMesh.VertexBuffer.Size} IB: {_loader.DefaultTransparentCubeMesh.IndexBuffer.Size}  Refs: {_loader.DefaultPbrCubeMesh.Data.RefCount}");
-
-                ImGui.Separator();
-                foreach (var mesh in _loader.GetAllMeshes())
-                {
-                    ImGui.Text($"{mesh.Name}");
-                    ImGui.Text($"VB: {mesh.VertexBuffer.Size} IB: {mesh.IndexBuffer.Size}  Refs: {mesh.Data.RefCount}");
-                }
-            }
-        }
-
-        ImGui.End();
+       
     }
 
     public void Detach()
