@@ -22,6 +22,11 @@
     <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/Silk.NET.WebGPU.Safe.CodeGenTemplates/Silk.NET.WebGPU.Safe.CodeGenTemplates.csproj" />
   </Folder>
   <Project Path="ajiva-mmo.AppHost/ajiva-mmo.AppHost.csproj" />
+  <Project Path="Client.Common/Client.Common.csproj" />
+  <Project Path="Client.Desktop/Client.Desktop.csproj" />
+  <Project Path="Client.Editor/Client.Editor.csproj" />
+  <Project Path="Client.Renderer/Client.Renderer.csproj" />
+  <Project Path="Client.Web\Client.Web.csproj" Type="Classic C#" />
   <Project Path="Client/Client.csproj" />
   <Project Path="ClusterManager\ClusterManager.csproj" />
   <Project Path="Common/Common.csproj" />

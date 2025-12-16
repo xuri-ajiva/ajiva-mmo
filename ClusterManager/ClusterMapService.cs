@@ -143,6 +143,14 @@ public class ClusterMapService(ILogger<ClusterMapService> logger)
     {
         const u32 length = 100000;
         const i32 minusLength = (i32)(-length);
+        const u32 length2 = length * 2;
+        
+        /*return new RegionAssignment(
+            serverId,
+            new HyperAreaCoord(new ChunkCoord(minusLength, minusLength, minusLength, minusLength),
+                new ChunkExtent(length2, length2, length2, length2)),
+            Stopwatch.GetTimestamp()
+        );*/
 
         var pos = (_nextQuadrant % 4) switch
         {
@@ -157,7 +165,7 @@ public class ClusterMapService(ILogger<ClusterMapService> logger)
             _ => throw new InvalidOperationException("Invalid quadrant")
         };
 
-        var size = new ChunkExtent(length, length * 2, length, 1);
+        var size = new ChunkExtent(length, length2, length, 1);
 
         _nextQuadrant++;
 

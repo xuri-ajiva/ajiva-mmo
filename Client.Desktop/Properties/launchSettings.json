@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Desktop": {
+      "commandName": "Project",
+      "workingDirectory": "I:\\ajiva-mmo\\client",
+      "nativeDebugging": true
+    }
+  }
+}

@@ -1,7 +1,8 @@
-﻿using Silk.NET.WebGPU.Extensions.ImGui;
+﻿using Client.LayerSystem;
+using Silk.NET.WebGPU.Extensions.ImGui;
 using Silk.NET.WebGPU.Safe;
 
-namespace Client.LayerSystem;
+namespace Client.Renderer;
 
 public interface IRenderLayer : IAjivaLayer
 {

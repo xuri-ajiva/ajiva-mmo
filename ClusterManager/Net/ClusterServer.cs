@@ -4,10 +4,10 @@ using Common;
 using Common.Config;
 using Common.Networking.AjivaQuic;
 using Common.SpacialPartitioning;
+using Common.Systems;
 using NetworkPackets;
 
 namespace ClusterManager.Net;
-
 
 public partial class ClusterServer(
     ILogger<ClusterServer> logger,
@@ -15,12 +15,17 @@ public partial class ClusterServer(
     ClusterConfiguration configuration,
     Instrumentation instrumentation,
     GatewayServer gatewayServer,
-    ClusterMapService clusterMapService) : IHostedService, IClusterGatewayPacketHandler<ManagementConnectionContext>, QServerEventListener
+    ClusterMapService clusterMapService) : IHostedService, IClusterGatewayPacketHandler<ManagementConnectionContext>,
+    QServerEventListener
 {
     private readonly QServer _managementServer = factory.CreateServer(configuration.ManagementPort);
     private Thread _serverThread = null!;
     private readonly CancellationTokenSource _cts = new();
     private readonly SpacialGridInfo _spacialInfo = new(configuration.GridSize);
+
+    private readonly HighResolutionTicker _ticker = new(configuration.TickInterval, instrumentation: instrumentation,
+        start: true);
+
     private ConcurrentDictionary<QConnection, ManagementConnectionContext> Connections { get; } = [];
     private ConcurrentDictionary<ServerId, QConnection> ServerIdToConnection { get; } = [];
 

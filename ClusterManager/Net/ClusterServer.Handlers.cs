@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Diagnostics;
+using System.Net;
 using System.Net.Quic;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
@@ -17,7 +18,8 @@ public partial class ClusterServer
         try
         {
             if (!Connections.TryGetValue(userData, out var context)) return;
-            ((IClusterGatewayPacketHandler<ManagementConnectionContext>)this).AutoHandle(packetType, ref reader, context);
+            ((IClusterGatewayPacketHandler<ManagementConnectionContext>)this).AutoHandle(packetType, ref reader,
+                context);
         }
         catch (Exception e)
         {
@@ -36,6 +38,8 @@ public partial class ClusterServer
 
     public void Handle(ClusterManagementPackets.RegisterServer message, ManagementConnectionContext userData)
     {
+        // TODO use proper timestamp not a system tick DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var serverTimestamp = Stopwatch.GetTimestamp();
         logger.LogInformation("Registering game server {ServerName} at {RemoteEndPoint}", message.Name,
             userData.Connection.RemoteEndPoint);
 
@@ -55,7 +59,10 @@ public partial class ClusterServer
         ServerIdToConnection[serverId] = userData.Connection;
 
         // Send region assignment to the server
-        new ClusterManagementPackets.InitServer(serverId, _spacialInfo, assignment, configuration.TickInterval).Send(
+        var nextTickInfo = _ticker.GetNextTickInfo();
+        new ClusterManagementPackets.InitServer(serverId, _spacialInfo, assignment,
+            new GlobalTickInfo(configuration.TickInterval, nextTickInfo.NextTick, serverTimestamp,
+                message.ClientTimestamp)).Send(
             userData.Connection);
 
         // Broadcast server map update to all other servers

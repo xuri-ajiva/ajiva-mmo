@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UserSecretsId>dotnet-Client.Editor-69ef1b52-e976-4639-b550-0cd1e91e25ff</UserSecretsId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Hosting"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Include="../Client/GlobalUsings.cs"/>
+        <ProjectReference Include="..\Client.Desktop\Client.Desktop.csproj" />
+        <ProjectReference Include="..\Common\Common.csproj"/>
+        <ProjectReference Include="..\Client.Common\Client.Common.csproj"/>
+        <ProjectReference Include="..\Client\Client.csproj"/>
+        <ProjectReference Include="..\Client.Renderer\Client.Renderer.csproj"/>
+    </ItemGroup>
+</Project>

@@ -1,0 +1,21 @@
+﻿{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Client.Editor": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "workingDirectory": "../Client",
+      "nativeDebugging": true,
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "RUST_BACKTRACE": "full",
+        "ENABLE_VULKAN_RENDERDOC_CAPTURE": "1",
+        "EFC_9348": "1",
+        "WGPU_TRACE_DIR": "./wgpu_traces",
+        "NODEVICE_SELECT": "1",
+        "DISABLE_SAMPLE_LAYER": "1",
+        "RUST_LOG": "wgpu=trace,wgpu_hal=trace"
+      }
+    }
+  }
+}
