@@ -1,0 +1,1 @@
+﻿# TODO provide simple readme and required existing code in target projects (e.g., Instrumentation.RecordFunction(...))
