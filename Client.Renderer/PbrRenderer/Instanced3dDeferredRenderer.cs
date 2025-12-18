@@ -55,6 +55,7 @@ public class Instanced3dDeferredRenderer(
     private PbrPipeline? _pbrPipeline;
     private PixelSamplingPipeline? _samplingPipeline;
     private WboitPipeline? _transparentPipeline;
+    private GizmoPipeline? _gizmoPipeline;
     private bool _enabled = true;
     internal ObjectSamplingShader.Result? _underCursor;
     private Vector2 _mousePosition;
@@ -103,7 +104,7 @@ public class Instanced3dDeferredRenderer(
 
     [TraceInterception]
     [MemberNotNull(nameof(_compositorPipeline), nameof(_pbrPipeline), nameof(_samplingPipeline),
-        nameof(_transparentPipeline))]
+        nameof(_transparentPipeline), nameof(_gizmoPipeline))]
     private void CreatePipelines()
     {
         var wboitAccum = _shaderManager.GetCurrentShader<IWboitAccumShader>();
@@ -111,6 +112,7 @@ public class Instanced3dDeferredRenderer(
         var pbrDeferred = _shaderManager.GetCurrentShader<IPbrDeferredLightingShader>();
         var pbrGBuffer = _shaderManager.GetCurrentShader<IPbrGBufferShader>();
         var objectSamplingShader = _shaderManager.GetCurrentShader<IObjectSamplingShader>();
+        var gizmoShader = _shaderManager.GetCurrentShader<IGizmoShader>();
 
         if (_pbrPipeline?.IsUpToDate(pbrGBuffer, pbrDeferred) != true)
         {
@@ -135,6 +137,12 @@ public class Instanced3dDeferredRenderer(
             _transparentPipeline?.Dispose();
             _transparentPipeline = WboitPipeline.Create(_api, _loader, wboitAccum,
                 _sceneGBuffer!);
+        }
+
+        if (_gizmoPipeline?.IsUpToDate(gizmoShader) != true)
+        {
+            _gizmoPipeline?.Dispose();
+            _gizmoPipeline = GizmoPipeline.Create(api, _loader, gizmoShader, _sceneGBuffer!);
         }
     }
 
@@ -174,6 +182,17 @@ public class Instanced3dDeferredRenderer(
             ViewProjectionRef = _camera.ViewProjectionMatrix,
             CameraPositionRef = _camera.Position,
             Time = info.TotalTime
+        });
+
+        _gizmoPipeline!.WriteSceneUniforms(target.QueuePtr, new GizmoShader.SceneUniform
+        {
+            ViewRef = _camera.ViewMatrix,
+            ProjectionRef = _camera.ProjectionMatrix,
+            CameraPositionRef = _camera.Position,
+            Time = info.TotalTime,
+            ObjectId = u32.MaxValue,
+            GizmoPixelSize = 5,
+            ViewportSize = new vec2(sceneViewport.Width, sceneViewport.Height)
         });
 
         if (_sceneRenderCollection != _scene.RenderableInstances || _sceneRenderCollection == null)
@@ -244,6 +263,21 @@ public class Instanced3dDeferredRenderer(
 
             target.QueuePtr.Submit(_transparentPipeline.EndRenderPass(transparentPass));
         }
+
+        if (_gizmoPipeline!.BeginGizmoPass(sceneViewport) is { } gizmoPass)
+        {
+            foreach (var instances in _sceneRenderCollection!.TransparentMeshes)
+            {
+                _gizmoPipeline.DrawGizmos(gizmoPass, instances);
+            }
+
+            foreach (var instances in _dynamicInstances.TransparentMeshes)
+            {
+                _gizmoPipeline.DrawGizmos(gizmoPass, instances);
+            }
+
+            target.QueuePtr.Submit(_gizmoPipeline.EndGizmoPass(gizmoPass));
+        }
     }
 
     private void WriteBuffer<T1, T2, T3>(QueuePtr queue,
@@ -274,9 +308,17 @@ public class Instanced3dDeferredRenderer(
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
 
-        if (!ImGui.Begin("Scene")) return;
+        if (!ImGui.Begin("Scene"))
+        {
+            ImGui.End();
+            return;
+        }
+
         _mousePosition = ImGui.GetMousePos() -
                          (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
+
+        //ImGui.Text($"Mouse: {ImGui.GetMousePos()}, Cursor: {ImGui.GetCursorPos()}, WindowPos: {ImGui.GetWindowPos()}, DpiScale: {ImGui.GetWindowDpiScale()}, result : {_mousePosition}");
+
         if (_sceneGBuffer is null || _finalSceneTexture is null)
         {
             _logger.LogError("Scene Buffers not created");
@@ -301,7 +343,8 @@ public class Instanced3dDeferredRenderer(
         _underCursor = _samplingPipeline.ReadResult(mappingTask);
 
         if (_sceneGBuffer.TryGetCompositorOutputView(out var emissive, out var objectAndInstanceId, out var accum,
-                out var reveal, out var depth) && _finalSceneTexture.TryGetTargets(out var colorOutput))
+                out var reveal, out var overlay, out var depth) &&
+            _finalSceneTexture.TryGetTargets(out var colorOutput))
         {
             var queue = target.QueuePtr;
             Render(info, target, new Extent3D(width, height, 1));
@@ -334,7 +377,7 @@ public class Instanced3dDeferredRenderer(
             _pbrPipeline.ApplyDeferredLighting(queue, _lightsBuffer.Buffer, _sceneLights.LightCount);
 
             _compositorPipeline.Apply(queue, emissive.View, depth.DepthOnlyView, colorOutput.View, accum.View,
-                reveal.View);
+                reveal.View, overlay.View);
 
             if (prevWidth != width && prevHeight != height && hasPrev)
                 target.ImguiController.RemoveTextureBindGroup(prevView.View);
@@ -350,11 +393,9 @@ public class Instanced3dDeferredRenderer(
     }
 
 
-
     [ExcludeFromInterception]
     public void RenderUi(UpdateInfo info)
     {
-       
     }
 
     public void Detach()

@@ -126,6 +126,8 @@ public class ShaderReloadManager : IHostedService, IShaderManager
             MetadataReference.CreateFromFile(typeof(Silk.NET.WebGPU.Adapter).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Silk.NET.WebGPU.Safe.AdapterInfo).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Silk.NET.Core.RawImage).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(IWgslShader).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(BuiltIn).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(DynamicAttribute).Assembly.Location));
 
         _logger.LogInformation("Loaded {Count} assemblies", _references.Count);

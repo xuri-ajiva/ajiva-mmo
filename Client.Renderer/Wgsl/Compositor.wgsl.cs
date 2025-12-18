@@ -31,6 +31,7 @@ public partial class CompositorShader
     [Group(0)] private readonly texture_depth_2d uDepth = null!;
     [Group(0)] private readonly texture_2d<f32> uAccum = null!;
     [Group(0)] private readonly texture_2d<f32> uRevea = null!;
+    [Group(0)] private readonly texture_2d<f32> uOverlay = null!;
 
     [VertexShader]
     public CompositeVaryings vs_main([Builtin("vertex_index")] u32 vertexIndex)
@@ -71,6 +72,11 @@ public partial class CompositorShader
         // Alternative formulation (often clearer): Under operator
         // Out = Src * SrcAlpha + Dst * (1 - SrcAlpha)
         var finalColor = avgTransparentColor * totalOpacity + color.rgb * (1.0f - totalOpacity);
+        
+        // add overlay
+        var overlay = textureLoad(uOverlay, uv, 0);
+        finalColor = overlay.rgb + finalColor * (1.0f - overlay.a);
+        
         // Clamp color if needed (optional, helps prevent issues from slight inaccuracies)
         //finalColor = clamp(finalColor, vec3f(0.0f), vec3f(1.0f));
         // ReSharper disable once CompareOfFloatsByEqualityOperator

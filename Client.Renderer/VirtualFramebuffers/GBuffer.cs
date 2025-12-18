@@ -20,6 +20,7 @@ public class GBuffer : IDisposable
     public TextureFormat AccumChannelFormat => _framebuffer.GetFormat(5);
     public TextureFormat RevealChannelFormat => _framebuffer.GetFormat(6);
     public TextureFormat DepthStencilFormat => _framebuffer.DepthStencilFormat!.Value;
+    public TextureFormat OverlayChannelFormat => _framebuffer.GetFormat(7);
 
     private GBuffer(VirtualFramebuffer framebuffer)
     {
@@ -42,6 +43,7 @@ public class GBuffer : IDisposable
             ("Shared_ObjectAndInstanceId", objectAndInstanceIdFormat), // Index 4
             ("WBOIT_Accum", accumFormat), // Index 5
             ("WBOIT_Reveal", revealFormat), // Index 6
+            ("overlay_color_pass", baseColorAlphaFormat) // 7
         };
 
         var framebuffer = new VirtualFramebuffer(device, attachments, depthStencilFormat, width, height, label);
@@ -121,11 +123,11 @@ public class GBuffer : IDisposable
     }
 
 
-    public bool TryGetCompositorOutputView(
-        out ColorTargetView emissiveView,
+    public bool TryGetCompositorOutputView(out ColorTargetView emissiveView,
         out ColorTargetView objectAndInstanceIdView,
         out ColorTargetView accumView,
         out ColorTargetView revealView,
+        out ColorTargetView overlayView,
         out DepthStencilTargetView depthStencilView) // Depth read-only
     {
         var result = true;
@@ -133,10 +135,20 @@ public class GBuffer : IDisposable
         result &= _framebuffer.TryGetColorTarget(4, out objectAndInstanceIdView); // Object and Instance ID
         result &= _framebuffer.TryGetColorTarget(5, out accumView); // Accumulation
         result &= _framebuffer.TryGetColorTarget(6, out revealView); // Reveal
+        result &= _framebuffer.TryGetColorTarget(7, out overlayView); // Overlay
         result &= _framebuffer.TryGetDepthTarget(out var depthTarget); // Depth read-only
         depthStencilView = depthTarget.GetValueOrDefault();
         result &= depthTarget.HasValue;
-        
+
+        return result;
+    }
+
+    public bool TryGetOverlayPass(out ColorTargetView overlayColorView, out ColorTargetView objectAndInstanceIdView)
+    {
+        var result = true;
+        result &= _framebuffer.TryGetColorTarget(7, out overlayColorView);
+        result &= _framebuffer.TryGetColorTarget(4, out objectAndInstanceIdView); // Object and Instance ID
+
         return result;
     }
 

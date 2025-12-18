@@ -104,7 +104,7 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
 
     public OitInstancedMeshBuffer[] CreateTransparentCubes()
     {
-        var instances = new WboitAccumShader.Instance[10];
+        var instances = new WboitAccumShader.Instance[9];
         for (var i = 0; i < 9; i++)
         {
             // make a grid
@@ -130,10 +130,10 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
         instances[8].HighlightColor = new vec4(0, 0.5f, 1, 0.5f);
 
 
-        // big cube that is like a floor
+        /*// big cube that is like a floor
         instances[^1].SetTransform(Matrix4x4.CreateScale(new Vector3(100, 100f, 100)) *
                                    Matrix4x4.CreateFromYawPitchRoll(0, 0, 0) *
-                                   Matrix4x4.CreateTranslation(new Vector3(0, 0, 0)));
+                                   Matrix4x4.CreateTranslation(new Vector3(0, 0, 0)));*/
 
         var transparentTexture = _loader.AsyncTextureLoad("resources/Glass/Red.png");
 
