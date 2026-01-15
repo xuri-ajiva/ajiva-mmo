@@ -9,9 +9,6 @@ using Serilog;
 
 namespace Common.Networking.AjivaQuic;
 
-public delegate void PacketHandleDelegate<in TUserData>(PacketType packetType,
-    scoped ref MemoryPack.MemoryPackReader reader, TUserData userData);
-
 public class QStream(
     QuicStream stream,
     QConnection qConnection,

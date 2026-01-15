@@ -2,6 +2,7 @@
 using System.Net;
 using Client.LayerSystem;
 using Common;
+using Common.Networking;
 using Common.Networking.AjivaQuic;
 using Server.Core;
 
@@ -18,7 +19,7 @@ public partial class NetworkSystem(
     : IServerSystem, IAsyncDisposable
 {
     private readonly QServer _server = qFactory.CreateServer(0);
-    internal readonly Dictionary<QConnection, ConnectionContext> _connectionContexts = new();
+    internal readonly Dictionary<IQConnection, ConnectionContext> _connectionContexts = new();
     private readonly CancellationTokenSource _stoppingCts = new();
 
     private Thread? _networkTask;

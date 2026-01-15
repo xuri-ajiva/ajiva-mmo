@@ -13,7 +13,7 @@ namespace Server.Systems;
 
 public partial class NetworkSystem : IServerPacketHandler<ConnectionContext>, QServerEventListener
 {
-    public void DispatchPacket(PacketType packetType, scoped ref MemoryPackReader reader, QConnection connection)
+    public void DispatchPacket(PacketType packetType, scoped ref MemoryPackReader reader, IQConnection connection)
     {
         try
         {
@@ -28,7 +28,7 @@ public partial class NetworkSystem : IServerPacketHandler<ConnectionContext>, QS
         }
     }
 
-    public void OnClientDisconnected(QConnection connection)
+    public void OnClientDisconnected(IQConnection connection)
     {
         if (!_connectionContexts.TryGetValue(connection, out var context)) return;
         logger.LogInformation("Client disconnected: {Client}", context);
@@ -40,7 +40,7 @@ public partial class NetworkSystem : IServerPacketHandler<ConnectionContext>, QS
         logger.LogCritical(exception, "Server connection failed: {@Client}", connection);
     }
 
-    public void OnClientConnected(QuicListener server, QConnection connection)
+    public void OnClientConnected(QuicListener server, IQConnection connection)
     {
         Instrumentation.Instance = instrumentation;
         using var activity = Instrumentation.NamedTrace("ClientConnected", ActivityKind.Server);

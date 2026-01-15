@@ -19,7 +19,7 @@ public partial class GatewayServer
         _gatewayServer.HandlePackets(HandlePackets);
     }
 
-    private void HandlePackets(PacketType packetType, scoped ref MemoryPackReader reader, QConnection userData)
+    private void HandlePackets(PacketType packetType, scoped ref MemoryPackReader reader, IQConnection userData)
     {
         try
         {
@@ -32,7 +32,7 @@ public partial class GatewayServer
         }
     }
 
-    public void OnClientConnected(QuicListener server, QConnection connection)
+    public void OnClientConnected(QuicListener server, IQConnection connection)
     {
         while (!_clients.TryAdd(connection, new ClientInfo(connection)))
         {
@@ -46,7 +46,7 @@ public partial class GatewayServer
         new GatewayPackets.LoadLevelPacket("Sponza", new SpacialGridInfo(configuration.GridSize)).Send(connection);
     }
 
-    public void OnClientDisconnected(QConnection connection)
+    public void OnClientDisconnected(IQConnection connection)
     {
         while (!_clients.TryRemove(connection, out _))
         {

@@ -2,6 +2,7 @@
 using System.Net;
 using Common;
 using Common.Config;
+using Common.Networking;
 using Common.Networking.AjivaQuic;
 using Common.SpacialPartitioning;
 using Common.Systems;
@@ -26,10 +27,10 @@ public partial class ClusterServer(
     private readonly HighResolutionTicker _ticker = new(configuration.TickInterval, instrumentation: instrumentation,
         start: true);
 
-    private ConcurrentDictionary<QConnection, ManagementConnectionContext> Connections { get; } = [];
-    private ConcurrentDictionary<ServerId, QConnection> ServerIdToConnection { get; } = [];
+    private ConcurrentDictionary<IQConnection, ManagementConnectionContext> Connections { get; } = [];
+    private ConcurrentDictionary<ServerId, IQConnection> ServerIdToConnection { get; } = [];
 
-    public string[] FindServersForConnection(QConnection connection)
+    public string[] FindServersForConnection(IQConnection connection)
     {
         return Connections.Values
             .Where(x => x.IsReady)
@@ -79,7 +80,7 @@ public partial class ClusterServer(
             catch (Exception e)
             {
                 logger.LogError(e, "Error in ClusterManager main loop");
-                Thread.Sleep(1000);
+                Thread.Sleep(100);
             }
         }
     }

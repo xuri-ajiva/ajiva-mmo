@@ -1,9 +1,10 @@
-﻿using Common.Networking.AjivaQuic;
+﻿using Common.Networking;
+using Common.Networking.AjivaQuic;
 using Common.SpacialPartitioning;
 
 namespace ClusterManager.Net;
 
-public record ManagementConnectionContext(QConnection Connection)
+public record ManagementConnectionContext(IQConnection Connection)
 {
     public ServerId? ServerId { get; set; }
     public string? ServerName { get; set; }

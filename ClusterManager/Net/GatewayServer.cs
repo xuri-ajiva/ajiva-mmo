@@ -14,7 +14,7 @@ public partial class GatewayServer(
     Instrumentation instrumentation) : QServerEventListener, IGatewayPacketHandler<ClientInfo>
 {
     private readonly QServer _gatewayServer = factory.CreateServer(configuration.EntryPort);
-    private readonly ConcurrentDictionary<QConnection, ClientInfo> _clients = [];
+    private readonly ConcurrentDictionary<IQConnection, ClientInfo> _clients = [];
     public ClusterServer Cluster { get; internal set; } = null!;
 
     public void Start()

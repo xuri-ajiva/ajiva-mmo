@@ -18,7 +18,7 @@ public partial class ClusterManagerClient(
     Instrumentation instrumentation,
     ServerConfiguration configuration,
     ClusterStateCache clusterStateCache,
-    WorkerManagementServer mmServer) : IHostedLifecycleService, IClusterWorkerPacketHandler<QConnection>
+    WorkerManagementServer mmServer) : IHostedLifecycleService, IClusterWorkerPacketHandler<IQConnection>
 {
     private readonly QClient _client = factory.CreateClient();
 
@@ -68,7 +68,7 @@ public partial class ClusterManagerClient(
                     _client.HandlePackets((packetType, ref reader, userData) =>
                     {
                         logger.LogInformation("Received cluster managing packet: {PacketType}", packetType);
-                        ((IClusterWorkerPacketHandler<QConnection>)this).AutoHandle(packetType, ref reader, userData);
+                        ((IClusterWorkerPacketHandler<IQConnection>)this).AutoHandle(packetType, ref reader, userData);
                     });
                 }
 
@@ -82,19 +82,19 @@ public partial class ClusterManagerClient(
     }
 
     // Handle packets from ClusterManager
-    public void Handle(Packets.Hello message, QConnection connection) => Ignore.ForNow();
+    public void Handle(Packets.Hello message, IQConnection connection) => Ignore.ForNow();
 
-    public void Handle(Packets.Disconnect message, QConnection connection) => Ignore.ForNow();
+    public void Handle(Packets.Disconnect message, IQConnection connection) => Ignore.ForNow();
 
-    public void Handle(Packets.Ping message, QConnection connection) => Ignore.ForNow();
+    public void Handle(Packets.Ping message, IQConnection connection) => Ignore.ForNow();
 
-    public void Handle(ClusterManagementPackets.InitServer message, QConnection connection)
+    public void Handle(ClusterManagementPackets.InitServer message, IQConnection connection)
     {
         logger.LogDebug("Received init server packet for server {ServerId}", message.ServerId);
         mmServer.InitServer(message);
     }
 
-    public void Handle(ClusterManagementPackets.ClusterMapUpdate message, QConnection connection)
+    public void Handle(ClusterManagementPackets.ClusterMapUpdate message, IQConnection connection)
     {
         logger.LogDebug("Received cluster map update with {Count} assignments",
             message.Assignments.Length);
@@ -102,7 +102,7 @@ public partial class ClusterManagerClient(
         mmServer.NotifyServerListUpdated();
     }
 
-    public void Handle(ClusterManagementPackets.ServerMapUpdate message, QConnection connection)
+    public void Handle(ClusterManagementPackets.ServerMapUpdate message, IQConnection connection)
     {
         logger.LogDebug("Received server map update with {Count} servers",
             message.Servers.Length);

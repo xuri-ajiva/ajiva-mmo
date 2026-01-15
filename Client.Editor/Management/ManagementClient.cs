@@ -19,7 +19,7 @@ public partial class ManagementClient(
     ILogger<ClientNetworkManager> logger,
     ClientGameLogic game,
     QFactory factory,
-    Instrumentation instrumentation) : IHostedLifecycleService, IClusterWorkerPacketHandler<QConnection>
+    Instrumentation instrumentation) : IHostedLifecycleService, IClusterWorkerPacketHandler<IQConnection>
 {
     public QClient ClusterManager = factory.CreateClient();
     private Task? _backgroundTask;
@@ -59,7 +59,7 @@ public partial class ManagementClient(
         {
             ClusterManager.HandlePackets((type, scoped ref reader, data) =>
             {
-                ((IClusterWorkerPacketHandler<QConnection>)this).AutoHandle(type, ref reader, data);
+                ((IClusterWorkerPacketHandler<IQConnection>)this).AutoHandle(type, ref reader, data);
             });
             foreach (var serverInfoAndRegion in Servers.Values)
             {
@@ -79,17 +79,17 @@ public partial class ManagementClient(
     public Task StoppingAsync(CancellationToken cancellationToken) => _cts.CancelAsync();
 
 
-    public void Handle(Packets.Disconnect message, QConnection userData) => Task.Run(userData.DisposeAsync);
-    public void Handle(Packets.Ping message, QConnection userData) => Ignore.ForNow();
-    public void Handle(ClusterManagementPackets.InitServer message, QConnection userData) => Ignore.ForNow();
+    public void Handle(Packets.Disconnect message, IQConnection userData) => Task.Run(userData.DisposeAsync);
+    public void Handle(Packets.Ping message, IQConnection userData) => Ignore.ForNow();
+    public void Handle(ClusterManagementPackets.InitServer message, IQConnection userData) => Ignore.ForNow();
 
-    public void Handle(Packets.Hello message, QConnection userData)
+    public void Handle(Packets.Hello message, IQConnection userData)
     {
         logger.LogInformation("Connected to ClusterManager {Version} {Type}", message.Version, message.ServerType);
     }
 
 
-    public void Handle(ClusterManagementPackets.ClusterMapUpdate message, QConnection userData)
+    public void Handle(ClusterManagementPackets.ClusterMapUpdate message, IQConnection userData)
     {
         foreach (var region in message.Assignments)
         {
@@ -102,7 +102,7 @@ public partial class ManagementClient(
         }
     }
 
-    public void Handle(ClusterManagementPackets.ServerMapUpdate message, QConnection userData)
+    public void Handle(ClusterManagementPackets.ServerMapUpdate message, IQConnection userData)
     {
         foreach (var server in message.Servers)
         {

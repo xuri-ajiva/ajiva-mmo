@@ -17,10 +17,10 @@ namespace Client.Networking;
 
 public class ClientConnectionContext(Packets.ServerType serverType)
 {
-    public QConnection? Connection => Client?.Connection;
+    public IQConnection? Connection => Client?.Connection;
     public Packets.ServerType ServerType { get; init; } = serverType;
     public string? Endpoint { get; set; }
-    public QClient Client { get; set; } = null!;
+    public IQClient Client { get; set; } = null!;
     public i32 ErrorCount { get; set; }
     public static int MaxErrorCount { get; set; } = 10;
 }

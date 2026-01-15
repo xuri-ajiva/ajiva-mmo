@@ -84,17 +84,6 @@ public class NetworkPacketsSourceGenerator : IIncrementalGenerator
               
               public ulong Length => (ulong)Writer.TotalWritten;
           }
-
-          public interface IQConnection
-          {
-              void Send(SerializedMessage message);
-          }
-
-          public interface IQServer
-          {
-              void SendToAll(SerializedMessage message);
-          }
-
           """;
 
     public void Initialize(IncrementalGeneratorInitializationContext context)

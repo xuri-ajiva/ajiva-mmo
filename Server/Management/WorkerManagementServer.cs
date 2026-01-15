@@ -26,8 +26,8 @@ public partial class WorkerManagementServer(
 {
     public QServer Server { get; } = factory.CreateServer(0);
 
-    private readonly ConcurrentDictionary<ServerId, QConnection> _serverConnections = new();
-    private readonly ConcurrentDictionary<QConnection, ServerContext> _connectionContexts = new();
+    private readonly ConcurrentDictionary<ServerId, IQConnection> _serverConnections = new();
+    private readonly ConcurrentDictionary<IQConnection, ServerContext> _connectionContexts = new();
 
     public ServerId LocalServerId { get; private set; } = ServerId.Invalid;
     public RegionAssignment AssignedRegion { get; private set; }
@@ -175,14 +175,14 @@ public partial class WorkerManagementServer(
         }
     }
 
-    public void OnClientConnected(System.Net.Quic.QuicListener server, QConnection connection)
+    public void OnClientConnected(System.Net.Quic.QuicListener server, IQConnection connection)
     {
         var context = new ServerContext(connection);
         _connectionContexts[connection] = context;
         logger.LogInformation("Server connected: {RemoteEndPoint}", connection.RemoteEndPoint);
     }
 
-    public void OnClientDisconnected(QConnection connection)
+    public void OnClientDisconnected(IQConnection connection)
     {
         if (_connectionContexts.TryRemove(connection, out var context))
         {
@@ -211,10 +211,10 @@ public partial class WorkerManagementServer(
 
 public class ServerContext
 {
-    public QConnection Connection { get; }
+    public IQConnection Connection { get; }
     public ServerId? ServerId { get; set; }
 
-    public ServerContext(QConnection connection)
+    public ServerContext(IQConnection connection)
     {
         Connection = connection;
     }

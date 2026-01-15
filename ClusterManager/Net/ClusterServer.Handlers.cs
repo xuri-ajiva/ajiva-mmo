@@ -9,11 +9,11 @@ using NetworkPackets;
 
 namespace ClusterManager.Net;
 
-public record ClientInfo(QConnection Connection);
+public record ClientInfo(IQConnection Connection);
 
 public partial class ClusterServer
 {
-    private void HandlePackets(PacketType packetType, scoped ref MemoryPackReader reader, QConnection userData)
+    private void HandlePackets(PacketType packetType, scoped ref MemoryPackReader reader, IQConnection userData)
     {
         try
         {
@@ -113,7 +113,7 @@ public partial class ClusterServer
     }
 
 
-    public void OnClientConnected(QuicListener server, QConnection connection)
+    public void OnClientConnected(QuicListener server, IQConnection connection)
     {
         while (!Connections.TryAdd(connection, new ManagementConnectionContext(connection)))
         {
@@ -124,7 +124,7 @@ public partial class ClusterServer
         new Packets.Hello(0, Packets.ServerType.Management).Send(connection);
     }
 
-    public void OnClientDisconnected(QConnection connection)
+    public void OnClientDisconnected(IQConnection connection)
     {
         if (Connections.TryRemove(connection, out var gameServer))
         {

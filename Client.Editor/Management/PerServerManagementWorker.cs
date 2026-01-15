@@ -8,7 +8,7 @@ using NetworkPackets;
 
 namespace Client.Networking;
 
-public class PerServerManagementWorker(ManagementClient mmClient) : IWorkerManagementPacketHandler<QConnection>
+public class PerServerManagementWorker(ManagementClient mmClient) : IWorkerManagementPacketHandler<IQConnection>
 {
     public ServerInfo Server { get; set; }
     public RegionAssignment Region { get; set; }
@@ -30,36 +30,36 @@ public class PerServerManagementWorker(ManagementClient mmClient) : IWorkerManag
         {
             logger.LogDebug("Received packet of type {Type} from server {ServerId}", type,
                 Server.ServerId.ToString());
-            ((IWorkerManagementPacketHandler<QConnection>)this).AutoHandle(type, ref reader, data);
+            ((IWorkerManagementPacketHandler<IQConnection>)this).AutoHandle(type, ref reader, data);
         });
     }
 
-    private void Log(string messageType, QConnection userData)
+    private void Log(string messageType, IQConnection userData)
     {
         _logger?.LogDebug("Received {MessageType} from server {ServerId}", messageType, Server.ServerId.ToString());
     }
 
-    public void Handle(WorkerManagement.ServerHandshake message, QConnection userData) =>
+    public void Handle(WorkerManagement.ServerHandshake message, IQConnection userData) =>
         Log("ServerHandshake", userData);
 
-    public void Handle(WorkerManagement.BulkEntityTransfer message, QConnection userData) =>
+    public void Handle(WorkerManagement.BulkEntityTransfer message, IQConnection userData) =>
         Log("BulkEntityTransfer", userData);
 
-    public void Handle(WorkerManagement.UpdateEntity message, QConnection userData) => Log("UpdateEntity", userData);
+    public void Handle(WorkerManagement.UpdateEntity message, IQConnection userData) => Log("UpdateEntity", userData);
 
-    public void Handle(WorkerManagement.BulkDeleteEntity message, QConnection userData) =>
+    public void Handle(WorkerManagement.BulkDeleteEntity message, IQConnection userData) =>
         Log("BulkDeleteEntity", userData);
 
-    public void Handle(WorkerManagement.SpawnPrefabRequest message, QConnection userData) =>
+    public void Handle(WorkerManagement.SpawnPrefabRequest message, IQConnection userData) =>
         Log("SpawnPrefabRequest", userData);
 
-    public void Handle(WorkerManagement.SpawnPrefabReady message, QConnection userData) =>
+    public void Handle(WorkerManagement.SpawnPrefabReady message, IQConnection userData) =>
         mmClient.SpawnPrefabReady(message, Server.ServerId);
 
-    public void Handle(WorkerManagement.SpawnPrefabExecute message, QConnection userData) =>
+    public void Handle(WorkerManagement.SpawnPrefabExecute message, IQConnection userData) =>
         Log("SpawnPrefabExecute", userData);
 
-    public void Handle(Packets.Hello message, QConnection userData) => Log("Hello", userData);
-    public void Handle(Packets.Disconnect message, QConnection userData) => Log("Disconnect", userData);
-    public void Handle(Packets.Ping message, QConnection userData) => Log("Ping", userData);
+    public void Handle(Packets.Hello message, IQConnection userData) => Log("Hello", userData);
+    public void Handle(Packets.Disconnect message, IQConnection userData) => Log("Disconnect", userData);
+    public void Handle(Packets.Ping message, IQConnection userData) => Log("Ping", userData);
 }

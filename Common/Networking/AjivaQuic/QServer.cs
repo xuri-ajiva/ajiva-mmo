@@ -10,8 +10,8 @@ namespace Common.Networking.AjivaQuic;
 
 public interface QServerEventListener
 {
-    void OnClientConnected(QuicListener server, QConnection connection);
-    void OnClientDisconnected(QConnection connection);
+    void OnClientConnected(QuicListener server, IQConnection connection);
+    void OnClientDisconnected(IQConnection connection);
     void OnConnectionFailed(QuicListener server, IPEndPoint? connection, Exception exception);
 }
 
@@ -55,7 +55,7 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
         _cts.Dispose();
     }
 
-    public void HandlePackets(PacketHandleDelegate<QConnection> handler)
+    public void HandlePackets(PacketHandleDelegate<IQConnection> handler)
     {
         foreach (var connection in _connections)
         {

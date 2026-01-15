@@ -6,15 +6,7 @@ using NetworkPackets;
 
 namespace Common.Networking.AjivaQuic;
 
-public enum ConnectionState
-{
-    Disconnected,
-    Connecting,
-    Connected,
-    Disconnecting
-}
-
-public class QClient
+public class QClient : IQClient
 {
     private readonly QuicClientConnectionOptions _options;
     private readonly ILogger<QClient> _logger;
@@ -29,7 +21,7 @@ public class QClient
     public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
     public bool IsConnected => State == ConnectionState.Connected;
     public bool IsNotConnected => !IsConnected;
-    public QConnection? Connection { get; private set; }
+    public IQConnection? Connection { get; private set; }
 
     [ExcludeFromInterception]
     public async ValueTask ConnectAsync(Instrumentation instrumentation, string? ipEndpoint = null,
@@ -48,7 +40,7 @@ public class QClient
             State = ConnectionState.Connecting;
             var connection = await QuicConnection.ConnectAsync(_options, _cts.Token);
             Connection = await QConnectionEstablisher.Client(connection, instrumentation, _cts.Token);
-            Connection?.StartLoops();
+            Connection?.Start();
 
             State = ConnectionState.Connected;
         }
@@ -60,7 +52,7 @@ public class QClient
         }
     }
 
-    public void HandlePackets(PacketHandleDelegate<QConnection> handler)
+    public void HandlePackets(PacketHandleDelegate<IQConnection> handler)
     {
         if (!IsConnected) return;
         Connection?.HandlePackets(handler);
@@ -83,3 +75,4 @@ public class QClient
         return $"{nameof(State)}: {State}, {nameof(IsConnected)}: {IsConnected}, {nameof(Connection)}: {Connection}";
     }
 }
+

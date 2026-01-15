@@ -49,7 +49,7 @@ public class QConnection(
         }
     }
 
-    public void HandlePackets(PacketHandleDelegate<QConnection> handler)
+    public void HandlePackets(PacketHandleDelegate<IQConnection> handler)
     {
         foreach (var qStream in streams)
         {
@@ -195,4 +195,6 @@ public class QConnection(
         _tasks.Clear();
         disposeAsync.AsTask().GetAwaiter().GetResult();
     }
+
+    public void Start() => StartLoops();
 }
