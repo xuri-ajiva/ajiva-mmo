@@ -3,13 +3,13 @@ using Client.Game;
 using Client.Networking;
 using Common.Ecs;
 using ImGuiNET;
+using Serilog;
 
 namespace Client.Editor.EditorLayers.Widgets;
 
-public class NetworkWidgets(ClientGameLogic gameLogic, NClientEcsWorld world, PlayerInputSystem inputSystem, ManagementClient managementClient) : IEditorWidget
+public class NetworkWidgets(ClientGameLogic gameLogic, NClientEcsWorld world, PlayerInputSystem inputSystem, ManagementClient managementClient, ClientNetworkManager clientNetwork) : IEditorWidget
 {
     private bool _networkInfoEnabled = true, _managementInfoEnabled = true;
-
     public void Render()
     {
         if (_networkInfoEnabled && ImGui.Begin("Network Entities", ref _networkInfoEnabled))
@@ -80,6 +80,47 @@ public class NetworkWidgets(ClientGameLogic gameLogic, NClientEcsWorld world, Pl
                 ImGui.Text($"  Ready: {serverInfo.IsReady}");
                 ImGui.Text($"  Connected: {serverInfo.ConnectedAt}");
                 ImGui.Separator();
+            }
+
+            if (!clientNetwork.HasPacketCaptureOrReplay)
+            {
+                ImGui.Text("Not Capturing or Replaying");
+                if (ImGui.Button("Capture Network"))
+                {
+                    clientNetwork.BeginCapture();
+                }
+                if (ImGui.Button("Start Replay"))
+                {
+                    Task.Run(async () => { try { await clientNetwork.BeginReplay("network_capture.aqrep"); } catch (Exception e) { Log.Error(e, "Failed to start network replay"); } });
+                }
+            }
+            else
+            {
+                if (clientNetwork.Capturer!.IsCapturing)
+                {
+                    ImGui.Text($"Capturing Packets: {clientNetwork.Capturer.CapturedPackets.Count} packets captured");
+                    if (ImGui.Button("Stop Capture"))
+                    {
+                        Task.Run(async () => { try { await clientNetwork.SaveCapture("network_capture.aqrep"); } catch (Exception e) { Log.Error(e, "Failed to save network capture"); } });
+                    }
+                }
+                else
+                {
+                    if (clientNetwork.Capturer.ReplayCompleted)
+                    {
+                        ImGui.Text("Replay Completed");
+                    }
+                    else
+                    {
+                        ImGui.Text($"Replaying Packets: {clientNetwork.Capturer.ReplayIndex} / {clientNetwork.Capturer.CapturedPackets.Count} packets replayed");
+                        ImGui.Text("Next Packet in  " +
+                                   $"{(clientNetwork.Capturer.TryPeekNextPacket(out var nextPacket) ? nextPacket!.Delta.TotalMilliseconds : 0):0} ms");
+                        if (ImGui.Button("Stop Replay"))
+                        {
+                            clientNetwork.StopReplay();
+                        }
+                    }
+                }
             }
 
             if (ImGui.Button("Spawn Test Entities"))

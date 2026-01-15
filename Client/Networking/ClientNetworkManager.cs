@@ -9,6 +9,7 @@ using Common.Config;
 using Common.Ecs;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
+using Common.Networking.AjivaQuic.ReplaySystem;
 using Common.Systems;
 using NetworkPackets;
 using Polly;
@@ -76,7 +77,11 @@ public partial class ClientNetworkManager(
             foreach (var client in _clients)
             {
                 client.Client.HandlePackets((packetType, ref reader, _) =>
-                    PacketDispatcher(packetType, ref reader, _primaryContext));
+                {
+                    if (Capturer is { IsCapturing: true })
+                        Capturer.AddPacket(packetType, ref reader);
+                    PacketDispatcher(packetType, ref reader, _primaryContext);
+                });
             }
 
             if (cycle.Ticks % 1000 == 0)
@@ -212,6 +217,40 @@ public partial class ClientNetworkManager(
                 span?.SetStatus(ActivityStatusCode.Error);
             }
         }
+    }
+
+    internal NetworkPacketCapturer? Capturer;
+    public bool HasPacketCaptureOrReplay => Capturer is not null;
+
+    public void BeginCapture()
+    {
+        Capturer = new NetworkPacketCapturer();
+        Capturer.StartCapture();
+    }
+
+    public async Task SaveCapture(string filename)
+    {
+        if (Capturer is null) return;
+        var copy = Capturer;
+        Capturer = null;
+        await copy.SaveToFileAsync(filename);
+    }
+
+    public async ValueTask BeginReplay(string filename)
+    {
+        if (Capturer is not null) return;
+        Capturer = new NetworkPacketCapturer();
+        await Capturer.LoadFromFileAsync(filename);
+        _primaryContext.Client = new ReplayClient(Capturer);
+        await _primaryContext.Client.ConnectAsync(instrumentation);
+        _clients.Add(_primaryContext);
+    }
+
+    public void StopReplay()
+    {
+        if (Capturer is null) return;
+        _primaryContext.Client.DisconnectAsync().RunSynchronously();
+        Capturer = null;
     }
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
