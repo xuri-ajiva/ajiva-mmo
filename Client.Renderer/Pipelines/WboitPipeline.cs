@@ -140,9 +140,9 @@ public class WboitPipeline(
     {
         var targetHash = new HashCode();
         targetHash.Add(modelBindGroupLayout);
-        targetHash.Add(buffer.ModelUniformBuffer.Version);
+        targetHash.Add(buffer.UniformBuffer.Version);
         targetHash.Add(buffer.AlbedoTexture.Version);
-        targetHash.Add(buffer.ModelUniformBuffer.Version);
+        targetHash.Add(buffer.UniformBuffer.Version);
 
         if (buffer.ModelBindGroupHash == targetHash.ToHashCode())
             return;
@@ -150,8 +150,8 @@ public class WboitPipeline(
 
         buffer.ModelBindGroup?.Release();
         buffer.ModelBindGroup = shader.CreateBindGroup1(_api.Device, modelBindGroupLayout,
-            buffer.ModelUniformBuffer.Buffer, defaultSampler, buffer.AlbedoTexture.View,
-            buffer.ModelUniformBuffer.OffsetBytes, buffer.ModelUniformBuffer.Size);
+            buffer.UniformBuffer.Buffer, defaultSampler, buffer.AlbedoTexture.View,
+            buffer.UniformBuffer.OffsetBytes, buffer.UniformBuffer.Size);
     }
 
     public void WriteUniformBuffer(QueuePtr queue, SceneUniform sceneUniform)

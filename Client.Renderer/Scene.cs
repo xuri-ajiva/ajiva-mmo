@@ -25,6 +25,7 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
         newCollection.OpaqueMeshes.AddRange(CreateModelBuffers("resources/Sponza/Meshes/Sponza_Modular.FBX",
             "Sponza_Modular"));
         newCollection.TransparentMeshes.AddRange(CreateTransparentCubes());
+        newCollection.GizmoMeshes.Add(CreateGizmoMeshBuffers());
         RenderableInstances = newCollection;
         oldCollection.Dispose();
         Version++;
@@ -156,5 +157,19 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
                 AlbedoTexture = transparentTexture,
             }
         ];
+    }
+
+    private SimpleInstancedMeshBBuffer<GizmoShader.Attributes, GizmoShader.Instance>
+        CreateGizmoMeshBuffers()
+    {
+        var instance = new GizmoShader.Instance();
+        instance.SetTransform(Matrix4x4.Identity);
+        instance.HighlightColor = new vec4(0, 1, 0, 1);
+
+        return new SimpleInstancedMeshBBuffer<GizmoShader.Attributes, GizmoShader.Instance>(
+            _loader.DefaultGizmoCubeMesh,
+            _loader.CreateBuffer<GizmoShader.Instance>(BufferUsage.Vertex | BufferUsage.CopyDst, 1,
+                "CreateGizmoMeshBuffers::InstanceBuffer"),
+            instance);
     }
 }

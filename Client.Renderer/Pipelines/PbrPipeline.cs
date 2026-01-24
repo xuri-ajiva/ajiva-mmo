@@ -222,7 +222,7 @@ public class PbrPipeline : IDisposable
             );
         }
 
-        var materialHash = HashCode.Combine(_gBufferMaterialLayout, materialData.MaterialUniformBuffer.Version);
+        var materialHash = HashCode.Combine(_gBufferMaterialLayout, materialData.UniformBuffer.Version);
 
         if (materialData.MaterialBindGroupHash != materialHash)
         {
@@ -231,9 +231,9 @@ public class PbrPipeline : IDisposable
 
             materialData.MaterialBindGroup = _gBufferShader.CreateBindGroup1(_api.Device,
                 _gBufferMaterialLayout,
-                materialData.MaterialUniformBuffer.Buffer,
-                ubMaterialOffset: materialData.MaterialUniformBuffer.OffsetBytes,
-                ubMaterialSize: materialData.MaterialUniformBuffer.Size
+                materialData.UniformBuffer.Buffer,
+                ubMaterialOffset: materialData.UniformBuffer.OffsetBytes,
+                ubMaterialSize: materialData.UniformBuffer.Size
             );
         }
     }

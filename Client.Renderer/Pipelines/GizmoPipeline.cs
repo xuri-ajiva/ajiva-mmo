@@ -129,7 +129,7 @@ public class GizmoPipeline
     }
 
 
-    public void DrawGizmos(RenderPassEncoderPtr pass, OitInstancedMeshBuffer instances)
+    public void DrawGizmos(RenderPassEncoderPtr pass, SimpleInstancedMeshBBuffer<GizmoShader.Attributes, GizmoShader.Instance> instances)
     {
         pass.SetVertexBuffer(0, instances.Mesh.VertexBuffer.Buffer,
             instances.Mesh.VertexBuffer.OffsetBytes, instances.Mesh.VertexBuffer.Size);
@@ -138,8 +138,6 @@ public class GizmoPipeline
 
         pass.SetIndexBuffer(instances.Mesh.IndexBuffer.Buffer, IndexFormat.Uint32,
             instances.Mesh.IndexBuffer.OffsetBytes, instances.Mesh.IndexBuffer.Size);
-
-        pass.SetBindGroup(1, instances.ModelBindGroup!.Value, ReadOnlySpan<u32>.Empty);
 
         pass.DrawIndexed((u32)(instances.Mesh.IndexBuffer.Size / sizeof(u32)),
             (u32)instances.InstanceInfos.Length, 0, 0, 0);

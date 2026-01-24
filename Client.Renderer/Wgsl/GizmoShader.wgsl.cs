@@ -1,4 +1,5 @@
-﻿using Generators;
+﻿using System.Numerics;
+using Generators;
 using GlmSharp;
 
 namespace Client.Wgsl;
@@ -33,7 +34,16 @@ public partial class GizmoShader
         vec4 transform2,
         vec4 transform3,
         vec4 highlightColor
-    );
+    )
+    {
+        public void SetTransform(Matrix4x4 transform)
+        {
+            Transform0 = new vec4(transform.M11, transform.M12, transform.M13, transform.M14);
+            Transform1 = new vec4(transform.M21, transform.M22, transform.M23, transform.M24);
+            Transform2 = new vec4(transform.M31, transform.M32, transform.M33, transform.M34);
+            Transform3 = new vec4(transform.M41, transform.M42, transform.M43, transform.M44);
+        }
+    }
 
     public partial struct Varyings(
         [Builtin("position")] vec4 position,
@@ -78,18 +88,18 @@ public partial class GizmoShader
         // Calculate derivatives to determine pixel size in UV space
         var uvDx = dpdx(v.Uv);
         var uvDy = dpdy(v.Uv);
-        
+
         // Estimate UV distance per pixel
         var uvPerPixel = max(length(uvDx), length(uvDy));
-        
+
         // Calculate UV threshold for the wireframe
         var uvThickness = uvPerPixel * ubScene.GizmoPixelSize;
-        
+
         // Calculate distance from edges in UV space
         var distFromEdgeX = min(v.Uv.x, 1.0f - v.Uv.x);
         var distFromEdgeY = min(v.Uv.y, 1.0f - v.Uv.y);
         var distFromEdge = min(distFromEdgeX, distFromEdgeY);
-        
+
         // Discard if we're too far from the edge
         if (distFromEdge > uvThickness)
         {
@@ -98,7 +108,7 @@ public partial class GizmoShader
                 v.HighlightColor * 0.05f,
                 vec2u(v.ObjectId, v.InstanceId)
             );
-        } 
+        }
 
         return new GizmoOutputs(
             v.HighlightColor,

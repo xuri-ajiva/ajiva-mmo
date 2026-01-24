@@ -71,17 +71,24 @@ public partial class CompositorShader
 
         // Alternative formulation (often clearer): Under operator
         // Out = Src * SrcAlpha + Dst * (1 - SrcAlpha)
-        var finalColor = avgTransparentColor * totalOpacity + color.rgb * (1.0f - totalOpacity);
-        
+        vec3 finalColor;
+
+        if (depth != 1.0f || accum.a != 0.0f)
+        {
+            finalColor = avgTransparentColor * totalOpacity + color.rgb * (1.0f - totalOpacity);
+        }
+        else
+        {
+            finalColor = vec3(0.1f, 0.1f, 0.3f) * (1.0f - checkerValue) + checkerValue;
+        }
+
         // add overlay
         var overlay = textureLoad(uOverlay, uv, 0);
         finalColor = overlay.rgb + finalColor * (1.0f - overlay.a);
-        
+
         // Clamp color if needed (optional, helps prevent issues from slight inaccuracies)
         //finalColor = clamp(finalColor, vec3f(0.0f), vec3f(1.0f));
         // ReSharper disable once CompareOfFloatsByEqualityOperator
-        return depth == 1.0f && accum.a == 0.0f
-            ? vec4(0.1f, 0.1f, 0.3f, 1.0f) * (1.0f - checkerValue) + checkerValue
-            : vec4(finalColor.xyz, 1.0f);
+        return new vec4(finalColor, 1.0f);
     }
 }

@@ -2,7 +2,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using Client.LayerSystem;
 using Client.Renderer.Instancing;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
@@ -40,7 +39,7 @@ public class Instanced3dDeferredRenderer(
     private readonly NClientEcsWorld _world = world;
     private readonly ICamera _camera = camera;
 
-    internal readonly RenderableInstanceCollection _dynamicInstances = new();
+    internal readonly RenderableInstanceCollection DynamicInstances = new();
     private RenderableInstanceCollection? _sceneRenderCollection;
 
     private GBuffer? _sceneGBuffer;
@@ -71,7 +70,7 @@ public class Instanced3dDeferredRenderer(
             baseColorAlphaFormat: TextureFormat.Bgra8Unorm, // Index 0
             worldNormalFormat: TextureFormat.Rgb10A2Unorm, // Index 1
             metallicRoughnessAoFormat: TextureFormat.Rgba8Unorm, // Index 2
-            emissiveFormat: TextureFormat.Rgba16float, // Index 3
+            emissiveFormat: TextureFormat.Rgba16float, // Index 3 // R11G11B10Float
             // Other Formats
             objectAndInstanceIdFormat: TextureFormat.RG32Uint, // Index 4
             accumFormat: TextureFormat.Rgba32float, // Index 5
@@ -156,11 +155,11 @@ public class Instanced3dDeferredRenderer(
     {
         UniformUpdate(info, target, sceneViewport);
 
-        _renderBuilder.PrepareDrawEntities(_dynamicInstances);
+        _renderBuilder.PrepareDrawEntities(DynamicInstances);
 
-        _renderBuilder.UpdateDrawEntities(info, _dynamicInstances);
+        _renderBuilder.UpdateDrawEntities(info, DynamicInstances);
 
-        UpdateScene(target.QueuePtr, _dynamicInstances);
+        UpdateScene(target.QueuePtr, DynamicInstances);
 
         DeferredMeshDraw(target, sceneViewport);
     }
@@ -200,14 +199,19 @@ public class Instanced3dDeferredRenderer(
             _sceneRenderCollection = _scene.RenderableInstances;
             foreach (var buffer in _scene.RenderableInstances.OpaqueMeshes)
             {
-                WriteBuffer(target.QueuePtr, buffer);
+                buffer.CreateAndWriteBuffers(target.QueuePtr, _loader);
                 _pbrPipeline.RecreateMaterialBindGroup(buffer);
             }
 
             foreach (var buffer in _scene.RenderableInstances.TransparentMeshes)
             {
-                WriteBuffer(target.QueuePtr, buffer);
+                buffer.CreateAndWriteBuffers(target.QueuePtr, _loader);
                 _transparentPipeline.RecreateBindGroup(buffer);
+            }
+
+            foreach (var buffer in _scene.RenderableInstances.GizmoMeshes)
+            {
+                buffer.CreateAndWriteBuffers(target.QueuePtr, _loader);
             }
         }
     }
@@ -218,14 +222,19 @@ public class Instanced3dDeferredRenderer(
     {
         foreach (var buffer in dynamicInstances.OpaqueMeshes)
         {
-            WriteBuffer(queue, buffer);
+            buffer.CreateAndWriteBuffers(queue, _loader);
             _pbrPipeline!.RecreateMaterialBindGroup(buffer);
         }
 
         foreach (var buffer in dynamicInstances.TransparentMeshes)
         {
-            WriteBuffer(queue, buffer);
+            buffer.CreateAndWriteBuffers(queue, _loader);
             _transparentPipeline!.RecreateBindGroup(buffer);
+        }
+
+        foreach (var buffer in _scene.RenderableInstances.GizmoMeshes)
+        {
+            buffer.CreateAndWriteBuffers(queue, _loader);
         }
 
         _lightsBuffer.QueuedWrite(_sceneLights.LightData, queue);
@@ -241,7 +250,7 @@ public class Instanced3dDeferredRenderer(
                 _pbrPipeline.DrawMesh(pass, meshBuffer);
             }
 
-            foreach (var meshBuffer1 in _dynamicInstances.OpaqueMeshes)
+            foreach (var meshBuffer1 in DynamicInstances.OpaqueMeshes)
             {
                 _pbrPipeline.DrawMesh(pass, meshBuffer1);
             }
@@ -256,7 +265,7 @@ public class Instanced3dDeferredRenderer(
                 _transparentPipeline.DrawMesh(transparentPass, instances);
             }
 
-            foreach (var instances in _dynamicInstances.TransparentMeshes)
+            foreach (var instances in DynamicInstances.TransparentMeshes)
             {
                 _transparentPipeline.DrawMesh(transparentPass, instances);
             }
@@ -266,36 +275,18 @@ public class Instanced3dDeferredRenderer(
 
         if (_gizmoPipeline!.BeginGizmoPass(sceneViewport) is { } gizmoPass)
         {
-            foreach (var instances in _sceneRenderCollection!.TransparentMeshes)
+            foreach (var instances in _sceneRenderCollection!.GizmoMeshes)
             {
                 _gizmoPipeline.DrawGizmos(gizmoPass, instances);
             }
 
-            foreach (var instances in _dynamicInstances.TransparentMeshes)
+            foreach (var instances in DynamicInstances.GizmoMeshes)
             {
                 _gizmoPipeline.DrawGizmos(gizmoPass, instances);
             }
 
             target.QueuePtr.Submit(_gizmoPipeline.EndGizmoPass(gizmoPass));
         }
-    }
-
-    private void WriteBuffer<T1, T2, T3>(QueuePtr queue,
-        IInstancedMeshBuffer<T1, T2, T3> buffer) where T1 : unmanaged where T2 : unmanaged where T3 : unmanaged
-    {
-        buffer.UniformBuffer.QueuedWrite(new ReadOnlySpan<T3>(ref buffer.MaterialUniform),
-            queue);
-
-        ReadOnlySpan<T2> data = buffer.InstanceInfos;
-        buffer.InstanceBuffer ??= _loader.CreateBuffer<T2>(BufferUsage.Vertex | BufferUsage.CopyDst, data.Length,
-            "DynamicRecreated::IndexBuffer");
-
-        if (buffer.InstanceBuffer.Size < (u64)data.Length * (u64)Unsafe.SizeOf<T2>())
-        {
-            buffer.InstanceBuffer.ResizeWithoutDataPreserve((u64)data.Length * (u64)Unsafe.SizeOf<T2>());
-        }
-
-        buffer.InstanceBuffer.QueuedWrite(data, queue);
     }
 
     [TraceInterception]
@@ -403,7 +394,7 @@ public class Instanced3dDeferredRenderer(
         _sceneGBuffer?.Release();
         _finalSceneTexture?.Release();
 
-        _dynamicInstances.Dispose();
+        DynamicInstances.Dispose();
 
         _compositorPipeline?.Dispose();
         _pbrPipeline?.Dispose();
@@ -414,7 +405,7 @@ public class Instanced3dDeferredRenderer(
         _sceneGBuffer = null;
         _finalSceneTexture = null;
 
-        _dynamicInstances.Dispose();
+        DynamicInstances.Dispose();
         _compositorPipeline = null;
         _pbrPipeline = null;
         _lightsBuffer = null!;
