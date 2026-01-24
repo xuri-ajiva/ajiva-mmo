@@ -10,6 +10,8 @@ using static BuiltIn;
 // ReSharper disable ConvertToCompoundAssignment
 #pragma warning disable CS0649 // Field is never assigned to, and will always have its default value
 
+// todo     Tile-Based Lighting: In the future, look into "Clustered Deferred" or "Tiled Deferred." You divide the screen into 16x16 tiles, figure out which lights touch that tile in a Compute Shader, and the pixel shader only loops those lights. It's 10x faster for high light counts.
+
 [GenerateShader]
 public partial class PbrDeferredLightingShader
 {

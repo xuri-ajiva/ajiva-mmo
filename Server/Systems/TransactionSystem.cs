@@ -1,10 +1,10 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
-using Client.LayerSystem;
 using Common.Assets;
 using Common.Ecs;
 using Common.Networking;
 using Common.SpacialPartitioning;
+using Common.Systems;
 using Server.Core;
 using Server.Management;
 using Server.Management.Transactions;
@@ -30,6 +30,7 @@ public class TransactionSystem(NServerEcs world, ILogger<TransactionSystem> logg
 
         foreach (var id in toRemove)
         {
+            logger.LogInformation("Completed transaction {TransactionId}", id);
             _pendingTransactions.Remove(id);
         }
     }

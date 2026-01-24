@@ -1,6 +1,9 @@
-﻿using Client.Editor.Management;
+﻿using System.Numerics;
+using Client.Editor.Management;
 using Client.Game;
 using Client.Networking;
+using Client.Renderer;
+using Client.Wgsl;
 using Common.Ecs;
 using ImGuiNET;
 using Serilog;

@@ -143,7 +143,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
 
     public void UpdateMaxConcurrentLoads(i32 maxConcurrentLoads)
     {
-        if(maxConcurrentLoads > 100)
+        if (maxConcurrentLoads > 100)
         {
             Logger.LogWarning(
                 "Max concurrent loads set to {MaxConcurrentLoads}, which is higher than the default of 100. This may lead to performance issues.",

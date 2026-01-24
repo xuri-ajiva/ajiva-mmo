@@ -1,6 +1,4 @@
-﻿using Common.Systems;
-
-namespace Client.LayerSystem;
+﻿namespace Common.Systems;
 
 public interface IAjivaLayerSystem<TParent>
 {

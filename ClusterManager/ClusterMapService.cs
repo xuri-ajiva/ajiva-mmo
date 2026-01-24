@@ -141,7 +141,7 @@ public class ClusterMapService(ILogger<ClusterMapService> logger)
     /// </summary>
     private RegionAssignment AllocateNextQuadrant(ServerId serverId)
     {
-        const u32 length = 100000;
+        const u32 length = 10000;
         const i32 minusLength = (i32)(-length);
         const u32 length2 = length * 2;
         

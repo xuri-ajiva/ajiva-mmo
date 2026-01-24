@@ -20,6 +20,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="Composer"/>
+        <InternalsVisibleTo Include="Client.Editor"/>
     </ItemGroup>
 
     <ItemGroup>

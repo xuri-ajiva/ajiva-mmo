@@ -84,7 +84,7 @@ public class EntityWidgets(
         {
             ImGui.InputFloat("SmoothingFrames", ref renderBuilder.SmoothingFrames, 0.1f, 1f);
             //ImGui.Text($"SFrame: {1f - MathF.Pow(0.01f, info.DeltaTime * renderBuilder.SmoothingFrames)}");
-            var dynamicInstances = renderer._dynamicInstances;
+            var dynamicInstances = renderer.DynamicInstances;
             ImGui.Text("Rendering Stats:");
             ImGui.Text($"Opaque Instancing: {dynamicInstances.OpaqueMeshes.Count}");
             ImGui.Text($"Opaque Total Instances: {dynamicInstances.OpaqueMeshes.Sum(x => x._instanceInfos.Count)}");

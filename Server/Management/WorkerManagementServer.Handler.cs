@@ -50,6 +50,8 @@ public partial class WorkerManagementServer
 
     public void Handle(WorkerManagement.SpawnPrefabRequest message, ServerContext userData)
     {
+        logger.LogDebug("Received SpawnPrefabRequest for Transaction {Transaction} from Server {ServerId}",
+            message.Transaction, userData.ServerId);
         TransactionSystem?.PrepareSpawn(message.Transaction, message.Prefab, message.MinBounds, message.MaxBounds,
             message.Spacing, tick =>
             {

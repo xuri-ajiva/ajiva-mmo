@@ -17,9 +17,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Safe\Silk.NET.WebGPU.Safe.csproj" />
-        <ProjectReference Include="..\AjivaGenerator\AjivaGenerator.csproj" />
-        <ProjectReference Include="..\WgslGenerator\WgslGenerator.csproj" />
+        <ProjectReference Include="..\..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Safe\Silk.NET.WebGPU.Safe.csproj"/>
+        <ProjectReference Include="..\AjivaGenerator\AjivaGenerator.csproj"/>
+        <ProjectReference Include="..\WgslGenerator\WgslGenerator.csproj"/>
     </ItemGroup>
 
 </Project>

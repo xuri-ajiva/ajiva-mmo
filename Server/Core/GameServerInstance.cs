@@ -1,5 +1,4 @@
 ﻿using System.Net;
-using Client.LayerSystem;
 using Common;
 using Common.Networking;
 using Common.SpacialPartitioning;

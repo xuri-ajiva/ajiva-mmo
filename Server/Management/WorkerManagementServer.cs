@@ -1,7 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Net;
 using Amazon.Runtime.Internal.Util;
-using Client.LayerSystem;
 using Common;
 using Common.Helpers;
 using Common.Networking;

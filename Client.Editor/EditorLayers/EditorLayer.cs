@@ -1,8 +1,5 @@
 ﻿using Client.Editor.EditorLayers.Widgets;
-using Client.Editor.Management;
-using Client.Game;
-using Client.LayerSystem;
-using Client.Networking;
+using Common.Systems;
 using ImGuiNET;
 
 namespace Client.Editor.EditorLayers;
