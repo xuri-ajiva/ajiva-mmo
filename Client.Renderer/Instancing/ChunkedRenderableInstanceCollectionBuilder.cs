@@ -1,13 +1,13 @@
 ﻿using System.Numerics;
 using System.Runtime.CompilerServices;
 using Ajiva.Ecs;
-using Client.LayerSystem;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
 using Common;
 using Common.Ecs;
 using Common.SpacialPartitioning;
+using Common.Systems;
 using Interception;
 using Silk.NET.WebGPU;
 
@@ -69,11 +69,15 @@ public class ChunkedRenderableInstanceCollectionBuilder(NClientEcsWorld world, R
             countToRemove--;
         }
     }
-    
-    internal i32 ChunkLoop(RenderableInstanceCollection target, SpatialChunk chunk, NClientEcsWorld ecs, ChunkCoord coord,
-        List<(ChunkCoord chunk, u32 meshId)> seenChunks, i32 max) => _ChunkLoop(target, chunk, ecs, coord, seenChunks, max);
+
+    internal i32 ChunkLoop(RenderableInstanceCollection target, SpatialChunk chunk, NClientEcsWorld ecs,
+        ChunkCoord coord,
+        List<(ChunkCoord chunk, u32 meshId)> seenChunks, i32 max) =>
+        _ChunkLoop(target, chunk, ecs, coord, seenChunks, max);
+
     [ExcludeFromInterception]
-    private i32 _ChunkLoop(RenderableInstanceCollection target, SpatialChunk chunk, NClientEcsWorld ecs, ChunkCoord coord,
+    private i32 _ChunkLoop(RenderableInstanceCollection target, SpatialChunk chunk, NClientEcsWorld ecs,
+        ChunkCoord coord,
         List<(ChunkCoord chunk, u32 meshId)> seenChunks, i32 max)
     {
         using var _ = chunk.UseLock();
@@ -104,7 +108,12 @@ public class ChunkedRenderableInstanceCollectionBuilder(NClientEcsWorld world, R
             var dynamicMesh = new PbrInstancedMeshBuffer(_loader.DefaultPbrCubeMesh,
                 ModelHelper.PbrMaterialExamples.WornLeather(),
                 _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
-                    BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"));
+                    BufferUsage.Uniform | BufferUsage.CopyDst, 1,
+                    label: $"{nameof(ChunkedRenderableInstanceCollectionBuilder)}::ModelUniformBuffer"),
+                _loader.CreateBuffer<PbrGBufferShader.Instance>(
+                    BufferUsage.Vertex | BufferUsage.CopyDst, 1,
+                    $"{nameof(ChunkedRenderableInstanceCollectionBuilder)}::InstanceBuffer")
+            );
             target.OpaqueMeshes.Add(dynamicMesh);
         }
 

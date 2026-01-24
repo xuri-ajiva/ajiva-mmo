@@ -9,16 +9,12 @@ public class PbrInstancedMeshBuffer(
     AjivaMesh<PbrGBufferShader.Attributes> mesh,
     PbrGBufferShader.PbrMaterialUniform materialUniform,
     AjivaBuffer<PbrGBufferShader.PbrMaterialUniform> uniformBuffer,
+    AjivaBuffer<PbrGBufferShader.Instance> instanceBuffer,
     params IEnumerable<PbrGBufferShader.Instance> instanceInfos)
-    : IInstancedMeshBuffer<PbrGBufferShader.Attributes, PbrGBufferShader.Instance, PbrGBufferShader.PbrMaterialUniform>
+    : AdvancedInstancedMeshBuffer<PbrGBufferShader.Attributes, PbrGBufferShader.Instance,
+            PbrGBufferShader.PbrMaterialUniform>
+        (mesh, materialUniform, uniformBuffer, instanceBuffer, instanceInfos)
 {
-    public AjivaMesh<PbrGBufferShader.Attributes> Mesh { get; set; } = mesh;
-
-    // buffers
-    public AjivaBuffer<PbrGBufferShader.Instance>? InstanceBuffer { get; set; }
-    public AjivaBuffer<PbrGBufferShader.PbrMaterialUniform> MaterialUniformBuffer => UniformBuffer;
-    public AjivaBuffer<PbrGBufferShader.PbrMaterialUniform> UniformBuffer { get; set; } = uniformBuffer;
-
     // bind groups
     public BindGroupPtr? TextureBindGroup { get; set; }
     public i32 TextureBindGroupHash { get; set; }
@@ -26,11 +22,6 @@ public class PbrInstancedMeshBuffer(
     public i32 MaterialBindGroupHash { get; set; }
 
     // values
-    private PbrGBufferShader.PbrMaterialUniform _materialUniform = materialUniform;
-    public ref PbrGBufferShader.PbrMaterialUniform MaterialUniform => ref _materialUniform;
-
-    public readonly List<PbrGBufferShader.Instance> _instanceInfos = [..instanceInfos];
-    public Span<PbrGBufferShader.Instance> InstanceInfos => CollectionsMarshal.AsSpan(_instanceInfos);
     public AjivaTexture? BaseColorTexture;
     public AjivaTexture? NormalTexture;
     public AjivaTexture? MetallicRoughnessAoTexture;
@@ -48,12 +39,10 @@ public class PbrInstancedMeshBuffer(
         instanceInfos = _instanceInfos;
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
-        Mesh.Dispose();
-        InstanceBuffer?.Dispose();
+        base.Dispose();
         TextureBindGroup?.Release();
-        MaterialUniformBuffer.Dispose();
 
         BaseColorTexture?.Dispose();
         NormalTexture?.Dispose();

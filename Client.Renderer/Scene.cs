@@ -51,7 +51,9 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
             var pbrInstancedMeshBuffer = new PbrInstancedMeshBuffer(mesh,
                 ModelHelper.MaterialConverter.ConvertToPbrUniform(mat, (u32)iModel + 1, (u32)mdl.MaterialIndex, false),
                 _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(BufferUsage.Uniform | BufferUsage.CopyDst, 1,
-                    label: $"{label}::ModelUniformBuffer")
+                    label: $"{label}::ModelUniformBuffer"),
+                _loader.CreateBuffer<PbrGBufferShader.Instance>(BufferUsage.Vertex | BufferUsage.CopyDst, 1,
+                    $"{label}::InstanceBuffer")
             );
             if (mat is { DiffuseTexture: { } diffuseTexturePath })
                 pbrInstancedMeshBuffer.BaseColorTexture = _loader.AsyncTextureLoad(diffuseTexturePath);
@@ -146,7 +148,10 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
                     Tex1Color = new vec3(1, 1, 1)
                 },
                 _loader.CreateBuffer<WboitAccumShader.ModelUniform>(BufferUsage.Uniform | BufferUsage.CopyDst, 1,
-                    label: $"CreateTransparentCubes::ModelUniformBuffer"), instances)
+                    label: "CreateTransparentCubes::ModelUniformBuffer"),
+                _loader.CreateBuffer<WboitAccumShader.Instance>(BufferUsage.Vertex | BufferUsage.CopyDst, 1,
+                    "CreateTransparentCubes::InstanceBuffer"),
+                instances)
             {
                 AlbedoTexture = transparentTexture,
             }

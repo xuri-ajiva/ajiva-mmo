@@ -1,11 +1,11 @@
 ﻿using System.Numerics;
 using System.Runtime.CompilerServices;
 using Ajiva.Ecs;
-using Client.LayerSystem;
 using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Wgsl;
 using Common.Ecs;
+using Common.Systems;
 using Interception;
 using Silk.NET.WebGPU;
 
@@ -41,7 +41,12 @@ public class UnifiedRenderableInstanceCollectionBuilder(NClientEcsWorld world, R
                 var dynamicMesh = new PbrInstancedMeshBuffer(_loader.DefaultPbrCubeMesh,
                     ModelHelper.PbrMaterialExamples.WornLeather(),
                     _loader.CreateBuffer<PbrGBufferShader.PbrMaterialUniform>(
-                        BufferUsage.Uniform | BufferUsage.CopyDst, 1, label: "ModelUniformBuffer"));
+                        BufferUsage.Uniform | BufferUsage.CopyDst, 1,
+                        label: $"{nameof(ChunkedRenderableInstanceCollectionBuilder)}::ModelUniformBuffer"),
+                    _loader.CreateBuffer<PbrGBufferShader.Instance>(
+                        BufferUsage.Vertex | BufferUsage.CopyDst, 1,
+                        $"{nameof(ChunkedRenderableInstanceCollectionBuilder)}::InstanceBuffer")
+                );
                 target.OpaqueMeshes.Add(dynamicMesh);
             }
         }
@@ -145,7 +150,7 @@ public class UnifiedRenderableInstanceCollectionBuilder(NClientEcsWorld world, R
             }
         }
     }
-    
+
     private f32 _smoothingFrames = 10f;
     public ref f32 SmoothingFrames => ref _smoothingFrames;
 

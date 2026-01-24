@@ -31,6 +31,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
     internal AjivaTexture DefaultEmissive = null!;
     internal AjivaMesh<PbrGBufferShader.Attributes> DefaultPbrCubeMesh = null!;
     internal AjivaMesh<WboitAccumShader.Attributes> DefaultTransparentCubeMesh = null!;
+    internal AjivaMesh<GizmoShader.Attributes> DefaultGizmoCubeMesh = null!;
 
     private Task InitDefaultResources()
     {
@@ -71,7 +72,8 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
         metallicRoughnessTex.WriteTexture<Rgba32>(data, extent3D);
         var defaultMetallicRoughnessAo = AjivaTexture.FromData(metallicRoughnessTex);
 
-        Span<PbrGBufferShader.Attributes> cubeVerticesPbr = stackalloc PbrGBufferShader.Attributes[6 * 4];
+        const i32 cubeVerticesCount = 6 * 4;
+        Span<PbrGBufferShader.Attributes> cubeVerticesPbr = stackalloc PbrGBufferShader.Attributes[cubeVerticesCount];
         Span<u32> indices = stackalloc u32[6 * 6];
         const f32 tex1Scale = 0;
         ResourceGenerator.GenerateCubeMesh(cubeVerticesPbr, indices, (u, rot, normal, tangent) =>
@@ -92,23 +94,22 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
                 TangentRef = new Vector4(tangent, 1)
             };
         });
-        var defaultPbrCubeMesh = new AjivaMesh<PbrGBufferShader.Attributes>(
-            CreateMesh<PbrGBufferShader.Attributes>(nameof(DefaultPbrCubeMesh), cubeVerticesPbr, indices));
 
-        Span<WboitAccumShader.Attributes> cubeVerticesWboit = stackalloc WboitAccumShader.Attributes[6 * 4];
-        ResourceGenerator.GenerateCubeMesh(cubeVerticesWboit, indices, (u, rot, _, _) =>
+        Span<WboitAccumShader.Attributes> cubeVerticesWboit = stackalloc WboitAccumShader.Attributes[cubeVerticesCount];
+        Span<GizmoShader.Attributes> gizmoCubeVertices = stackalloc GizmoShader.Attributes[cubeVerticesCount];
+        for (var i = 0; i < cubeVerticesCount; i++)
         {
-            ReadOnlySpan<Vector3D<f32>> positions =
-                [new(-1, 1, 1), new(1, 1, 1), new(-1, -1, 1), new(1, -1, 1)];
-            ReadOnlySpan<Vector2> tex0Coords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
-            return new WboitAccumShader.Attributes
-            {
-                PositionRef = Vector3D.Transform(positions[u], rot).ToSystem(),
-                Tex0CoordRef = tex0Coords[u],
-            };
-        });
+            ref var a = ref cubeVerticesPbr[i];
+            gizmoCubeVertices[i] = new GizmoShader.Attributes(a.Position, a.Tex0Coord);
+            cubeVerticesWboit[i] = new WboitAccumShader.Attributes(a.Position, a.Tex0Coord);
+        }
+
+        var defaultPbrCubeMesh = new AjivaMesh<PbrGBufferShader.Attributes>(
+            CreateMesh(nameof(DefaultPbrCubeMesh), cubeVerticesPbr, indices));
         var defaultTransparentCubeMesh = new AjivaMesh<WboitAccumShader.Attributes>(
-            CreateMesh<WboitAccumShader.Attributes>(nameof(DefaultTransparentCubeMesh), cubeVerticesWboit, indices));
+            CreateMesh(nameof(DefaultTransparentCubeMesh), cubeVerticesWboit, indices));
+        var defaultGizmoCubeMesh = new AjivaMesh<GizmoShader.Attributes>(
+            CreateMesh(nameof(DefaultGizmoCubeMesh), gizmoCubeVertices, indices));
 
         _internal =
         [
@@ -118,7 +119,8 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
             defaultMetallicRoughnessAo,
             defaultEmissive,
             defaultTransparentCubeMesh,
-            defaultPbrCubeMesh
+            defaultPbrCubeMesh,
+            defaultGizmoCubeMesh
         ];
         DefaultTexture = defaultTexture.Clone("defensive_copy");
         DefaultNormal = defaultNormal.Clone("defensive_copy");
@@ -127,7 +129,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
         DefaultMetallicRoughnessAo = defaultMetallicRoughnessAo.Clone("defensive_copy");
         DefaultPbrCubeMesh = defaultPbrCubeMesh.Clone("defensive_copy");
         DefaultTransparentCubeMesh = defaultTransparentCubeMesh.Clone("defensive_copy");
-
+        DefaultGizmoCubeMesh = defaultGizmoCubeMesh.Clone("defensive_copy");
 
         return Task.CompletedTask;
     }
@@ -143,9 +145,12 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
     {
         if(maxConcurrentLoads > 100)
         {
-            Logger.LogWarning("Max concurrent loads set to {MaxConcurrentLoads}, which is higher than the default of 100. This may lead to performance issues.", maxConcurrentLoads);
+            Logger.LogWarning(
+                "Max concurrent loads set to {MaxConcurrentLoads}, which is higher than the default of 100. This may lead to performance issues.",
+                maxConcurrentLoads);
             maxConcurrentLoads = 100;
         }
+
         ref var max = ref SemaphoreSlim_currentCount(_loadSem);
         var diff = maxConcurrentLoads - max;
         if (diff > 0)
@@ -159,6 +164,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
             {
                 _loadSem.Wait();
             }
+
             Logger.LogInformation("Decreased max concurrent loads to {MaxConcurrentLoads}", maxConcurrentLoads);
         }
         else

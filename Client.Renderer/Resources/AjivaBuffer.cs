@@ -14,6 +14,7 @@ public class AjivaBuffer<T>(
     bool cleanUp)
     : IAjivaVersionedObject where T : unmanaged
 {
+    public BufferUsage Usage { get; } = usage;
     private static readonly u32 SizeOfT = (u32)Unsafe.SizeOf<T>();
     public BufferPtr Buffer { get; private set; } = buffer;
     public u64 OffsetBytes { get; private set; } = 0;
@@ -68,7 +69,7 @@ public class AjivaBuffer<T>(
             Buffer.Release();
         }
 
-        var range = loader.CreateBufferRaw(usage, newCount * SizeOfT, label);
+        var range = loader.CreateBufferRaw(Usage, newCount * SizeOfT, label);
         Debug.Assert(range.Size >= newCount * SizeOfT);
         Debug.Assert(range.Buffer != default);
         Buffer = range.Buffer;
