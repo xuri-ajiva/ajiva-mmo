@@ -10,9 +10,17 @@ using Serilog;
 
 namespace Client.Editor.EditorLayers.Widgets;
 
-public class NetworkWidgets(ClientGameLogic gameLogic, NClientEcsWorld world, PlayerInputSystem inputSystem, ManagementClient managementClient, ClientNetworkManager clientNetwork) : IEditorWidget
+public class NetworkWidgets(
+    ClientGameLogic gameLogic,
+    NClientEcsWorld world,
+    PlayerInputSystem inputSystem,
+    ManagementClient managementClient,
+    ClientNetworkManager clientNetwork,
+    Scene scene) : IEditorWidget
 {
     private bool _networkInfoEnabled = true, _managementInfoEnabled = true;
+    private bool serverRegionGizmosEnabled = false;
+
     public void Render()
     {
         if (_networkInfoEnabled && ImGui.Begin("Network Entities", ref _networkInfoEnabled))
@@ -92,9 +100,20 @@ public class NetworkWidgets(ClientGameLogic gameLogic, NClientEcsWorld world, Pl
                 {
                     clientNetwork.BeginCapture();
                 }
+
                 if (ImGui.Button("Start Replay"))
                 {
-                    Task.Run(async () => { try { await clientNetwork.BeginReplay("network_capture.aqrep"); } catch (Exception e) { Log.Error(e, "Failed to start network replay"); } });
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await clientNetwork.BeginReplay("network_capture.aqrep");
+                        }
+                        catch (Exception e)
+                        {
+                            Log.Error(e, "Failed to start network replay");
+                        }
+                    });
                 }
             }
             else
@@ -104,7 +123,17 @@ public class NetworkWidgets(ClientGameLogic gameLogic, NClientEcsWorld world, Pl
                     ImGui.Text($"Capturing Packets: {clientNetwork.Capturer.CapturedPackets.Count} packets captured");
                     if (ImGui.Button("Stop Capture"))
                     {
-                        Task.Run(async () => { try { await clientNetwork.SaveCapture("network_capture.aqrep"); } catch (Exception e) { Log.Error(e, "Failed to save network capture"); } });
+                        Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await clientNetwork.SaveCapture("network_capture.aqrep");
+                            }
+                            catch (Exception e)
+                            {
+                                Log.Error(e, "Failed to save network capture");
+                            }
+                        });
                     }
                 }
                 else
@@ -115,7 +144,8 @@ public class NetworkWidgets(ClientGameLogic gameLogic, NClientEcsWorld world, Pl
                     }
                     else
                     {
-                        ImGui.Text($"Replaying Packets: {clientNetwork.Capturer.ReplayIndex} / {clientNetwork.Capturer.CapturedPackets.Count} packets replayed");
+                        ImGui.Text(
+                            $"Replaying Packets: {clientNetwork.Capturer.ReplayIndex} / {clientNetwork.Capturer.CapturedPackets.Count} packets replayed");
                         ImGui.Text("Next Packet in  " +
                                    $"{(clientNetwork.Capturer.TryPeekNextPacket(out var nextPacket) ? nextPacket!.Delta.TotalMilliseconds : 0):0} ms");
                         if (ImGui.Button("Stop Replay"))
@@ -135,12 +165,72 @@ public class NetworkWidgets(ClientGameLogic gameLogic, NClientEcsWorld world, Pl
         ImGui.End();
     }
 
+    private readonly Vector4[] _colors =
+    [
+        new(1, 0, 0, 1),
+        new(0, 1, 0, 1),
+        new(0, 0, 1, 1),
+        new(1, 1, 0, 1),
+        new(1, 0, 1, 1),
+        new(0, 1, 1, 1)
+    ];
+
     public void RenderMenu()
     {
         if (ImGui.BeginMenu("Network"))
         {
             ImGui.MenuItem("Network Info", null, ref _networkInfoEnabled);
             ImGui.MenuItem("Management Info", null, ref _managementInfoEnabled);
+            if (ImGui.MenuItem("Server Region Rendering", null, ref serverRegionGizmosEnabled))
+            {
+                if (scene.RenderableInstances.GizmoMeshes.FirstOrDefault() is { } gizmos)
+                {
+                    foreach (var perServerManagementWorker in managementClient.Servers)
+                    {
+                        if (serverRegionGizmosEnabled)
+                        {
+                            var index = (u32)gizmos.InstanceInfos.Length;
+                            if (perServerManagementWorker.Value.RegionGizmoEntityId is null)
+                            {
+                                perServerManagementWorker.Value.RegionGizmoEntityId = index;
+                                gizmos._instanceInfos.Add(new GizmoShader.Instance());
+                            }
+                            else
+                            {
+                                index = perServerManagementWorker.Value.RegionGizmoEntityId.Value;
+                            }
+
+                            var instance = new GizmoShader.Instance();
+                            var area = perServerManagementWorker.Value.Region.Area;
+                            // Convert region min/max (in chunk coords) to world-space using grid chunk size
+                            var chunkSize = gameLogic.Grid?.GridInfo.ChunkSize.ToVector4().AsVector3() ??
+                                            new Vector3(16, 16, 16);
+                            var minChunks = area.Min.ToVector4().AsVector3();
+                            var maxChunks = area.Max.ToVector4().AsVector3();
+                            var minWorld = minChunks * chunkSize;
+                            var maxWorld = maxChunks * chunkSize;
+                            var sizeWorld = maxWorld - minWorld; // exclusive max -> correct full size in world units
+                            var centerWorld = minWorld + maxWorld;
+                            sizeWorld.Y = 0.0001f;
+                            centerWorld.Y = -5.0f;
+                            instance.SetTransform(Matrix4x4.CreateScale(sizeWorld) *
+                                                  Matrix4x4.CreateTranslation(centerWorld));
+                            instance.HighlightColorRef =
+                                _colors[(perServerManagementWorker.Key.Value - 1) % _colors.Length];
+                            instance.HighlightColorRef.W *= 0.5f;
+                            gizmos.InstanceInfos[(i32)index] = instance;
+                        }
+                        else
+                        {
+                            if (perServerManagementWorker.Value.RegionGizmoEntityId is { } entityId)
+                            {
+                                gizmos.InstanceInfos[(i32)entityId] = new GizmoShader.Instance();
+                            }
+                        }
+                    }
+                }
+            }
+
             ImGui.EndMenu();
         }
     }

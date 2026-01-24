@@ -12,6 +12,7 @@ public class PerServerManagementWorker(ManagementClient mmClient) : IWorkerManag
 {
     public ServerInfo Server { get; set; }
     public RegionAssignment Region { get; set; }
+    public u32? RegionGizmoEntityId { get; set; }
     public QClient? Client { get; set; }
     
     public async Task Connect(QFactory factory, Instrumentation instrumentation)
