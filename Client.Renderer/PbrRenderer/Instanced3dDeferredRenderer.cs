@@ -1,19 +1,14 @@
-﻿using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using Client.Renderer.Instancing;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
-using Common;
 using Common.Ecs;
 using Common.Systems;
 using GlmSharp;
-using ImGuiNET;
 using Interception;
-using NativeFileDialogExtendedSharp;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
@@ -27,8 +22,7 @@ public class Instanced3dDeferredRenderer(
     ICamera camera,
     Scene scene,
     IRenderableInstanceCollectionBuilder renderBuilder,
-    NClientEcsWorld world,
-    PeriodicUpdater periodicUpdater) : IRenderLayer, IUiRenderLayer, IAjivaLayer
+    NClientEcsWorld world)
 {
     private readonly ILogger<Instanced3dDeferredRenderer> _logger = logger;
     private readonly IShaderManager _shaderManager = shaderManager;
@@ -48,18 +42,17 @@ public class Instanced3dDeferredRenderer(
     private AjivaBuffer<PbrDeferredLightingShader.LightData> _lightsBuffer = null!;
 
     public ref bool Enabled => ref _enabled;
+    public uvec2 PixelReadRequest { get; set; }
+    public ObjectSamplingShader.Result? PixelReadResult;
 
-    private bool _isSceneViewHovered;
     private CompositorPipeline? _compositorPipeline;
     private PbrPipeline? _pbrPipeline;
     private PixelSamplingPipeline? _samplingPipeline;
     private WboitPipeline? _transparentPipeline;
     private GizmoPipeline? _gizmoPipeline;
     private bool _enabled = true;
-    internal ObjectSamplingShader.Result? _underCursor;
-    private Vector2 _mousePosition;
 
-    public void Attach()
+    public void Initiallize()
     {
         _camera.Attach();
         _logger.LogDebug("Creating View Buffers");
@@ -290,37 +283,21 @@ public class Instanced3dDeferredRenderer(
     }
 
     [TraceInterception]
-    public void Render(UpdateInfo info, RenderTarget target)
+    public VirtualFramebuffer.ColorTargetView? Render(UpdateInfo info, RenderTarget target, u32 width, u32 height,
+        bool isSceneViewHovered)
     {
-        if (_isSceneViewHovered)
+        if (isSceneViewHovered)
         {
             _camera.Update(info);
         }
 
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
-
-        if (!ImGui.Begin("Scene"))
-        {
-            ImGui.End();
-            return;
-        }
-
-        _mousePosition = ImGui.GetMousePos() -
-                         (ImGui.GetCursorPos() + ImGui.GetWindowPos()) * ImGui.GetWindowDpiScale();
-
-        //ImGui.Text($"Mouse: {ImGui.GetMousePos()}, Cursor: {ImGui.GetCursorPos()}, WindowPos: {ImGui.GetWindowPos()}, DpiScale: {ImGui.GetWindowDpiScale()}, result : {_mousePosition}");
 
         if (_sceneGBuffer is null || _finalSceneTexture is null)
         {
             _logger.LogError("Scene Buffers not created");
-            return;
+            return null;
         }
 
-        var size = ImGui.GetContentRegionAvail();
-
-        //var imDrawListPtr = ImGui.GetBackgroundDrawList();
-        //var size = imDrawListPtr.GetClipRectMax();
-        u32 width = (u32)size.X, height = (u32)Math.Max(0, size.Y);
 
         var prevWidth = _finalSceneTexture.Width;
         var prevHeight = _finalSceneTexture.Height;
@@ -331,65 +308,56 @@ public class Instanced3dDeferredRenderer(
         CreatePipelines();
         var mappingTask = _samplingPipeline.RequestResultBufferMapping();
         _api.Poll();
-        _underCursor = _samplingPipeline.ReadResult(mappingTask);
+        PixelReadResult = _samplingPipeline.ReadResult(mappingTask);
 
-        if (_sceneGBuffer.TryGetCompositorOutputView(out var emissive, out var objectAndInstanceId, out var accum,
-                out var reveal, out var overlay, out var depth) &&
-            _finalSceneTexture.TryGetTargets(out var colorOutput))
+        if (!_sceneGBuffer.TryGetCompositorOutputView(out var emissive, out var objectAndInstanceId, out var accum,
+                out var reveal, out var overlay, out var depth) ||
+            !_finalSceneTexture.TryGetTargets(out var colorOutput))
         {
-            var queue = target.QueuePtr;
-            Render(info, target, new Extent3D(width, height, 1));
-
-            _samplingPipeline.DispatchPixelRead(queue, new uvec2((u32)Math.Clamp(_mousePosition.X, 0, width - 1),
-                (u32)Math.Clamp(_mousePosition.Y, 0, height - 1)), depth.DepthOnlyView, objectAndInstanceId.View);
-
-            if (!Matrix4x4.Invert(_camera.ProjectionMatrix, out var invViewProjection))
-            {
-                _logger.LogError("Failed to invert projection matrix");
-                return;
-            }
-
-            if (!Matrix4x4.Invert(_camera.ViewMatrix, out var invView))
-            {
-                _logger.LogError("Failed to invert view matrix");
-                return;
-            }
-
-            _pbrPipeline.WriteDeferredSceneUniforms(queue, new PbrDeferredLightingShader.SceneUniforms
-            {
-                InverseProjectionRef = invViewProjection,
-                InverseViewRef = invView,
-                CameraPositionWorldRef = _camera.Position,
-                LightCount = _sceneLights.LightCount,
-                AmbientColorRef = new Vector3(0.1f, 0.1f, 0.1f),
-                IblIntensity = 1f,
-            });
-
-            _pbrPipeline.ApplyDeferredLighting(queue, _lightsBuffer.Buffer, _sceneLights.LightCount);
-
-            _compositorPipeline.Apply(queue, emissive.View, depth.DepthOnlyView, colorOutput.View, accum.View,
-                reveal.View, overlay.View);
-
-            if (prevWidth != width && prevHeight != height && hasPrev)
-                target.ImguiController.RemoveTextureBindGroup(prevView.View);
-
-            //imDrawListPtr.AddImage(color0.GetIntPtr(), new Vector2(0, 0), new Vector2(width, height));
-
-            ImGui.Image(colorOutput.View.GetIntPtr(), new Vector2(width, height));
-            _isSceneViewHovered = ImGui.IsItemHovered();
+            _logger.LogError("Failed to get scene buffer views");
+            return null;
         }
 
-        ImGui.End();
-        ImGui.PopStyleVar();
+        var queue = target.QueuePtr;
+        Render(info, target, new Extent3D(width, height, 1));
+
+        if (PixelReadRequest is { x: > 0, y: >= 0 } request && request.x < width && request.y < height)
+            _samplingPipeline.DispatchPixelRead(queue, request, depth.DepthOnlyView, objectAndInstanceId.View);
+
+        if (!Matrix4x4.Invert(_camera.ProjectionMatrix, out var invViewProjection))
+        {
+            _logger.LogError("Failed to invert projection matrix");
+            return null;
+        }
+
+        if (!Matrix4x4.Invert(_camera.ViewMatrix, out var invView))
+        {
+            _logger.LogError("Failed to invert view matrix");
+            return null;
+        }
+
+        _pbrPipeline.WriteDeferredSceneUniforms(queue, new PbrDeferredLightingShader.SceneUniforms
+        {
+            InverseProjectionRef = invViewProjection,
+            InverseViewRef = invView,
+            CameraPositionWorldRef = _camera.Position,
+            LightCount = _sceneLights.LightCount,
+            AmbientColorRef = new Vector3(0.1f, 0.1f, 0.1f),
+            IblIntensity = 1f,
+        });
+
+        _pbrPipeline.ApplyDeferredLighting(queue, _lightsBuffer.Buffer, _sceneLights.LightCount);
+
+        _compositorPipeline.Apply(queue, emissive.View, depth.DepthOnlyView, colorOutput.View, accum.View,
+            reveal.View, overlay.View);
+
+        if (prevWidth != width && prevHeight != height && hasPrev)
+            target.ImguiController.RemoveTextureBindGroup(prevView.View);
+
+        return colorOutput;
     }
 
-
-    [ExcludeFromInterception]
-    public void RenderUi(UpdateInfo info)
-    {
-    }
-
-    public void Detach()
+    public void Teardown()
     {
         _sceneGBuffer?.Release();
         _finalSceneTexture?.Release();

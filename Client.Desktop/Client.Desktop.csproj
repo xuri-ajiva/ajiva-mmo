@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Worker">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
@@ -18,5 +18,6 @@
         <ProjectReference Include="..\Client.Common\Client.Common.csproj"/>
         <ProjectReference Include="..\Client\Client.csproj"/>
         <ProjectReference Include="..\Client.Renderer\Client.Renderer.csproj"/>
+        <ProjectReference Include="..\Client.UI.Desktop\Client.UI.Desktop.csproj"/>
     </ItemGroup>
 </Project>
