@@ -33,33 +33,6 @@ public interface IEcsStore<T, out TEnumerator> : IEcsStore
     public ref T this[EntityId id] => ref Update(id);
 }
 
-public struct FreeList
-{
-    private Stack<i32> _freeIds;
-    private i32 _nextId;
-
-    public FreeList()
-    {
-        _freeIds = new Stack<i32>();
-        _nextId = 0;
-    }
-
-    public i32 GetFreeId()
-    {
-        if (_freeIds.Count > 0)
-        {
-            return _freeIds.Pop();
-        }
-
-        return _nextId++;
-    }
-
-    public void ReleaseId(i32 id)
-    {
-        _freeIds.Push(id);
-    }
-}
-
 public readonly ref struct PairKv<K, V>(K key, ref V value)
 {
     public readonly K Key = key;
