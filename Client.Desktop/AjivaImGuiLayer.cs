@@ -99,6 +99,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
 
     public void Render(UpdateInfo info)
     {
+        if (!_layerStack.Attached) return;
         using var tracer = Instrumentation.Trace(ActivityKind.Client);
 
         var window = _window.Window;

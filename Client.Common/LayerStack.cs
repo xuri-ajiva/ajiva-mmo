@@ -6,7 +6,7 @@ namespace Client.LayerSystem;
 public class LayerStack : IDisposable
 {
     private readonly List<IAjivaLayer> _layers = [];
-    private bool _attatched;
+    public bool Attached { get; private set; }
 
     private readonly IServiceScope _scope;
     private readonly PeriodicUpdater.UpdateHandle _updateHandle;
@@ -21,18 +21,18 @@ public class LayerStack : IDisposable
 
     public void Attach()
     {
-        if (_attatched) return;
+        if (Attached) return;
         foreach (var layer in _layers)
         {
             layer.Attach();
         }
 
-        _attatched = true;
+        Attached = true;
     }
 
     public void Detach()
     {
-        _attatched = false;
+        Attached = false;
         foreach (var ajivaLayer in _layers)
         {
             ajivaLayer.Detach();
@@ -43,7 +43,7 @@ public class LayerStack : IDisposable
 
     public void Update(UpdateInfo info)
     {
-        if (!_attatched) return;
+        if (!Attached) return;
         foreach (var layer in _layers)
         {
             if (layer.Enabled)
@@ -57,7 +57,7 @@ public class LayerStack : IDisposable
     {
         layer ??= _scope.ServiceProvider.GetRequiredService<T>();
         _layers.Add(layer);
-        if (_attatched)
+        if (Attached)
             layer.Attach();
     }
 
