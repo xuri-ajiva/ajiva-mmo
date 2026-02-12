@@ -17,7 +17,6 @@ namespace Client.UI.Desktop;
 public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32 width = 1920, u32 height = 1080)
     : IUiTextureRenderer
 {
-    private readonly DedicatedThreadDispatcher _dispatcher = new(logger.CreateLogger<DedicatedThreadDispatcher>());
     private readonly ILogger<RmlUiRenderer> _logger = logger.CreateLogger<RmlUiRenderer>();
     private u32 _width = width;
     private u32 _height = height;
@@ -269,8 +268,6 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
     {
         _logger.LogInformation("Disposing Ultralight renderer");
         _isReady = false;
-
-        _dispatcher.Dispose();
     }
 
     public void OnEvent(AjivaEvent<AjivaKeyboardEvent> inputEvent)
