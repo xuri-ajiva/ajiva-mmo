@@ -44,10 +44,12 @@ builder.Services.AddSingleton(logWidget);
 builder.Services.AddSingleton(builder.Configuration.GetSection("Window").Get<WindowConfig>() ?? new WindowConfig());
 
 var clientConfiguration = builder.Configuration.GetSection(nameof(ClientConfiguration)).Get<ClientConfiguration>();
-var client = new DesktopClientRunner<EditorApplication>(builder, clientConfiguration);
+var client = new DesktopClientRunner<DesktopApplication>(builder, clientConfiguration);
 builder.Services.AddScoped<EditorLayer>();
 builder.Services.AddScoped<IEditorWidget, NetworkWidgets>();
 builder.Services.AddScoped<IEditorWidget, EntityWidgets>();
 builder.Services.AddService<ManagementClient>();
 var host = builder.Build();
+var stack = host.Services.GetRequiredService<LayerStack>();
+stack.PushLayer<EditorLayer>();
 await client.RunAsync(host);

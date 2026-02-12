@@ -1,15 +1,19 @@
 ﻿using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
-using Client.LayerSystem;
+using Client.Common;
 using Common.Config;
 using Client.Common.Accessors;
 using Client.Desktop.Platform;
+using Client.Renderer;
+using Client.UI;
+using Client.UI.Desktop;
 using Common;
-
 
 namespace Client.Desktop;
 
-public class DesktopClientRunner<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TApp> : ClientRunner<TApp> where TApp : class, IApplication
+public class
+    DesktopClientRunner<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TApp> : ClientRunner<TApp>
+    where TApp : class, IApplication
 {
     public DesktopClientRunner(IHostApplicationBuilder builder, ClientConfiguration? clientConfiguration) : base(
         builder, clientConfiguration)
@@ -18,12 +22,17 @@ public class DesktopClientRunner<[DynamicallyAccessedMembers(DynamicallyAccessed
         services.AddSingleton<PlatformSystem>();
         services.AddService<AjivaImGuiLayer>();
         services.AddService<AjivaWindow, IInputAccessor>();
+        services.AddService<UiRenderLayer>();
+        services.AddService<ExampleGameHudLayer>();
+        services.AddService<InputSystem>();
+        services.AddService<ViewPortRenderer>();
+        services.AddService<RmlUiRenderer, IUiTextureRenderer>();
     }
 
     protected override async Task RunAsync(IHost app, IServiceScope root)
     {
         var services = root.ServiceProvider;
-        
+
         var platform = services.GetRequiredService<PlatformSystem>();
         platform.Init();
         await base.RunAsync(app, root);

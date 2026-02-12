@@ -1,6 +1,10 @@
+using Client.Common;
 using Client.Desktop;
+using Client.Desktop.Platform;
 using Client.LayerSystem;
+using Client.Renderer;
 using Client.Renderer.PbrRenderer;
+using Client.UI.Desktop;
 
 namespace Client.Editor;
 
@@ -43,10 +47,13 @@ internal class EditorApplication(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        _layerSystem.PushLayer<InputSystem>();
         _layerSystem.PushLayer<AjivaImGuiLayer>();
+        _layerSystem.PushLayer<UiRenderLayer>();
+        _layerSystem.PushLayer<ExampleGameHudLayer>();
         _layerSystem.PushLayer<EditorLayers.EditorLayer>();
         _layerSystem.PushLayer<LogWidget>();
-        _layerSystem.PushLayer<Instanced3dDeferredRenderer>();
+        _layerSystem.PushLayer<ViewPortRenderer>();
         _layerSystem.PushLayer<ClientConnectionLayer>();
         return Task.CompletedTask;
     }

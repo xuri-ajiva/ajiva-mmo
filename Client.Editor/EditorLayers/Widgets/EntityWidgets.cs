@@ -124,14 +124,14 @@ public class EntityWidgets(
 
             ImGui.Text("Under Mouse Sample:");
             ImGui.Text($"Mouse Position: {ImGui.GetMousePos()}");
-            if (renderer._underCursor is { } pos && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
+            if (renderer.PixelReadResult is { } pos && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
             {
                 _selectedObjectId = pos.ObjectId;
                 _selectedInstanceId = pos.InstanceId;
                 _selectedEntityId = renderBuilder.GetEntityId(_selectedObjectId, _selectedInstanceId);
             }
 
-            if (renderer._underCursor is { } selected)
+            if (renderer.PixelReadResult is { } selected)
             {
                 ImGui.Text($"Object ID: {selected.ObjectId}");
                 ImGui.Text($"Instance ID: {selected.InstanceId}");

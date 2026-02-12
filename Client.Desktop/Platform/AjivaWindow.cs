@@ -19,8 +19,8 @@ public class AjivaWindow : IHostedLifecycleService, IInputAccessor
     private readonly LayerStack _layerSystem;
     private readonly IHostApplicationLifetime _lifetime;
 
-    public IWindow Window = null!;
-    private Thread windowThread = null!;
+    internal IWindow Window = null!;
+    private Thread _windowThread = null!;
 
     public SurfacePtr Surface;
     public IInputContext InputContext { get; private set; }
@@ -56,7 +56,7 @@ public class AjivaWindow : IHostedLifecycleService, IInputAccessor
             throw;
         }
     }
-
+    
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var options = WindowOptions.Default;
@@ -74,9 +74,9 @@ public class AjivaWindow : IHostedLifecycleService, IInputAccessor
 
         Window = Silk.NET.Windowing.Window.Create(options);
         Window.Load += Load;
-        windowThread = new Thread(MainWindow)
+        _windowThread = new Thread(MainWindow)
             { IsBackground = false, Name = "Ajiva Main Window Thread", Priority = ThreadPriority.AboveNormal };
-        windowThread.Start();
+        _windowThread.Start();
 
         return Task.CompletedTask;
     }
@@ -128,7 +128,7 @@ public class AjivaWindow : IHostedLifecycleService, IInputAccessor
         //Surface.Release();
         _isClosing = true;
         Window.Close();
-        windowThread.Join();
+        _windowThread.Join();
         return Task.CompletedTask;
     }
 }

@@ -18,7 +18,8 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true,
+        reloadOnChange: true)
     .AddEnvironmentVariables()
     .AddCommandLine(args);
 
@@ -37,9 +38,11 @@ Log.Logger = new LoggerConfiguration()
 
 builder.AddServiceDefaults();
 builder.Services.AddSingleton(logWidget);
-builder.Services.AddSingleton(builder.Configuration.GetSection("Window").Get<WindowConfig>() ?? new WindowConfig());
+builder.Services.AddSingleton(builder.Configuration.GetSection("Window").Get<WindowConfig>() ??
+                              new WindowConfig());
 
-var clientConfiguration = builder.Configuration.GetSection(nameof(ClientConfiguration)).Get<ClientConfiguration>();
+var clientConfiguration =
+    builder.Configuration.GetSection(nameof(ClientConfiguration)).Get<ClientConfiguration>();
 var client = new DesktopClientRunner<DesktopApplication>(builder, clientConfiguration);
 var host = builder.Build();
 await client.RunAsync(host);
