@@ -20,6 +20,8 @@ public class RendererApi(ILogger<RendererApi> logger)
     public InstancePtr Instance;
     private static Wgpu _wgpuExtension = null!;
     private readonly SemaphoreSlim _frameQueueAccessWaitQueue = new(1, 1);
+    private u32 _frameQueueHoldingThread = 0;
+    internal readonly ILogger<RendererApi> _logger = logger;
 
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "m_waitCount")]
     public static extern i32 SemaphoreSlimWaitCount(SemaphoreSlim semaphoreSlim);
@@ -28,11 +30,11 @@ public class RendererApi(ILogger<RendererApi> logger)
     {
         if (_initialized) return;
         _initialized = true;
-        logger.LogInformation("Initializing RendererApi");
+        _logger.LogInformation("Initializing RendererApi");
         Wgpu = WebGPU.GetApi();
 
         Instance = Wgpu.CreateInstance();
-        logger.LogDebug("WGPU Instance: {Instance:X}", Instance.GetIntPtr());
+        _logger.LogDebug("WGPU Instance: {Instance:X}", Instance.GetIntPtr());
 
         Adapter = await Instance.RequestAdapter(
             backendType: default,
@@ -47,7 +49,7 @@ public class RendererApi(ILogger<RendererApi> logger)
             deviceLostCallback: (r, m) =>
             {
                 var message = m?.Replace("\\r\\n", "\n").Replace("\\n", "\n").Replace("\\t", "\t");
-                logger.LogCritical("Device lost with reason: {Reason} and message: {Message}", r, message);
+                _logger.LogCritical("Device lost with reason: {Reason} and message: {Message}", r, message);
             },
             defaultQueueLabel: "DefaultQueue", label: "MainDevice");
 
@@ -57,24 +59,24 @@ public class RendererApi(ILogger<RendererApi> logger)
             switch (type)
             {
                 case ErrorType.NoError:
-                    logger.LogInformation("No error with message: {Message}", message);
+                    _logger.LogInformation("No error with message: {Message}", message);
                     break;
                 case ErrorType.Validation:
-                    logger.LogWarning("Validation error with message: {Message}", message);
+                    _logger.LogWarning("Validation error with message: {Message}", message);
                     return;
                 case ErrorType.OutOfMemory:
-                    logger.LogCritical("Out of memory error with message: {Message}", message);
+                    _logger.LogCritical("Out of memory error with message: {Message}", message);
                     break;
                 case ErrorType.Internal:
-                    logger.LogError("Internal error with message: {Message}", message);
+                    _logger.LogError("Internal error with message: {Message}", message);
                     break;
                 case ErrorType.DeviceLost:
-                    logger.LogCritical("Device lost error with message: {Message}", message);
+                    _logger.LogCritical("Device lost error with message: {Message}", message);
                     break;
                 case ErrorType.Unknown:
                 case ErrorType.Force32:
                 default:
-                    logger.LogError("Unknown error type: {Type} with message: {Message}", type, message);
+                    _logger.LogError("Unknown error type: {Type} with message: {Message}", type, message);
                     break;
             }
 
@@ -86,7 +88,7 @@ public class RendererApi(ILogger<RendererApi> logger)
 
         if (!Device.TryGetExtension(out _wgpuExtension))
         {
-            logger.LogCritical("Wgpu (wgpu-rs) extension is not supported");
+            _logger.LogCritical("Wgpu (wgpu-rs) extension is not supported");
             throw new Exception("Wgpu (wgpu-rs) extension is not supported");
         }
 
@@ -129,16 +131,30 @@ public class RendererApi(ILogger<RendererApi> logger)
     {
         private readonly RendererApi _api;
         public QueuePtr Queue => _api.Queue;
+        private readonly bool _skipped = false;
 
         public QueueGuard(RendererApi api)
         {
             _api = api;
+            if (_api._frameQueueHoldingThread == (u32)Environment.CurrentManagedThreadId)
+            {
+                _skipped = true;
+                return;
+            }
+
             _api._frameQueueAccessWaitQueue.Wait();
+            _api._frameQueueHoldingThread = (u32)Environment.CurrentManagedThreadId;
         }
 
         public void Dispose()
         {
+            if (_skipped)
+            {
+                return;
+            }
+
             _api._frameQueueAccessWaitQueue.Release();
+            _api._frameQueueHoldingThread = 0;
         }
     }
 
