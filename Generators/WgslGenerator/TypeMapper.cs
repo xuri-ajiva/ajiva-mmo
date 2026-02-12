@@ -105,9 +105,9 @@ public class TypeMapper
             "vec2" or "Vector2" => VertexFormat.Float32x2,
             "vec3" or "Vector3" => VertexFormat.Float32x3,
             "vec4" or "Vector4" => VertexFormat.Float32x4,
-            "float" => VertexFormat.Float32,
-            "uint" => VertexFormat.Uint32,
-            "int" => VertexFormat.Sint32,
+            "float" or "f32" => VertexFormat.Float32,
+            "uint" or "u32" => VertexFormat.Uint32,
+            "int" or "i32" => VertexFormat.Sint32,
             _ => VertexFormat.Float32x4 // Default format for unknown types
         };
     }
