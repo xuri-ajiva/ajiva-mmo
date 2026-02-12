@@ -123,9 +123,16 @@ public class PeriodicUpdater : IHostedLifecycleService
             _clock.Update();
             var info = new UpdateInfo(_clock);
             using var l = _locker.EnterScope();
-            foreach (var task in _tasks)
+            if (_tasks is { Count: 0 })
             {
-                task.Invoke(info);
+                Thread.Sleep(10);
+            }
+            else
+            {
+                foreach (var task in _tasks)
+                {
+                    task.Invoke(info);
+                }
             }
         }
     }
