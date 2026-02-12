@@ -15,7 +15,7 @@ public class AjivaBuffer<T>(
     : IAjivaVersionedObject where T : unmanaged
 {
     public BufferUsage Usage { get; } = usage;
-    private static readonly u32 SizeOfT = (u32)Unsafe.SizeOf<T>();
+    public static readonly u32 SizeOfT = (u32)Unsafe.SizeOf<T>();
     public BufferPtr Buffer { get; private set; } = buffer;
     public u64 OffsetBytes { get; private set; } = 0;
     public u64 Count { get; private set; } = count;

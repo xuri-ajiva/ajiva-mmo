@@ -24,7 +24,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
     #region Textures
 
     private List<IAjivaVersionedObject> _internal = [];
-    internal AjivaTexture DefaultTexture = null!;
+    public AjivaTexture DefaultTexture = null!;
     internal AjivaTexture DefaultNormal = null!;
     internal AjivaTexture DefaultRoughness = null!;
     internal AjivaTexture DefaultMetallicRoughnessAo = null!;
@@ -335,6 +335,52 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
         DisposeLater(tmpTexture);
     }
 
+    public bool SimpleSyncTextureLoad(string path,
+        out TextureData texture,
+        TextureUsage usage = TextureUsage.TextureBinding,
+        string? label = null,
+        TextureFormat format = TextureFormat.Rgba8Unorm, TextureAspect aspect = TextureAspect.All)
+    {
+        try
+        {
+            using var data = new FileStream(FindFile(path), FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            using var originalImage = Image.Load<Rgba32>(data);
+
+            var extent3D = new Extent3D((u32)originalImage.Width, (u32)originalImage.Height, 1);
+
+            texture = CreateTexture(usage | TextureUsage.CopyDst, label ?? Path.GetFileNameWithoutExtension(path),
+                1, extent3D, format, aspect);
+            var sizePixels = originalImage.Width * originalImage.Height; // Size in pixels
+
+            var rent = ArrayPool<Rgba32>.Shared.Rent(sizePixels);
+            try
+            {
+                originalImage.CopyPixelDataTo(rent.AsSpan(0, sizePixels));
+                texture.WriteTexture(rent.AsSpan(0, sizePixels), extent3D, mipLevel: 0);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error processing/uploading texture for '{Label}'.", label ?? path);
+                return false;
+                throw;
+            }
+            finally
+            {
+                ArrayPool<Rgba32>.Shared.Return(rent);
+            }
+
+            return true;
+        }
+        catch (Exception e)
+        {
+            Logger.LogCritical(e, "Failed to synchronously load texture {Path}", path);
+            throw;
+        }
+
+        return false;
+    }
+
     private string FindFile(string filePath)
     {
         // search for a given path, in the following order:
@@ -422,7 +468,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
     private static u32 CalculateMaxMipLevels(Extent3D extent3D) =>
         (u32)MathF.Floor(MathF.Log2(Math.Max(extent3D.Width, extent3D.Height))) + 1;
 
-    private TextureData CreateTexture(TextureUsage usage, string label, u32 mipLevels, Extent3D extent3D,
+    public TextureData CreateTexture(TextureUsage usage, string label, u32 mipLevels, Extent3D extent3D,
         TextureFormat format, TextureAspect aspect)
     {
         var texture = Api.Device.CreateTexture(
