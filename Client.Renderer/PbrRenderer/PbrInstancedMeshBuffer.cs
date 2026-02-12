@@ -1,5 +1,4 @@
-﻿using System.Runtime.InteropServices;
-using Client.Renderer.Resources;
+﻿using Client.Renderer.Resources;
 using Client.Wgsl;
 using Silk.NET.WebGPU.Safe;
 

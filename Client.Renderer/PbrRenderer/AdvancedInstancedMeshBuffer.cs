@@ -1,7 +1,6 @@
 ﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Client.Renderer.Resources;
-using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
 namespace Client.Renderer.PbrRenderer;

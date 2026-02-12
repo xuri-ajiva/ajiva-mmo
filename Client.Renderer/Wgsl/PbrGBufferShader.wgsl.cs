@@ -1,7 +1,6 @@
 ﻿using System.Numerics;
 using Generators;
 using GlmSharp;
-using Interception;
 
 namespace Client.Wgsl;
 

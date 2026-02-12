@@ -4,7 +4,6 @@ using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.WGPU;
 using Silk.NET.WebGPU.Safe;
 using Silk.NET.WebGPU.Safe.Extensions;
-using ShaderModuleCompilationHint = Silk.NET.WebGPU.Safe.ShaderModuleCompilationHint;
 
 namespace Client.Renderer;
 

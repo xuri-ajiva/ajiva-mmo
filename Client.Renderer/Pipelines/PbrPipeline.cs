@@ -3,7 +3,6 @@ using Client.Renderer.PbrRenderer;
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
-using Interception;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 using Safe = Silk.NET.WebGPU.Safe;
