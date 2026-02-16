@@ -1,7 +1,7 @@
 ﻿using System.Numerics;
 using System.Threading.Channels;
 using Client.Common.Accessors;
-using Client.LayerSystem;
+using Common;
 using Common.Systems;
 using Silk.NET.Input;
 
@@ -114,33 +114,35 @@ public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjiv
 
     public void Update(UpdateInfo info)
     {
+        using var activity = Instrumentation.NamedTrace("InputSystem.Update");
         if (!_layerStack.Attached) return;
-
-        while (KeyboardEventChannel.Reader.TryRead(out var ajivaKeyboardEvent))
-        {
-            var evnt = new AjivaEvent<AjivaKeyboardEvent>(ajivaKeyboardEvent, false);
-            foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<AjivaKeyboardEvent>>())
+        using (Instrumentation.NamedTrace("InputSystem.KeyboardEvents"))
+            while (KeyboardEventChannel.Reader.TryRead(out var ajivaKeyboardEvent))
             {
-                layerStackLayer.OnEvent(evnt);
-                if (evnt.Handled)
+                var evnt = new AjivaEvent<AjivaKeyboardEvent>(ajivaKeyboardEvent, false);
+                foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<AjivaKeyboardEvent>>())
                 {
-                    break;
+                    layerStackLayer.OnEvent(evnt);
+                    if (evnt.Handled)
+                    {
+                        break;
+                    }
                 }
             }
-        }
 
-        while (MouseEventChannel.Reader.TryRead(out var ajivaMouseEvent))
-        {
-            var evnt = new AjivaEvent<AjivaMouseEvent>(ajivaMouseEvent, false);
-            foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<AjivaMouseEvent>>())
+        using (Instrumentation.NamedTrace("InputSystem.MouseEvents"))
+            while (MouseEventChannel.Reader.TryRead(out var ajivaMouseEvent))
             {
-                layerStackLayer.OnEvent(evnt);
-                if (evnt.Handled)
+                var evnt = new AjivaEvent<AjivaMouseEvent>(ajivaMouseEvent, false);
+                foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<AjivaMouseEvent>>())
                 {
-                    break;
+                    layerStackLayer.OnEvent(evnt);
+                    if (evnt.Handled)
+                    {
+                        break;
+                    }
                 }
             }
-        }
     }
 
     public void Detach()

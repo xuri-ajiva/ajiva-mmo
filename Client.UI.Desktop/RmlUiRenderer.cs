@@ -182,15 +182,22 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
 
     public void Update(float deltaTime, QueuePtr targetQueuePtr)
     {
+        using var trace = Instrumentation.NamedTrace("start_frame");
         if (_doc?.GetElementById("fps") is not { } el) return;
         el.SetInnerRml($"FPS: {(i32)(1.0f / deltaTime)}");
+        Instrumentation.RecordEvent("updated_document");
 
-        _context?.Update();
+        using (Instrumentation.NamedTrace("Update"))
+            _context?.Update();
 
-        _renderInterface.StartCapture(targetQueuePtr);
-        _context?.Render();
+        using (Instrumentation.NamedTrace("StartCapture"))
+            _renderInterface.StartCapture();
 
-        _renderInterface.ExecuteRender(targetQueuePtr);
+        using (Instrumentation.NamedTrace("Render"))
+            _context?.Render();
+
+        using (Instrumentation.NamedTrace("ExecuteRender"))
+            _renderInterface.ExecuteRender();
     }
 
     public void Resize(u32 width, u32 height)

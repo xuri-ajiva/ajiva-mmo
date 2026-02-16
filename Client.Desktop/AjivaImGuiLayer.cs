@@ -2,6 +2,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Reflection;
+using Client.Common;
 using Client.Desktop.Platform;
 using Client.LayerSystem;
 using Client.Renderer;
@@ -204,11 +205,13 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
                 if (!layer.Enabled) continue;
 
                 // ReSharper disable once ConvertIfStatementToSwitchStatement
-                if (layer is IRenderLayer renderLayer)
-                    renderLayer.Render(info, new RenderTarget(guard.Queue, _imguiController!));
+                using (Instrumentation.NamedTrace("rendering"))
+                    if (layer is IRenderLayer renderLayer)
+                        renderLayer.Render(info, new RenderTarget(guard.Queue, _imguiController!));
 
-                if (layer is IUiRenderLayer uiRenderLayer)
-                    uiRenderLayer.RenderUi(info);
+                using (Instrumentation.NamedTrace("ui rendering"))
+                    if (layer is IUiRenderLayer uiRenderLayer)
+                        uiRenderLayer.RenderUi(info);
             }
 
             if (_showOverlay)

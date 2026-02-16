@@ -1,7 +1,8 @@
 ﻿using System.Reflection;
+using Common;
 using Common.Systems;
 
-namespace Client.LayerSystem;
+namespace Client.Common;
 
 public class LayerStack : IDisposable
 {
@@ -43,13 +44,16 @@ public class LayerStack : IDisposable
 
     public void Update(UpdateInfo info)
     {
+        using var trace = Instrumentation.Trace();
+
         if (!Attached) return;
         foreach (var layer in _layers)
         {
-            if (layer.Enabled)
-            {
-                layer.Update(info);
-            }
+            using (Instrumentation.NamedTrace(layer.GetType().FullName ?? "UnknownLayer"))
+                if (layer.Enabled)
+                {
+                    layer.Update(info);
+                }
         }
     }
 
