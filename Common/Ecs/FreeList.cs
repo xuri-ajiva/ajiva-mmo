@@ -1,17 +1,11 @@
 ﻿namespace Common.Ecs;
 
-public struct FreeList
+public struct FreeList(i32 initialId = 0)
 {
-    private Stack<i32> _freeIds;
-    private i32 _nextId;
+    private readonly Stack<i32> _freeIds = new();
+    private i32 _nextId = initialId;
     public i32 Capacity => _nextId;
     public i32 Count => _nextId - _freeIds.Count;
-
-    public FreeList(int initialId = 0)
-    {
-        _freeIds = new Stack<i32>();
-        _nextId = initialId;
-    }
 
     public i32 GetFreeId()
     {

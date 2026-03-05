@@ -23,15 +23,15 @@ public class NServerEcs
         nameof(EntityType), nameof(Spacial), nameof(EntityOwnership))]
     public void ClearAllEntities()
     {
-        NetState = new();
-        Position = new();
-        Rotation = new(new());
-        Scale = new(new());
-        Velocity = new();
-        EntityType = new();
-        Spacial = new();
-        EntityOwnership = new();
-        _entityIdFreeList = new();
+        NetState = new DenseStore<NetState>();
+        Position = new DenseStore<Position>();
+        Rotation = new DirtyTrackedStore<Rotation, DenseStore<Rotation>, DenseStore<Rotation>.Iterator>(new DenseStore<Rotation>());
+        Scale = new DirtyTrackedStore<Scale, DenseStore<Scale>, DenseStore<Scale>.Iterator>(new DenseStore<Scale>());
+        Velocity = new DenseStore<Velocity>();
+        EntityType = new SparseSetStore<EntityType>();
+        Spacial = new DenseStore<SpacialData>();
+        EntityOwnership = new DenseStore<EntityOwnership>();
+        _entityIdFreeList = new FreeList(1);
     }
 
     public NServerEcs()
@@ -39,7 +39,7 @@ public class NServerEcs
         ClearAllEntities();
     }
 
-    private FreeList _entityIdFreeList;
+    private FreeList _entityIdFreeList= new(1);
 
     public EntityId CreateEntity() => new(_entityIdFreeList.GetFreeId());
 
