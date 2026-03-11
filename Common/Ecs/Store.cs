@@ -161,7 +161,7 @@ public class DenseStore<T> : IEcsStore<T, DenseStore<T>.Iterator>
         if (id.Value < _data.Length) _used.Set(id.Value, false);
     }
 
-    public bool Has(EntityId id) => id.Value < _data.Length && _used.Get(id.Value);
+    public bool Has(EntityId id) => id.Value >= 0 && id.Value < _data.Length && _used.Get(id.Value);
 
     public T Get(EntityId id) => _data[id.Value];
 
