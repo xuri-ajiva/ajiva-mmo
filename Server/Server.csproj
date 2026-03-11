@@ -12,9 +12,6 @@
         <InterceptorsPreviewNamespaces>$(InterceptorsPreviewNamespaces);Microsoft.AspNetCore.Http.Generated;Server;System.Runtime.CompilerServices;Interception</InterceptorsPreviewNamespaces>
         <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
     </PropertyGroup>
-    <ItemGroup>
-        <InternalsVisibleTo Include="Composer"/>
-    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="GlmSharp-netstandard" />
@@ -22,6 +19,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Compile Include="../Common/GlobalUsings.cs"/>
         <ProjectReference Include="..\Common\Common.csproj"/>
         <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
     </ItemGroup>

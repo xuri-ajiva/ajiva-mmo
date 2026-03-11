@@ -11,16 +11,19 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+<!--
         <PackageReference Include="RmlUi.Net" />
+-->
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Client.Common\Client.Common.csproj" />
         <ProjectReference Include="..\Client\Client.csproj" />
         <ProjectReference Include="..\Common\Common.csproj"/>
+        <ProjectReference Include="..\..\RmlUi.Net\RmlUi.Net\RmlUi.Net.csproj"/>
     </ItemGroup>
 
     <ItemGroup>
-      <Compile Include="../Client/GlobalUsings.cs"/>
+        <Compile Include="../Common/GlobalUsings.cs"/>
     </ItemGroup>
 </Project>

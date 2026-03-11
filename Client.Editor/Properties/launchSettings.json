@@ -6,6 +6,7 @@
       "dotnetRunMessages": true,
       "workingDirectory": "../Client",
       "nativeDebugging": true,
+      "enableNativeCodeDebugging": true,
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development",
         "RUST_BACKTRACE": "full",
@@ -15,7 +16,8 @@
         "NODEVICE_SELECT": "1",
         "DISABLE_SAMPLE_LAYER": "1",
         "RUST_LOG": "wgpu=trace,wgpu_hal=trace"
-      }
+      },
+      "commandLineArgs": "--ClientConfiguration:AutoConnect=true --ClientConfiguration:AutoConnectAddress udp://localhost:7776 --ClientConfiguration:ClusterManagerAddress udp://localhost:8887"
     }
   }
 }

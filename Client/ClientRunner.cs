@@ -8,6 +8,7 @@ using Client.Networking;
 using Client.Renderer;
 using Client.Renderer.Instancing;
 using Client.Renderer.PbrRenderer;
+using Client.Renderer.Renderers;
 using Client.Renderer.Resources;
 using Client.Wgsl;
 using Common;

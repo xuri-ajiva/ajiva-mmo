@@ -14,11 +14,9 @@
     </PropertyGroup>
     
     <ItemGroup>
+        <Compile Include="../Common/GlobalUsings.cs"/>
         <ProjectReference Include="..\Common\Common.csproj"/>
         <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
     </ItemGroup>
     
-    <ItemGroup>
-      <Compile Remove="ServerWorker.cs" />
-    </ItemGroup>
 </Project>

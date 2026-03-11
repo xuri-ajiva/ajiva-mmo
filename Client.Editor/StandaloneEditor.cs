@@ -1,7 +1,6 @@
-﻿using Client;
+﻿using Client.Common;
 using Client.Config;
 using Client.Desktop;
-using Client.Editor;
 using Client.Editor.EditorLayers;
 using Client.Editor.EditorLayers.Widgets;
 using Client.Editor.Management;

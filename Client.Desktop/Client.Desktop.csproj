@@ -13,7 +13,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Compile Include="../Client/GlobalUsings.cs"/>
+        <Compile Include="../Common/GlobalUsings.cs"/>
         <ProjectReference Include="..\Common\Common.csproj"/>
         <ProjectReference Include="..\Client.Common\Client.Common.csproj"/>
         <ProjectReference Include="..\Client\Client.csproj"/>

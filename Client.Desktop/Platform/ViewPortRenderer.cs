@@ -1,10 +1,9 @@
 ﻿using System.Numerics;
 using Client.Renderer;
-using Client.Renderer.PbrRenderer;
-using Client.Renderer.VirtualFramebuffers;
+using Client.Renderer.Renderers;
 using Common.Systems;
 using GlmSharp;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Silk.NET.WebGPU.Safe;
 
 namespace Client.Desktop.Platform;

@@ -5,6 +5,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <UserSecretsId>dotnet-Client.Editor-69ef1b52-e976-4639-b550-0cd1e91e25ff</UserSecretsId>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>
@@ -12,7 +13,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Compile Include="../Client/GlobalUsings.cs"/>
+        <Compile Include="../Common/GlobalUsings.cs"/>
         <ProjectReference Include="..\Client.Desktop\Client.Desktop.csproj" />
         <ProjectReference Include="..\Common\Common.csproj"/>
         <ProjectReference Include="..\Client.Common\Client.Common.csproj"/>

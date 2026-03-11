@@ -21,6 +21,7 @@
     <ItemGroup>
         <InternalsVisibleTo Include="Composer"/>
         <InternalsVisibleTo Include="Client.Editor"/>
+        <Compile Include="../Common/GlobalUsings.cs"/>
     </ItemGroup>
 
     <ItemGroup>
@@ -28,11 +29,8 @@
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
         <PackageReference Include="Microsoft.Extensions.Hosting"/>
         <PackageReference Include="Polly" />
-
-        <PackageReference Include="Silk.NET.Maths"/>
         <PackageReference Include="Silk.NET.WebGPU"/>
         <PackageReference Include="Silk.NET.WebGPU.Native.WGPU"/>
-        <PackageReference Include="Silk.NET.WebGPU.Extensions.Disposal"/>
         <PackageReference Include="NativeFileDialogExtendedSharp"/>
 
         <PackageReference Include="Silk.NET.Assimp"/>
@@ -45,5 +43,11 @@
         <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
         <ProjectReference Include="..\Common\Common.csproj"/>
         <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Extensions.ImGui\Silk.NET.WebGPU.Extensions.ImGui.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="favicon.ico">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
     </ItemGroup>
 </Project>

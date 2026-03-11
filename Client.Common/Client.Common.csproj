@@ -10,15 +10,21 @@
     
     <ItemGroup>
         <InternalsVisibleTo Include="Client"/>
-        <Compile Include="../Client/GlobalUsings.cs"/>
+        <Compile Include="../Common/GlobalUsings.cs"/>
     </ItemGroup>
     
     <ItemGroup>
+        <PackageReference Include="Hexa.NET.ImGui" />
+        <PackageReference Include="Hexa.NET.ImGui.Backends.SDL3" />
+        <PackageReference Include="Hexa.NET.SDL3" />
         <PackageReference Include="Microsoft.Extensions.Hosting"/>
-        <PackageReference Include="Silk.NET.Input.Common"/>
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Common\Common.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Accessors\" />
     </ItemGroup>
 </Project>
