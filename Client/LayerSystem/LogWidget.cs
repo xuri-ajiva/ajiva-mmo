@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Numerics;
 using Common.Systems;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
@@ -146,18 +146,22 @@ public class LogWidget : ILogEventSink, IUiRenderLayer
             {
                 ImGui.LogFinish();
             }
-
-            ImGui.EndChild();
         }
+
+        ImGui.EndChild();
     }
 
-    public void Attach() {}
+    public void Attach()
+    {
+    }
 
     public void Update(UpdateInfo info)
     {
     }
 
-    public void Detach() {}
+    public void Detach()
+    {
+    }
 
     public ref bool Enabled => ref _enabled;
 }

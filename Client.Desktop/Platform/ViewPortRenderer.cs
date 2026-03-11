@@ -27,6 +27,7 @@ public class ViewPortRenderer(Instanced3dDeferredRenderer renderer) : IRenderLay
         if (!ImGui.Begin("Scene"))
         {
             ImGui.End();
+            ImGui.PopStyleVar();
             return;
         }
 
@@ -45,9 +46,12 @@ public class ViewPortRenderer(Instanced3dDeferredRenderer renderer) : IRenderLay
 
         if (renderer.Render(info, target, width, height, _isSceneViewHovered) is { } colorOutput)
         {
-            //imDrawListPtr.AddImage(color0.GetIntPtr(), new Vector2(0, 0), new Vector2(width, height));
-            ImGui.Image(colorOutput.View.GetIntPtr(), new Vector2(width, height));
-            _isSceneViewHovered = ImGui.IsItemHovered();
+            unsafe
+            {
+                //imDrawListPtr.AddImage(color0.GetIntPtr(), new Vector2(0, 0), new Vector2(width, height));
+                ImGui.Image(new ImTextureRef(texId: colorOutput.View.GetIntPtr()), new Vector2(width, height));
+                _isSceneViewHovered = ImGui.IsItemHovered();
+            }
         }
 
         ImGui.End();

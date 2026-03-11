@@ -31,7 +31,7 @@ public class NClientEcsWorld
         EntityType = new();
         RenderAsset = new();
         RenderMesh = new();
-        _entityIdFreeList = new();
+        _entityIdFreeList = new(1);
         Grid = null;
     }
 
@@ -40,7 +40,7 @@ public class NClientEcsWorld
         ClearAllEntities();
     }
 
-    private FreeList _entityIdFreeList;
+    private FreeList _entityIdFreeList = new(1);
 
     public EntityId CreateEntity() => new(_entityIdFreeList.GetFreeId());
 

@@ -1,7 +1,6 @@
-﻿using Client.Game;
-using Client.Networking;
+﻿using Client.Networking;
 using Common.Systems;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Interception;
 
 namespace Client.LayerSystem;
@@ -11,11 +10,7 @@ namespace Client.LayerSystem;
 /// Now purely focused on UI - no network logic
 /// </summary>
 [ExcludeFromInterception]
-public class ClientConnectionLayer(
-    ClientNetworkManager networkManager,
-    ClientGameLogic gameLogic,
-    PlayerInputSystem inputSystem)
-    : IUiRenderLayer
+public class ClientConnectionLayer(ClientNetworkManager networkManager) : IUiRenderLayer
 {
     public void Attach()
     {
@@ -89,8 +84,8 @@ public class ClientConnectionLayer(
             }
 
             ImGui.TextWrapped($"Game Server: {networkManager}");
-            ImGui.End();
         }
-       
+
+        ImGui.End();
     }
 }
