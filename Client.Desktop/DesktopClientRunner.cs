@@ -1,9 +1,9 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using Client.Common;
 using Common.Config;
-using Client.Common.Accessors;
 using Client.Desktop.Platform;
 using Client.Renderer;
+using Client.Renderer.Renderers;
 using Client.UI;
 using Client.UI.Desktop;
 using Common;
@@ -12,7 +12,8 @@ namespace Client.Desktop;
 
 public class
     DesktopClientRunner<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TApp> : ClientRunner<TApp>
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TApp> : ClientRunner<TApp>
     where TApp : class, IApplication
 {
     public DesktopClientRunner(IHostApplicationBuilder builder, ClientConfiguration? clientConfiguration) : base(
@@ -21,10 +22,11 @@ public class
         var services = builder.Services;
         services.AddSingleton<PlatformSystem>();
         services.AddService<AjivaImGuiLayer>();
-        services.AddService<AjivaWindow, IInputAccessor>();
+        services.AddService<AjivaWindow>();
+        services.AddService<ImGuiPlatform>();
         services.AddService<UiRenderLayer>();
         services.AddService<ExampleGameHudLayer>();
-        services.AddService<InputSystem>();
+        services.AddService<EventSystem>();
         services.AddService<ViewPortRenderer>();
         services.AddService<RmlUiRenderer, IUiTextureRenderer>();
     }
@@ -36,6 +38,6 @@ public class
         var platform = services.GetRequiredService<PlatformSystem>();
         platform.Init();
         await base.RunAsync(app, root);
-        platform.Shotdown();
+        platform.Shutdown();
     }
 }

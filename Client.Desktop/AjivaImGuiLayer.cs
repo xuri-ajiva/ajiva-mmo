@@ -4,21 +4,21 @@ using System.Numerics;
 using System.Reflection;
 using Client.Common;
 using Client.Desktop.Platform;
-using Client.LayerSystem;
 using Client.Renderer;
+using Client.Renderer.Renderers;
 using Common;
 using Common.Systems;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
 using Silk.NET.WebGPU;
-using Silk.NET.WebGPU.Extensions.ImGui;
 using Silk.NET.WebGPU.Safe;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 using SurfaceConfiguration = Silk.NET.WebGPU.Safe.SurfaceConfiguration;
 
 namespace Client.Desktop;
 
-public class AjivaImGuiLayer : IAjivaLayer, IDisposable
+public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyboardEvent>,
+    IEventHandler<AjivaMouseEvent>
 {
     private readonly ILogger<AjivaImGuiLayer> _logger;
     private readonly LayerStack _layerStack;
@@ -27,18 +27,20 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
     private readonly PeriodicUpdater _periodicUpdater;
 
     private ImFontPtr _quicksandFont;
-    private ImGuiController? _imguiController;
     private readonly AjivaWindow _window;
+    private readonly ImGuiPlatform _imGuiPlatform;
 
     public AjivaImGuiLayer(ILogger<AjivaImGuiLayer> logger, LayerStack layerStack, RendererApi api,
-        PeriodicUpdater periodicUpdater, AjivaWindow window, IServiceProvider serviceProvider)
+        PeriodicUpdater periodicUpdater, AjivaWindow window, IServiceProvider serviceProvider,
+        ImGuiPlatform imGuiPlatform)
     {
         _logger = logger;
         _layerStack = layerStack;
         _api = api;
         _periodicUpdater = periodicUpdater;
         _window = window;
-        // find alll types that implement IAjivaLayer
+        _imGuiPlatform = imGuiPlatform;
+        // find all types that implement IAjivaLayer
 #if DEBUG
         _layerTypes =
             GetType().Assembly.DefinedTypes
@@ -49,53 +51,52 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
 #endif
     }
 
-    public void Attach()
+    public unsafe void Attach()
     {
-        _imguiController = new ImGuiController(_api.Device, TextureFormat.Bgra8Unorm, _window.Window,
-            _window.InputContext, SetupFonts);
-
+        _imGuiPlatform.Initialize();
+        //_imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
         var io = ImGui.GetIO();
 
-        io.ConfigFlags |= ImGuiConfigFlags.DockingEnable; // Enable Docking
-        io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable; // Enable Multi-Viewport / Platform Windows
+        var fontPath = Path.GetFullPath("resources/Quicksand-SemiBold.ttf");
+
+        //TODO IMG MIGRATION: var nativeConfig = ImGuiNative.ImFontConfig_ImFontConfig();
+        //Add a higher horizontal/vertical sample rate for global scaling.
+        //TODO IMG MIGRATION: nativeConfig->OversampleH = 8;
+        //TODO IMG MIGRATION: nativeConfig->OversampleV = 8;
+        //TODO IMG MIGRATION: nativeConfig->RasterizerMultiply = 1f;
+        //TODO IMG MIGRATION: nativeConfig->GlyphOffset = new Vector2(0);
+        io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
+        io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable;
+        _quicksandFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPath, 18);
+        // _imguiController = new ImGuiController(_api.Device, TextureFormat.Bgra8Unorm, _window.Window, SetupFonts);
+
+        io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
+        io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable;
+        /*io.ConfigFlags |= ImGuiConfigFlags.DockingEnable; // Enable Docking
+        io.ConfigFlags |= ImGuiConfigFlags.ViewportsEnable; // Enable Multi-Viewport / Platform Windows*/
         _renderUpdateHandle = _periodicUpdater.RegisterUpdate(UpdateCycle.Render, Render);
         var style = ImGui.GetStyle();
         style.FrameRounding = 4;
         style.FrameBorderSize = 1;
-        io.FontGlobalScale = 1.25f;
+        //TODO IMG MIGRATION: io.FontGlobalScale = 1.25f;
     }
 
     public void Update(UpdateInfo info)
     {
     }
 
-    unsafe void SetupFonts()
-    {
-        //_imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
-
-        var fontPath = Path.GetFullPath("resources/Quicksand-SemiBold.ttf");
-
-        var nativeConfig = ImGuiNative.ImFontConfig_ImFontConfig();
-        //Add a higher horizontal/vertical sample rate for global scaling.
-        nativeConfig->OversampleH = 8;
-        nativeConfig->OversampleV = 8;
-        nativeConfig->RasterizerMultiply = 1f;
-        nativeConfig->GlyphOffset = new Vector2(0);
-
-        _quicksandFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPath, 18, nativeConfig);
-    }
-
     public void Detach()
     {
-        _imguiController?.Dispose();
-        _imguiController = null;
+        _imGuiPlatform.Teardown();
+        _renderUpdateHandle?.Dispose();
+        _renderUpdateHandle = null;
     }
 
     private bool _enabled = true;
     public ref bool Enabled => ref _enabled;
 
     private TextureViewPtr? _swapchainView;
-    private Vector2D<i32> _lastFramebufferSize = new(0, 0);
+    private ImVec2I _lastFramebufferSize = new(0, 0);
     private bool _requestReConfigure = true;
 
     public void Render(UpdateInfo info)
@@ -196,7 +197,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
             baseMipLevel: 0, mipLevelCount: 1,
             baseArrayLayer: 0, arrayLayerCount: 1, label: "SwapchainView");
 
-        ImGui.PushFont(_quicksandFont);
+        ImGui.PushFont(_quicksandFont, 0);
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
         using (Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Queue"))
         using (var guard = _api.EnterQueue())
@@ -210,7 +211,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
                 // ReSharper disable once ConvertIfStatementToSwitchStatement
                 using (Instrumentation.NamedTrace("rendering"))
                     if (layer is IRenderLayer renderLayer)
-                        renderLayer.Render(info, new RenderTarget(guard.Queue, _imguiController!));
+                        renderLayer.Render(info, new RenderTarget(guard.Queue));
 
                 using (Instrumentation.NamedTrace("ui rendering"))
                     if (layer is IUiRenderLayer uiRenderLayer)
@@ -236,7 +237,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
                 ], null, null,
                 null);
 
-            _imguiController!.Render(pass);
+            _imGuiPlatform!.Render(pass);
             ImGui.UpdatePlatformWindows();
             //ImGui.RenderPlatformWindowsDefault();
 
@@ -350,7 +351,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
 
     private i32 _location = -1;
     private bool _showOverlay = true, _demoWindow;
-    private f32[] _frameTimes = new f32[100];
+    private readonly f32[] _frameTimes = new f32[100];
     private readonly TypeInfo[] _layerTypes;
     private PeriodicUpdater.UpdateHandle? _renderUpdateHandle;
 
@@ -378,7 +379,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
         else if (_location == -2)
         {
             // Center window
-            ImGui.SetNextWindowPos(ImGui.GetMainViewport().GetCenter(), ImGuiCond.Always, new Vector2(0.5f, 0.5f));
+            //TODO IMG MIGRATION: ImGui.SetNextWindowPos(ImGui.GetMainViewport()., ImGuiCond.Always, new Vector2(0.5f, 0.5f));
             windowFlags |= ImGuiWindowFlags.NoMove;
         }
 
@@ -417,5 +418,23 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
     {
         _renderUpdateHandle?.Dispose();
         GCStressTest = null;
+    }
+
+    public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
+    {
+        _imGuiPlatform.OnEvent(ref inputEvent);
+        if (ImGui.GetIO().WantCaptureKeyboard)
+        {
+            inputEvent.Handled = true;
+        }
+    }
+
+    public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
+    {
+        _imGuiPlatform.OnEvent(ref inputEvent);
+        if (ImGui.GetIO().WantCaptureMouse)
+        {
+            inputEvent.Handled = true;
+        }
     }
 }

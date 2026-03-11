@@ -155,6 +155,8 @@ public class RendererApi(ILogger<RendererApi> logger)
             _api._frameQueueAccessWaitQueue.Release();
             _api._frameQueueHoldingThread = 0;
         }
+
+        public static implicit operator QueuePtr(QueueGuard guard) => guard.Queue;
     }
 
     public QueueGuard EnterQueue() => new(this);

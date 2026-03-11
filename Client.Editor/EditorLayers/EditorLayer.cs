@@ -1,6 +1,6 @@
 ﻿using Client.Editor.EditorLayers.Widgets;
 using Common.Systems;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 
 namespace Client.Editor.EditorLayers;
 
@@ -31,6 +31,7 @@ public class EditorLayer(IEnumerable<IEditorWidget> widgets)
         {
             iEditorWidget.RenderMenu();
         }
+
         ImGui.EndMainMenuBar();
 
         foreach (var iEditorWidget in widgets)

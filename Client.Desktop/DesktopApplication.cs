@@ -1,5 +1,6 @@
 using Client.Common;
 using Client.Desktop.Platform;
+using Client.Game;
 using Client.LayerSystem;
 using Client.Renderer;
 using Client.UI.Desktop;
@@ -45,12 +46,13 @@ public class DesktopApplication(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _layerSystem.PushLayer<InputSystem>();
-        _layerSystem.PushLayer<AjivaImGuiLayer>();
+        _layerSystem.PushLayer<EventSystem>();
         _layerSystem.PushLayer<UiRenderLayer>();
         _layerSystem.PushLayer<ExampleGameHudLayer>();
+        _layerSystem.PushLayer<PlayerInputSystem>();
         _layerSystem.PushLayer<LogWidget>();
         _layerSystem.PushLayer<ViewPortRenderer>();
+        _layerSystem.PushLayer<AjivaImGuiLayer>();
         _layerSystem.PushLayer<ClientConnectionLayer>();
         return Task.CompletedTask;
     }

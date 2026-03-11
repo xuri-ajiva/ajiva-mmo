@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Client.Renderer.Instancing;
+using Client.Renderer.PbrRenderer;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
@@ -12,7 +13,7 @@ using Interception;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
-namespace Client.Renderer.PbrRenderer;
+namespace Client.Renderer.Renderers;
 
 public class Instanced3dDeferredRenderer(
     ILogger<Instanced3dDeferredRenderer> logger,
@@ -351,8 +352,11 @@ public class Instanced3dDeferredRenderer(
         _compositorPipeline.Apply(queue, emissive.View, depth.DepthOnlyView, colorOutput.View, accum.View,
             reveal.View, overlay.View);
 
-        if (prevWidth != width && prevHeight != height && hasPrev)
+        /*
+         TODO check if this is auto done
+         if (prevWidth != width && prevHeight != height && hasPrev)
             target.ImguiController.RemoveTextureBindGroup(prevView.View);
+        */
 
         return colorOutput;
     }

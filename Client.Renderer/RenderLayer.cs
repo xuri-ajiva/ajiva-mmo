@@ -9,8 +9,8 @@ public interface IRenderLayer : IAjivaLayer
     void Render(UpdateInfo info, RenderTarget target);
 }
 
-public ref struct RenderTarget(QueuePtr queuePtr, ImGuiController imguiController)
+public ref struct RenderTarget(QueuePtr queuePtr)
 {
     public readonly QueuePtr QueuePtr = queuePtr;
-    public readonly ImGuiController ImguiController = imguiController;
+    //public readonly ImGuiController ImguiController = imguiController;
 }

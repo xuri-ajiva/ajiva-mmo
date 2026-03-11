@@ -3,12 +3,12 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using Client.Renderer;
 using Client.Renderer.Instancing;
-using Client.Renderer.PbrRenderer;
+using Client.Renderer.Renderers;
 using Client.Renderer.Resources;
 using Common;
 using Common.Ecs;
 using Common.Systems;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using NativeFileDialogExtendedSharp;
 using Silk.NET.WebGPU.Safe;
 
@@ -36,8 +36,7 @@ public class EntityWidgets(
         if (_entityInspectorEnabled && ImGui.Begin("Entity Inspector", ref _entityInspectorEnabled))
         {
             ImGui.DragInt("##EntityId", ref Unsafe.As<EntityId, i32>(ref _selectedEntityId));
-            if (_selectedEntityId != EntityId.Invalid &&
-                world.Transform.Has(_selectedEntityId))
+            if (_selectedEntityId != EntityId.Invalid && world.Transform.Has(_selectedEntityId))
             {
                 ref var transform = ref world.Transform.Update(_selectedEntityId);
                 ImGui.DragFloat3("##EntityPosition", ref transform.Position);
@@ -152,64 +151,73 @@ public class EntityWidgets(
                 var selectedBuffer = dynamicInstances.OpaqueMeshes[(i32)_selectedObjectId - 1];
                 if (selectedBuffer.BaseColorTexture is { } texture)
                 {
-                    if (ImGui.ImageButton("ChooseTextureA", texture.View.GetIntPtr(),
-                            new Vector2(imageButtonSize)))
+                    unsafe
                     {
-                        Task.Run(() =>
+                        if (ImGui.ImageButton("ChooseTextureA", new ImTextureRef(texId: texture.View.GetIntPtr()),
+                                new Vector2(imageButtonSize)))
                         {
-                            var pickResult = Nfd.FileOpen([
-                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
-                            ]);
+                            Task.Run(() =>
+                            {
+                                var pickResult = Nfd.FileOpen([
+                                    new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
+                                ]);
 
-                            if (pickResult.Status != NfdStatus.Ok) return;
+                                if (pickResult.Status != NfdStatus.Ok) return;
 
-                            using var clone = texture.Clone("TMP_CLONE_FOR_UI");
-                            loader.AsyncTextureLoad(pickResult.Path, clone);
-                            loader.DisposeLater(selectedBuffer.BaseColorTexture);
-                            selectedBuffer.BaseColorTexture = clone;
-                        });
+                                using var clone = texture.Clone("TMP_CLONE_FOR_UI");
+                                loader.AsyncTextureLoad(pickResult.Path, clone);
+                                loader.DisposeLater(selectedBuffer.BaseColorTexture);
+                                selectedBuffer.BaseColorTexture = clone;
+                            });
+                        }
                     }
                 }
 
                 if (selectedBuffer.NormalTexture is { } normalTexture)
                 {
-                    if (ImGui.ImageButton("ChooseTextureN", normalTexture.View.GetIntPtr(),
-                            new Vector2(imageButtonSize)))
+                    unsafe
                     {
-                        Task.Run(() =>
+                        if (ImGui.ImageButton("ChooseTextureN", new ImTextureRef(texId: normalTexture.View.GetIntPtr()),
+                                new Vector2(imageButtonSize)))
                         {
-                            var pickResult = Nfd.FileOpen([
-                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
-                            ]);
+                            Task.Run(() =>
+                            {
+                                var pickResult = Nfd.FileOpen([
+                                    new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
+                                ]);
 
-                            if (pickResult.Status != NfdStatus.Ok) return;
+                                if (pickResult.Status != NfdStatus.Ok) return;
 
-                            using var clone = normalTexture.Clone("TMP_CLONE_FOR_UI");
-                            loader.AsyncTextureLoad(pickResult.Path, clone);
-                            loader.DisposeLater(selectedBuffer.NormalTexture);
-                            selectedBuffer.NormalTexture = clone;
-                        });
+                                using var clone = normalTexture.Clone("TMP_CLONE_FOR_UI");
+                                loader.AsyncTextureLoad(pickResult.Path, clone);
+                                loader.DisposeLater(selectedBuffer.NormalTexture);
+                                selectedBuffer.NormalTexture = clone;
+                            });
+                        }
                     }
                 }
 
                 if (selectedBuffer.EmissiveTexture is { } emission)
                 {
-                    if (ImGui.ImageButton("ChooseTextureE", emission.View.GetIntPtr(),
-                            new Vector2(imageButtonSize)))
+                    unsafe
                     {
-                        Task.Run(() =>
+                        if (ImGui.ImageButton("ChooseTextureE", new ImTextureRef(texId:emission.View.GetIntPtr()),
+                                new Vector2(imageButtonSize)))
                         {
-                            var pickResult = Nfd.FileOpen([
-                                new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
-                            ]);
+                            Task.Run(() =>
+                            {
+                                var pickResult = Nfd.FileOpen([
+                                    new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
+                                ]);
 
-                            if (pickResult.Status != NfdStatus.Ok) return;
+                                if (pickResult.Status != NfdStatus.Ok) return;
 
-                            using var clone = emission.Clone("TMP_CLONE_FOR_UI");
-                            loader.AsyncTextureLoad(pickResult.Path, clone);
-                            loader.DisposeLater(selectedBuffer.EmissiveTexture);
-                            selectedBuffer.EmissiveTexture = clone;
-                        });
+                                using var clone = emission.Clone("TMP_CLONE_FOR_UI");
+                                loader.AsyncTextureLoad(pickResult.Path, clone);
+                                loader.DisposeLater(selectedBuffer.EmissiveTexture);
+                                selectedBuffer.EmissiveTexture = clone;
+                            });
+                        }
                     }
                 }
 
@@ -280,11 +288,14 @@ public class EntityWidgets(
 
                 void RenderTexture(IntPtr texture)
                 {
-                    ImGui.Image(texture, new Vector2(_textureSize, _textureSize));
-                    imageCount++;
-                    if (imageCount % imagesPerRow != 0)
+                    unsafe
                     {
-                        ImGui.SameLine();
+                        ImGui.Image(new ImTextureRef(texId: texture), new Vector2(_textureSize, _textureSize));
+                        imageCount++;
+                        if (imageCount % imagesPerRow != 0)
+                        {
+                            ImGui.SameLine();
+                        }
                     }
                 }
 
@@ -331,9 +342,9 @@ public class EntityWidgets(
     {
         if (ImGui.BeginMenu("Entities"))
         {
-            ImGui.MenuItem("Entity Inspector", null, ref _entityInspectorEnabled);
-            ImGui.MenuItem("Controls", null, ref _controlsEnabled);
-            ImGui.MenuItem("Resource Loader", null, ref _resourceLoaderEnabled);
+            ImGui.MenuItem("Entity Inspector", string.Empty, ref _entityInspectorEnabled);
+            ImGui.MenuItem("Controls", string.Empty, ref _controlsEnabled);
+            ImGui.MenuItem("Resource Loader", string.Empty, ref _resourceLoaderEnabled);
             ImGui.EndMenu();
         }
     }

@@ -5,7 +5,7 @@ using Client.Networking;
 using Client.Renderer;
 using Client.Wgsl;
 using Common.Ecs;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Serilog;
 
 namespace Client.Editor.EditorLayers.Widgets;
@@ -179,9 +179,9 @@ public class NetworkWidgets(
     {
         if (ImGui.BeginMenu("Network"))
         {
-            ImGui.MenuItem("Network Info", null, ref _networkInfoEnabled);
-            ImGui.MenuItem("Management Info", null, ref _managementInfoEnabled);
-            if (ImGui.MenuItem("Server Region Rendering", null, ref serverRegionGizmosEnabled))
+            ImGui.MenuItem("Network Info", string.Empty, ref _networkInfoEnabled);
+            ImGui.MenuItem("Management Info", string.Empty, ref _managementInfoEnabled);
+            if (ImGui.MenuItem("Server Region Rendering", string.Empty, ref serverRegionGizmosEnabled))
             {
                 if (scene.RenderableInstances.GizmoMeshes.FirstOrDefault() is { } gizmos)
                 {
