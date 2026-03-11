@@ -277,11 +277,11 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
         _isReady = false;
     }
 
-    public void OnEvent(AjivaEvent<AjivaKeyboardEvent> inputEvent)
+    public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
     {
         if (_context is null) return;
         var data = inputEvent.EventData;
-        switch (data.IsPressed)
+        /*switch (data.IsPressed)
         {
             case AjivaKeyboardEventType.KeyDown:
                 if (!_context.ProcessKeyDown(data.KeyCode.ToRmlKeyEvent(), KeyModifier.None))
@@ -297,11 +297,11 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
-        }
+        }*/
     }
 
 
-    public void OnEvent(AjivaEvent<AjivaMouseEvent> inputEvent)
+    public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
     {
         if (_context is null) return;
 
@@ -313,33 +313,22 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
                     inputEvent.Handled = true;
                 break;
             case AjivaMouseEventType.ButtonDown:
-                if (!_context.ProcessMouseButtonDown(data.Button.ToRmlMouseButton(), KeyModifier.None))
+                if (!_context.ProcessMouseButtonDown((i32)data.Button, KeyModifier.None))
                     inputEvent.Handled = true;
                 break;
             case AjivaMouseEventType.ButtonUp:
-                if (!_context.ProcessMouseButtonUp(data.Button.ToRmlMouseButton(), KeyModifier.None))
+                if (!_context.ProcessMouseButtonUp((i32)data.Button, KeyModifier.None))
                     inputEvent.Handled = true;
                 break;
             case AjivaMouseEventType.Scroll:
                 if (!_context.ProcessMouseWheel(new Vector2f(-data.DeltaX, data.DeltaY), KeyModifier.None))
                     inputEvent.Handled = true;
                 break;
-            case AjivaMouseEventType.Click:
-                if (Click())
-                    inputEvent.Handled = true;
-                break;
             case AjivaMouseEventType.DoubleClick:
-                if (Click() && Click())
                     inputEvent.Handled = true;
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
-        }
-
-        bool Click()
-        {
-            return !_context.ProcessMouseButtonDown(data.Button.ToRmlMouseButton(), KeyModifier.None) ||
-                   !_context.ProcessMouseButtonUp(data.Button.ToRmlMouseButton(), KeyModifier.None);
         }
     }
 }

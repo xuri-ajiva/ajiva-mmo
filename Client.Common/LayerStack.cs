@@ -59,16 +59,32 @@ public class LayerStack : IDisposable
 
     public void PushLayer<T>(T? layer = default) where T : IAjivaLayer
     {
-        layer ??= _scope.ServiceProvider.GetRequiredService<T>();
-        _layers.Add(layer);
+        IAjivaLayer service;
+        if (layer is null)
+        {
+            if (_scope.ServiceProvider.GetService<T>() is IAjivaLayer layerFromService)
+            {
+                service = layerFromService;
+            }
+            else
+            {
+                return;
+            }
+        }
+        else
+        {
+            service = layer;
+        }
+
+        _layers.Add(service);
         if (Attached)
-            layer.Attach();
+            service.Attach();
     }
 
     public void CreateLayer(TypeInfo layerType)
     {
-        var layer = (IAjivaLayer)_scope.ServiceProvider.GetRequiredService(layerType);
-        PushLayer(layer);
+        if (_scope.ServiceProvider.GetService(layerType) is IAjivaLayer layer)
+            PushLayer(layer);
     }
 
     public void PopLayer<T>() where T : IAjivaLayer

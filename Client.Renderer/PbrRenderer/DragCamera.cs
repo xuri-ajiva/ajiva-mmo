@@ -1,7 +1,6 @@
 ﻿using System.Numerics;
 using Common.Systems;
-using ImGuiNET;
-using Silk.NET.Input;
+using Hexa.NET.ImGui;
 
 namespace Client.Renderer.PbrRenderer;
 
@@ -12,7 +11,6 @@ public interface ICamera
     Matrix4x4 ViewMatrix { get; }
     Matrix4x4 ProjectionMatrix { get; }
     Matrix4x4 ViewProjectionMatrix { get; }
-    IInputContext? InputContext { set; }
     void Update(UpdateInfo info);
     void Attach();
 }
@@ -34,7 +32,6 @@ public class DragCamera : ICamera
         AspectRatio, 0.01f, 1000f);
 
     public Matrix4x4 ViewProjectionMatrix => ViewMatrix * ProjectionMatrix;
-    public IInputContext? InputContext { get; set; }
 
     public void Update(UpdateInfo info)
     {

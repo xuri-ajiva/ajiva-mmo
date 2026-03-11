@@ -1,15 +1,13 @@
 ﻿using System.Numerics;
 using System.Threading.Channels;
-using Client.Common.Accessors;
 using Common;
 using Common.Systems;
-using Silk.NET.Input;
+using Hexa.NET.SDL3;
 
 namespace Client.Common;
 
 public enum AjivaMouseEventType : u8
 {
-    Click,
     DoubleClick,
     ButtonUp,
     ButtonDown,
@@ -17,9 +15,18 @@ public enum AjivaMouseEventType : u8
     Scroll
 }
 
+public enum AjivaMouseButton : u8
+{
+    Left = 0,
+    Right = 1,
+    Middle = 2,
+    Button4 = 3,
+    Button5 = 4,
+}
+
 public readonly record struct AjivaMouseEvent(
     AjivaMouseEventType Type,
-    MouseButton Button,
+    AjivaMouseButton Button,
     f32 X,
     f32 Y,
     f32 DeltaX,
@@ -32,7 +39,10 @@ public enum AjivaKeyboardEventType : u8
     Key,
 }
 
-public readonly record struct AjivaKeyboardEvent(Key KeyCode, AjivaKeyboardEventType IsPressed);
+public readonly record struct AjivaKeyboardEvent(
+    SDLScancode KeyCode,
+    SDLKeymod Modifiers,
+    AjivaKeyboardEventType IsPressed);
 
 public struct AjivaEvent<T>(T eventData, bool handled)
 {
@@ -42,16 +52,16 @@ public struct AjivaEvent<T>(T eventData, bool handled)
 
 public interface IEventHandler<T>
 {
-    void OnEvent(AjivaEvent<T> inputEvent);
+    void OnEvent(ref AjivaEvent<T> inputEvent);
 }
 
-public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjivaLayer
+public class EventSystem(LayerStack layerStack) : IAjivaLayer
 {
     private readonly LayerStack _layerStack = layerStack;
 
     public void Attach()
     {
-        foreach (var context in accessor.InputContext.Mice)
+        /*foreach (var context in accessor.InputContext.Mice)
         {
             InitDevice(context);
         }
@@ -72,7 +82,7 @@ public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjiv
             {
                 InitDevice(device);
             }
-        };
+        };*/
     }
 
     private Channel<AjivaMouseEvent> MouseEventChannel { get; } =
@@ -83,7 +93,7 @@ public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjiv
         Channel.CreateUnbounded<AjivaKeyboardEvent>(new UnboundedChannelOptions
             { SingleReader = true, SingleWriter = false });
 
-    private void InitDevice(IInputDevice context)
+    /*private void InitDevice(IInputDevice context)
     {
         switch (context)
         {
@@ -105,7 +115,7 @@ public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjiv
             default:
                 break;
         }
-    }
+    }*/
 
     private void WriteMouseEvent(AjivaMouseEvent ajivaMouseEvent) => MouseEventChannel.Writer.TryWrite(ajivaMouseEvent);
 
@@ -122,7 +132,7 @@ public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjiv
                 var evnt = new AjivaEvent<AjivaKeyboardEvent>(ajivaKeyboardEvent, false);
                 foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<AjivaKeyboardEvent>>())
                 {
-                    layerStackLayer.OnEvent(evnt);
+                    layerStackLayer.OnEvent(ref evnt);
                     if (evnt.Handled)
                     {
                         break;
@@ -136,7 +146,7 @@ public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjiv
                 var evnt = new AjivaEvent<AjivaMouseEvent>(ajivaMouseEvent, false);
                 foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<AjivaMouseEvent>>())
                 {
-                    layerStackLayer.OnEvent(evnt);
+                    layerStackLayer.OnEvent(ref evnt);
                     if (evnt.Handled)
                     {
                         break;
@@ -153,7 +163,7 @@ public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjiv
     public ref bool Enabled => ref _enabled;
     private bool _enabled = true;
 
-    void OnKeyboardOnKeyDown(IKeyboard iKeyboard, Key key, int arg3) =>
+    /*void OnKeyboardOnKeyDown(IKeyboard iKeyboard, Key key, int arg3) =>
         WriteKeyboardEvent(new AjivaKeyboardEvent(key, AjivaKeyboardEventType.KeyDown));
 
     void OnKeyboardOnKeyUp(IKeyboard iKeyboard, Key key, int arg3) =>
@@ -180,5 +190,8 @@ public class InputSystem(IInputAccessor accessor, LayerStack layerStack) : IAjiv
             scrollWheel.Y));
 
     void OnMouseOnDoubleClick(IMouse iMouse, MouseButton button, Vector2 arg3) =>
-        WriteMouseEvent(new AjivaMouseEvent(AjivaMouseEventType.DoubleClick, button, arg3.X, arg3.Y, 0, 0));
+        WriteMouseEvent(new AjivaMouseEvent(AjivaMouseEventType.DoubleClick, button, arg3.X, arg3.Y, 0, 0));*/
+    public void Dispatch(AjivaMouseEvent ajivaMouseEvent) => WriteMouseEvent(ajivaMouseEvent);
+
+    public void Dispatch(AjivaKeyboardEvent ajivaKeyboardEvent) => WriteKeyboardEvent(ajivaKeyboardEvent);
 }

@@ -1,10 +1,11 @@
 ﻿using System.Numerics;
+using Client.Common;
 using Common.Systems;
-using Silk.NET.Input;
+using Hexa.NET.SDL3;
 
 namespace Client.Renderer.PbrRenderer;
 
-public class FreeCamera(Common.Accessors.IInputAccessor iInputAccessor) : ICamera
+public class FreeCamera : ICamera, IEventHandler<AjivaMouseEvent>, IEventHandler<AjivaKeyboardEvent>
 {
     private Vector3 _position = new(0.0f, 0.0f, 3.0f); // Default position
     private f32 _aspectRatio = 16.0f / 9.0f; // Default aspect ratio
@@ -27,7 +28,6 @@ public class FreeCamera(Common.Accessors.IInputAccessor iInputAccessor) : ICamer
     private bool _needsViewUpdate = true;
     private bool _needsProjectionUpdate = true;
 
-    private IInputContext? _inputContext;
     private Vector2 _lastMousePosition = Vector2.Zero;
 
     public f32 MovementSpeed { get; set; } = 10.0f;
@@ -55,10 +55,6 @@ public class FreeCamera(Common.Accessors.IInputAccessor iInputAccessor) : ICamer
     public Matrix4x4 ProjectionMatrix => _projectionMatrix;
     public Matrix4x4 ViewProjectionMatrix => _viewProjectionMatrix;
 
-    public IInputContext? InputContext
-    {
-        set => _inputContext = value;
-    }
 
     public void Update(UpdateInfo info)
     {
@@ -77,7 +73,6 @@ public class FreeCamera(Common.Accessors.IInputAccessor iInputAccessor) : ICamer
     public void Attach()
     {
         UpdateMatrices();
-        _inputContext = iInputAccessor.InputContext;
     }
 
 
@@ -107,61 +102,6 @@ public class FreeCamera(Common.Accessors.IInputAccessor iInputAccessor) : ICamer
         }
     }
 
-    private bool ProcessInput(f32 deltaTime)
-    {
-        if (_inputContext == null) return false;
-
-        var positionChanged = false;
-        var moveDirection = Vector3.Zero;
-
-        var keyboard = _inputContext.Keyboards[0];
-        if (keyboard.IsKeyPressed(Key.W))
-            moveDirection += _front;
-        if (keyboard.IsKeyPressed(Key.S))
-            moveDirection -= _front;
-        if (keyboard.IsKeyPressed(Key.A))
-            moveDirection -= _right;
-        if (keyboard.IsKeyPressed(Key.D))
-            moveDirection += _right;
-        if (keyboard.IsKeyPressed(Key.Q))
-            moveDirection += _worldUp; // Use World Up for consistent vertical movement
-        if (keyboard.IsKeyPressed(Key.E))
-            moveDirection -= _worldUp;
-
-        if (moveDirection != Vector3.Zero)
-        {
-            moveDirection = Vector3.Normalize(moveDirection);
-            var currentSpeed = MovementSpeed;
-            if (keyboard.IsKeyPressed(Key.ShiftLeft))
-            {
-                currentSpeed *= SprintMultiplier;
-            }
-
-            _position += moveDirection * currentSpeed * deltaTime;
-            positionChanged = true;
-        }
-
-
-        var mouse = _inputContext.Mice[0];
-        if (mouse.IsButtonPressed(MouseButton.Right))
-        {
-            Vector2 mouseDelta = mouse.Position - _lastMousePosition;
-            if (mouseDelta.X != 0 || mouseDelta.Y != 0)
-            {
-                _yaw += mouseDelta.X * MouseSensitivity;
-                _pitch -= mouseDelta.Y * MouseSensitivity; // Reversed Y
-
-                // Clamp pitch
-                _pitch = MathHelper.Clamp(_pitch, MinPitchRadians, MaxPitchRadians);
-
-                UpdateVectors(); // Recalculate Front, Right, Up vectors and flag view matrix update
-            }
-        }
-
-        _lastMousePosition = mouse.Position;
-
-        return positionChanged;
-    }
 
     /// <summary>
     /// Recalculates the Front, Right, and Up vectors based on Yaw and Pitch.
@@ -211,6 +151,81 @@ public class FreeCamera(Common.Accessors.IInputAccessor iInputAccessor) : ICamer
             // Important: Matrix multiplication order is Projection * View
             _viewProjectionMatrix = _viewMatrix * _projectionMatrix;
         }
+    }
+
+    Vector3 moveInput = Vector3.Zero;
+    Vector3 moveDirection = Vector3.Zero;
+    bool isSprinting = false;
+
+    public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
+    {
+        var delta = inputEvent.EventData.KeyCode switch
+        {
+            SDLScancode.W => _front,
+            SDLScancode.S => -_front,
+            SDLScancode.A => -_right,
+            SDLScancode.D => _right,
+            SDLScancode.Q => _worldUp,
+            SDLScancode.E => _worldUp,
+            _ => Vector3.Zero
+        };
+        var keyDown = inputEvent.EventData.IsPressed == AjivaKeyboardEventType.KeyDown;
+        moveInput += keyDown ? delta : -delta;
+
+        if (inputEvent.EventData.KeyCode is SDLScancode.Lshift or SDLScancode.Rshift)
+        {
+            isSprinting = keyDown;
+        }
+    }
+
+    private bool ProcessInput(f32 deltaTime)
+    {
+        var positionChanged = false;
+
+        if (moveInput != Vector3.Zero)
+        {
+            moveDirection += moveInput;
+        }
+
+        if (moveDirection != Vector3.Zero)
+        {
+            moveDirection = Vector3.Normalize(moveDirection);
+            var currentSpeed = MovementSpeed;
+            if (isSprinting)
+            {
+                currentSpeed *= SprintMultiplier;
+            }
+
+            _position += moveDirection * currentSpeed * deltaTime;
+            positionChanged = true;
+        }
+
+
+        /*
+         TODO
+         var mouse = _inputContext.Mice[0];
+        if (mouse.IsButtonPressed(MouseButton.Right))
+        {
+            Vector2 mouseDelta = mouse.Position - _lastMousePosition;
+            if (mouseDelta.X != 0 || mouseDelta.Y != 0)
+            {
+                _yaw += mouseDelta.X * MouseSensitivity;
+                _pitch -= mouseDelta.Y * MouseSensitivity; // Reversed Y
+
+                // Clamp pitch
+                _pitch = MathHelper.Clamp(_pitch, MinPitchRadians, MaxPitchRadians);
+
+                UpdateVectors(); // Recalculate Front, Right, Up vectors and flag view matrix update
+            }
+        }
+
+        _lastMousePosition = mouse.Position;
+*/
+        return positionChanged;
+    }
+
+    public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
+    {
     }
 }
 
