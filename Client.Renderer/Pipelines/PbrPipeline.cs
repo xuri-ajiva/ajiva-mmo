@@ -96,7 +96,17 @@ public class PbrPipeline : IDisposable
             gBufferShader.CreateBindGroup0(device, gBufferSceneLayout, gBufferSceneUniformBuffer.Buffer);
 
         var gBufferModule = gBufferShader.CreateShaderModule(device, gBufferPipelineLayout);
+        if (!api.DoShaderValidation(gBufferModule))
+        {
+            api._logger.LogError("Shader module validation failed for shader {ShaderName}", gBufferShader.GetType().Name);
+            throw new InvalidOperationException($"Shader module validation failed for shader {gBufferShader.GetType().Name}");
+        }
         var deferredModule = deferredShader.CreateShaderModule(device, deferredPipelineLayout);
+        if (!api.DoShaderValidation(deferredModule))
+        {
+            api._logger.LogError("Shader module validation failed for shader {ShaderName}", deferredShader.GetType().Name);
+            throw new InvalidOperationException($"Shader module validation failed for shader {deferredShader.GetType().Name}");
+        }
 
         var gBufferPipeline = device.CreateRenderPipeline(
             label: "PBR_GBufferPipeline",

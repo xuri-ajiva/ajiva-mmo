@@ -52,7 +52,12 @@ public class GizmoPipeline
             ubSceneSize: sceneUniformBuffer.Size);
 
         var shaderModule = shader.CreateShaderModule(device, pipelineLayout);
-
+        if (!api.DoShaderValidation(shaderModule))
+        {
+            api._logger.LogError("Shader module validation failed for shader {ShaderName}", shader.GetType().Name);
+            throw new InvalidOperationException($"Shader module validation failed for shader {shader.GetType().Name}");
+        }
+        
         var pipeline = device.CreateRenderPipeline(
             label: "GizmoPipeline",
             layout: pipelineLayout,

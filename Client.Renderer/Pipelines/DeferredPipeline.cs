@@ -46,7 +46,12 @@ public class DeferredPipeline : IDisposable
         var pipelineLayout = shader.CreatePipelineLayout(api.Device, textureBindGroupLayout);
 
         var module = shader.CreateShaderModule(device, pipelineLayout);
-
+        if (!api.DoShaderValidation(module))
+        {
+            api._logger.LogError("Shader module validation failed for shader {ShaderName}", shader.GetType().Name);
+            throw new InvalidOperationException($"Shader module validation failed for shader {shader.GetType().Name}");
+        }
+        
         var pipeline = device.CreateRenderPipeline(
             pipelineLayout,
             vertex: new Safe.VertexState

@@ -40,6 +40,11 @@ namespace Client.Renderer.Pipelines
             var pipelineLayout = shader.CreatePipelineLayout(device, textureBindGroupLayout);
 
             var module = shader.CreateShaderModule(api.Device, pipelineLayout);
+            if (!api.DoShaderValidation(module))
+            {
+                api._logger.LogError("Shader module validation failed for shader {ShaderName}", shader.GetType().Name);
+                throw new InvalidOperationException($"Shader module validation failed for shader {shader.GetType().Name}");
+            }
 
             var pipeline = device.CreateRenderPipeline(
                 pipelineLayout,

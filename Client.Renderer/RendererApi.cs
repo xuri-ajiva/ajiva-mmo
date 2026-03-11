@@ -181,4 +181,42 @@ public class RendererApi(ILogger<RendererApi> logger)
             Wgpu.Dispose();
         }
     }
+
+    public bool DoShaderValidation(ShaderModulePtr module)
+    {
+        return true;
+        ManualResetEventSlim validationCompletedEvent = new(false);
+        var hasErrors = false;
+        Task.Run(async () =>
+        {
+            var info = await module.GetCompilationInfo();
+
+            foreach (var compilationMessage in info.Messages)
+            {
+                switch (compilationMessage.Type)
+                {
+                    case CompilationMessageType.Error:
+                        hasErrors = true;
+                        _logger.LogError("Shader compilation error: {Message} at line {LineNum}, column {LinePos}",
+                            compilationMessage.Message, compilationMessage.LineNum, compilationMessage.LinePos);
+                        return;
+                    case CompilationMessageType.Warning:
+                        _logger.LogWarning("Shader compilation warning: {Message} at line {LineNum}, column {LinePos}",
+                            compilationMessage.Message, compilationMessage.LineNum, compilationMessage.LinePos);
+                        break;
+                    case CompilationMessageType.Info:
+                        _logger.LogInformation("Shader compilation info: {Message} at line {LineNum}, column {LinePos}",
+                            compilationMessage.Message, compilationMessage.LineNum, compilationMessage.LinePos);
+                        break;
+                    case CompilationMessageType.Force32:
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(compilationMessage.Type));
+                }
+            }
+        });
+
+        validationCompletedEvent.Wait();
+        return hasErrors;
+    }
 }
