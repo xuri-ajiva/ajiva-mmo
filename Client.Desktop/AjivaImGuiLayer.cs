@@ -8,8 +8,8 @@ using Client.LayerSystem;
 using Client.Renderer;
 using Common;
 using Common.Systems;
-using ImGuiNET;
-using Silk.NET.Maths;
+using Hexa.NET.ImGui;
+using Hexa.NET.SDL3;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Extensions.ImGui;
 using Silk.NET.WebGPU.Safe;
@@ -105,12 +105,15 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
 
         var window = _window.Window;
         var surface = _window.Surface;
-        var framebufferSize = window.FramebufferSize;
+        ImVec2I size = default;
+        SDL.GetWindowSizeInPixels(window, ref size.X, ref size.Y);
+        var framebufferSize = size;
 
         if (framebufferSize.X * framebufferSize.Y == 0)
             return;
 
-        if (_requestReConfigure || _lastFramebufferSize != framebufferSize)
+        if (_requestReConfigure || _lastFramebufferSize.X != framebufferSize.X ||
+            _lastFramebufferSize.Y != framebufferSize.Y)
         {
             _lastFramebufferSize = framebufferSize;
 
@@ -127,7 +130,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable
             });
         }
 
-        _imguiController!.Update(info.DeltaTime);
+        _imGuiPlatform.NewFrame(info, framebufferSize);
         _swapchainView?.Release();
 
         (var swapChainTexture, _requestReConfigure, var status) = _window.Surface.GetCurrentTexture();

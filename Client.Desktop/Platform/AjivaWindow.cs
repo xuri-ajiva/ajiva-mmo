@@ -1,66 +1,54 @@
 ﻿using Client.Common;
-using Client.Common.Accessors;
 using Client.Config;
-using Client.LayerSystem;
 using Client.Renderer;
 using Common.Systems;
-using Silk.NET.Input;
-using Silk.NET.Maths;
+using Hexa.NET.SDL3;
 using Silk.NET.WebGPU.Safe;
-using Silk.NET.Windowing;
 
 namespace Client.Desktop.Platform;
 
-public class AjivaWindow : IHostedLifecycleService, IInputAccessor
+public class AjivaWindow(
+    ILogger<AjivaWindow> logger,
+    RendererApi api,
+    WindowConfig config,
+    PeriodicUpdater updater,
+    LayerStack layerSystem,
+    IHostApplicationLifetime lifetime,
+    EventSystem eventSystem)
+    : IHostedLifecycleService
 {
-    private readonly ILogger<AjivaWindow> _logger;
-    private readonly RendererApi _api;
-    private readonly WindowConfig _config;
-    private readonly PeriodicUpdater _updater;
-    private readonly LayerStack _layerSystem;
-    private readonly IHostApplicationLifetime _lifetime;
-
-    internal IWindow Window = null!;
+    internal SDLWindowPtr Window = null!;
     private Thread _windowThread = null!;
 
     public SurfacePtr Surface;
-    public IInputContext InputContext { get; private set; }
     private bool _isClosing;
 
-    public AjivaWindow(ILogger<AjivaWindow> logger, RendererApi api, WindowConfig config, PeriodicUpdater updater,
-        LayerStack layerSystem, IHostApplicationLifetime lifetime)
-    {
-        _logger = logger;
-        _api = api;
-        _config = config;
-        _updater = updater;
-        _layerSystem = layerSystem;
-        _lifetime = lifetime;
-    }
 
+    bool firstLoad = true;
 
     private void Load()
     {
+        if (!firstLoad) return;
+        firstLoad = false;
         try
         {
-            InputContext = Window.CreateInput();
-            Surface = Window.CreateWebGPUSurface(_api.Wgpu, _api.Instance);
-            var properties = _api.Adapter.GetProperties();
-            Window.Title = $"Ajiva MMO {properties.BackendType} {properties.Name}";
+            Surface = PlatformSystem.CreateWebGpuSurface(Window, api.Instance);
+            var properties = api.Adapter.GetProperties();
+            SDL.SetWindowTitle(Window, $"Ajiva MMO {properties.BackendType} {properties.Name}");
 
             // todo event system
-            _layerSystem.Attach();
+            layerSystem.Attach();
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Error in Window Load");
+            logger.LogError(e, "Error in Window Load");
             throw;
         }
     }
-    
+
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        var options = WindowOptions.Default;
+        /*var options = WindowOptions.Default;
         options.API = GraphicsAPI.None;
         options.Size = new Vector2D<i32>(_config.Width, _config.Height);
         options.Position = new Vector2D<i32>(_config.X, _config.Y);
@@ -71,10 +59,9 @@ public class AjivaWindow : IHostedLifecycleService, IInputAccessor
             ? WindowBorder.Hidden
             : _config.Resizable
                 ? WindowBorder.Resizable
-                : WindowBorder.Fixed;
+                : WindowBorder.Fixed;*/
 
-        Window = Silk.NET.Windowing.Window.Create(options);
-        Window.Load += Load;
+
         _windowThread = new Thread(MainWindow)
             { IsBackground = false, Name = "Ajiva Main Window Thread", Priority = ThreadPriority.AboveNormal };
         _windowThread.Start();
@@ -84,30 +71,109 @@ public class AjivaWindow : IHostedLifecycleService, IInputAccessor
 
     private void MainWindow()
     {
+        Window = SDL.CreateWindow("Default", config.Width, config.Height,
+            (u64)(SDLWindowFlags.Resizable | SDLWindowFlags.Transparent));
+        var mainWindowId = SDL.GetWindowID(Window);
         try
         {
-            Window.Initialize();
-            Window.Run((Action)(() =>
+            SDLEvent sdlEvent = default;
+
+            while (!_isClosing)
             {
-                Window.DoEvents();
-                _updater.SleepSignal();
-                if (!Window.IsClosing || _isClosing) return;
-                Window.IsClosing = false;
-                _lifetime.StopApplication();
-            }));
-            Window.DoEvents();
-            Window.Reset();
+                SDL.PumpEvents();
+                // updater.SleepSignal();
+                while (SDL.WaitEvent(ref sdlEvent) && !_isClosing)
+                {
+                    ProcessEvent(sdlEvent, mainWindowId);
+                }
+            }
+
+            lifetime.StopApplication();
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Error in Window Main");
+            logger.LogError(e, "Error in Window Main");
             throw;
+        }
+    }
+
+    private void ProcessEvent(SDLEvent sdlEvent, uint mainWindowId)
+    {
+        switch ((SDLEventType)sdlEvent.Type)
+        {
+            case SDLEventType.Quit:
+            case SDLEventType.Terminating:
+                _isClosing = true;
+                break;
+
+            case SDLEventType.WindowCloseRequested:
+                var windowEvent = sdlEvent.Window;
+                if (windowEvent.WindowID == mainWindowId)
+                {
+                    _isClosing = true;
+                }
+
+                break;
+            case SDLEventType.WindowShown:
+                Load();
+                break;
+            case SDLEventType.MouseMotion:
+                eventSystem.Dispatch(new AjivaMouseEvent
+                {
+                    Type = AjivaMouseEventType.Move,
+                    X = sdlEvent.Motion.X,
+                    Y = sdlEvent.Motion.Y,
+                    DeltaX = sdlEvent.Motion.Xrel,
+                    DeltaY = sdlEvent.Motion.Yrel
+                });
+                break;
+            case SDLEventType.MouseButtonUp or SDLEventType.MouseButtonDown:
+                eventSystem.Dispatch(new AjivaMouseEvent
+                {
+                    Type = sdlEvent.Button.Down == 0 ? AjivaMouseEventType.ButtonUp : AjivaMouseEventType.ButtonDown,
+                    Button = sdlEvent.Button.Button switch
+                    {
+                        SDL.SDL_BUTTON_LEFT => AjivaMouseButton.Left,
+                        SDL.SDL_BUTTON_RIGHT => AjivaMouseButton.Right,
+                        SDL.SDL_BUTTON_MIDDLE => AjivaMouseButton.Middle,
+                        SDL.SDL_BUTTON_X1 => AjivaMouseButton.Button4,
+                        SDL.SDL_BUTTON_X2 => AjivaMouseButton.Button5,
+                        var a and > SDL.SDL_BUTTON_X2 => (AjivaMouseButton)
+                            (a - SDL.SDL_BUTTON_X2 + (i32)AjivaMouseButton.Button5 + 1),
+                        _ => AjivaMouseButton.Left
+                    },
+                    X = sdlEvent.Button.X,
+                    Y = sdlEvent.Button.Y
+                });
+                break;
+            case SDLEventType.MouseWheel:
+                eventSystem.Dispatch(new AjivaMouseEvent
+                {
+                    Type = AjivaMouseEventType.Scroll,
+                    DeltaX = sdlEvent.Wheel.X,
+                    DeltaY = sdlEvent.Wheel.Y,
+                });
+                break;
+            case SDLEventType.KeyDown:
+                if (sdlEvent.Key.Repeat == 0)
+                    eventSystem.Dispatch(new AjivaKeyboardEvent(sdlEvent.Key.Scancode, (SDLKeymod)sdlEvent.Key.Mod,
+                        AjivaKeyboardEventType.KeyDown));
+                break;
+            case SDLEventType.KeyUp:
+                if (sdlEvent.Key.Repeat == 0)
+                    eventSystem.Dispatch(new AjivaKeyboardEvent(sdlEvent.Key.Scancode, (SDLKeymod)sdlEvent.Key.Mod,
+                        AjivaKeyboardEventType.KeyUp));
+                break;
+
+            default:
+                logger.LogInformation("Unhandled SDL event {SdlEventType}", (SDLEventType)sdlEvent.Type);
+                break;
         }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _layerSystem.Detach();
+        layerSystem.Detach();
         _isClosing = true;
         return Task.CompletedTask;
     }
@@ -128,7 +194,15 @@ public class AjivaWindow : IHostedLifecycleService, IInputAccessor
     {
         //Surface.Release();
         _isClosing = true;
-        Window.Close();
+        var closeEvent = new SDLEvent
+        {
+            Type = (u32)SDLEventType.WindowCloseRequested,
+            Window = new SDLWindowEvent
+            {
+                WindowID = SDL.GetWindowID(Window)
+            }
+        };
+        SDL.PushEvent(ref closeEvent);
         _windowThread.Join();
         return Task.CompletedTask;
     }
