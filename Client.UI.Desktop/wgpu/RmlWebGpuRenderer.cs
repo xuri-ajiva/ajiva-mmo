@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Client.Renderer;
 using Client.Renderer.Resources;
 using Client.Renderer.VirtualFramebuffers;
 using Client.Wgsl;
@@ -27,16 +28,10 @@ public unsafe class RmlWebGpuRenderer(
     {
         public AjivaTexture Texture { get; set; } = texture;
         public BindGroupPtr? BindGroup { get; set; } = bindGroup;
-
-        public void Deconstruct(out AjivaTexture texture, out BindGroupPtr? bindGroup)
-        {
-            texture = Texture;
-            bindGroup = BindGroup;
-        }
     }
 
-    private readonly GeometryMemoryPool _memoryPool = new(loader, loggerFactory.CreateLogger<GeometryMemoryPool>());
-    private readonly SimpleObjectToHandle<GeometryRent> _geometryBuffers = new();
+    private readonly GeometryMemoryPool<Vertex> _memoryPool = new(loader, loggerFactory.CreateLogger<GeometryMemoryPool<Vertex>>());
+    private readonly SimpleObjectToHandle<GeometryRent<Vertex>> _geometryBuffers = new();
     private readonly SimpleObjectToHandle<TextureAndBindGroup> _textureBindings = new();
     private readonly ILogger<RmlWebGpuRenderer> _logger = loggerFactory.CreateLogger<RmlWebGpuRenderer>();
 
@@ -49,7 +44,6 @@ public unsafe class RmlWebGpuRenderer(
     private BindGroupPtr _backupTextBind;
     public RenderTexture? OutputFramebuffer;
 
-    private QueuePtr _queue;
     private BindGroupPtr? _sceneBind;
     private CommandEncoderPtr _cmd;
     private RenderPassEncoderPtr _pass;
@@ -81,8 +75,13 @@ public unsafe class RmlWebGpuRenderer(
             _currentShader.CreateBindGroup1(device, _textureBindGroupLayout, loader.DefaultTexture.View);
 
         var pipelineLayout = shader.CreatePipelineLayout(device, _sceneBindGroupLayoutPtr, _textureBindGroupLayout);
-
+        
         var module = shader.CreateShaderModule(device, pipelineLayout);
+        if (!loader.Api.DoShaderValidation(module))
+        {
+            _logger.LogError("Shader module validation failed for shader {ShaderName}", shader.GetType().Name);
+             throw new InvalidOperationException($"Shader module validation failed for shader {shader.GetType().Name}");
+        }
 
         if (_pipeline != default)
             _pipeline.Release();
@@ -93,17 +92,17 @@ public unsafe class RmlWebGpuRenderer(
             {
                 Buffers = //_currentShader.GetVertexBufferLayout(VertexStepMode.Vertex)
                 [
-                    new global::Silk.NET.WebGPU.Safe.VertexBufferLayout(20,
+                    new global::Silk.NET.WebGPU.Safe.VertexBufferLayout((u64)Marshal.SizeOf<Vertex>(),
                         VertexStepMode.Vertex,
                         [
                             new VertexAttribute(VertexFormat.Float32x2,
-                                offset: 0,
+                                offset: (u64)Marshal.OffsetOf<Vertex>(nameof(Vertex.Position)),
                                 shaderLocation: 0),
                             new VertexAttribute(VertexFormat.Unorm8x4,
-                                offset: 8,
+                                offset: (u64)Marshal.OffsetOf<Vertex>(nameof(Vertex.Colour)),
                                 shaderLocation: 1),
                             new VertexAttribute(VertexFormat.Float32x2,
-                                offset: 12,
+                                offset: (u64)Marshal.OffsetOf<Vertex>(nameof(Vertex.TextureCoordinates)),
                                 shaderLocation: 2)
                         ])
                 ],
@@ -132,11 +131,15 @@ public unsafe class RmlWebGpuRenderer(
                 Targets =
                 [
                     new Silk.NET.WebGPU.Safe.ColorTargetState(OutputFramebuffer.ColorFormat,
-                        // 0 True One 1 - Src Alpha Add One 1 - Src Alpha Subtract RGBA
-                        blendState: (color: new BlendComponent(BlendOperation.Add, BlendFactor.Src, BlendFactor.OneMinusSrcAlpha),
-                                     alpha: new BlendComponent(BlendOperation.Subtract, BlendFactor.One,
+                        (
+                            // One 1 - Src Alpha Add
+                            color: new BlendComponent(BlendOperation.Add, BlendFactor.One,
+                                BlendFactor.OneMinusSrcAlpha),
+                            // One 1 - Src Alpha Subtract RGBA
+                            alpha: new BlendComponent(BlendOperation.Add, BlendFactor.One,
                                 BlendFactor.OneMinusSrcAlpha)
-                        ), ColorWriteMask.All)
+                        ),
+                        ColorWriteMask.All)
                 ]
             },
             label: "Rml_Render_Pipeline"
@@ -150,9 +153,8 @@ public unsafe class RmlWebGpuRenderer(
     }
 
 
-    public void StartCapture(QueuePtr targetQueuePtr)
+    public void StartCapture()
     {
-        _queue = targetQueuePtr;
         _pendingRenders.Clear();
         _translationUniforms.Clear();
     }
@@ -162,7 +164,7 @@ public unsafe class RmlWebGpuRenderer(
     private readonly List<GeometryRender> _pendingRenders = [];
     private readonly List<RmlShader.TranslationUniform> _translationUniforms = [];
 
-    public void ExecuteRender(QueuePtr queue)
+    public void ExecuteRender()
     {
         var shader = shaderReloadManager.GetCurrentShader<IRmlShader>();
         RecreatePipelineIfNeeded(shader);
@@ -177,12 +179,10 @@ public unsafe class RmlWebGpuRenderer(
             //Transform = mat4.Identity,
             Size = new vec2(width, height)
         };
-        _uniformBuffer!.QueuedWrite(new ReadOnlySpan<RmlShader.SceneUniform>(ref uniforms), queue);
 
         // write translation uniforms
         if (_translationBuffer.Count < (u64)_translationUniforms.Count)
             _translationBuffer.ResizeWithoutDataPreserve((u64)_translationUniforms.Count);
-        _translationBuffer.QueuedWrite(CollectionsMarshal.AsSpan(_translationUniforms), queue);
 
         _sceneBind = _currentShader!.CreateBindGroup0(loader.Api.Device, _sceneBindGroupLayoutPtr,
             _uniformBuffer.Buffer, _sampler, _translationBuffer.Buffer);
@@ -203,6 +203,10 @@ public unsafe class RmlWebGpuRenderer(
 
         _pass.End();
 
+        using var queueGuard = loader.Api.EnterQueue();
+        QueuePtr queue = queueGuard;
+        _uniformBuffer!.QueuedWrite(new ReadOnlySpan<RmlShader.SceneUniform>(ref uniforms), queue);
+        _translationBuffer.QueuedWrite(CollectionsMarshal.AsSpan(_translationUniforms), queue);
         queue.Submit(_cmd.Finish());
     }
 
@@ -243,8 +247,9 @@ public unsafe class RmlWebGpuRenderer(
 
     public override IntPtr CompileGeometry(Vertex* vertices, i32 vertexCount, i32* indices, i32 indexCount)
     {
+        using var queue = loader.Api.EnterQueue();
         var geometryRent = _memoryPool.Rent(new ReadOnlySpan<Vertex>(vertices, vertexCount),
-            new ReadOnlySpan<u32>(indices, indexCount), _queue);
+            new ReadOnlySpan<u32>(indices, indexCount), queue);
         var handle = _geometryBuffers.Register(geometryRent);
         _logger.LogTrace("Compiled geometry with handle {Handle}: {VertexCount} vertices, {IndexCount} indices", handle,
             vertexCount, indexCount);

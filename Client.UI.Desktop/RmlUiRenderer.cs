@@ -25,7 +25,10 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
     private static bool _wasInitialized;
 
     private readonly FileInterface _fileInterface = new FileInterfaceImple();
-    private readonly SystemInterface _systemInterface = new SystemInterfaceImple(logger.CreateLogger<SystemInterfaceImple>());
+
+    private readonly SystemInterface _systemInterface =
+        new SystemInterfaceImple(logger.CreateLogger<SystemInterfaceImple>());
+
     private RmlWebGpuRenderer _renderInterface = null!;
     private Context? _context;
     private ElementDocument? _doc;
@@ -63,8 +66,8 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
         }
 
         _context = Rml.CreateContext("MainContext", new Vector2i((i32)_width, (i32)_height), _renderInterface);
-        RmlUiNet.Debugger.Initialise(_context);
-        RmlUiNet.Debugger.SetVisible(true);
+        Debugger.Initialise(_context);
+        Debugger.SetVisible(true);
         Rml.LoadFontFace("resources/Quicksand-SemiBold.ttf");
         Rml.LoadFontFace("resources/LatoLatin-Bold.ttf");
         Rml.LoadFontFace("resources/LatoLatin-BoldItalic.ttf");
@@ -77,83 +80,11 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
     }
 
 
-    public void LoadHTML(string html, string style)
+    public void LoadHTML(string rml)
     {
         _logger.LogDebug("Loading HTML content");
         _doc?.Close();
-        _doc = _context?.LoadDocumentFromMemory(
-            """
-            <rml>
-            <head>
-            	<link type="text/template" href="../resources/rml/window.rml"/>
-            	<title>Benchmark Sample</title>
-            	<style>
-            		body.window
-            		{
-            			left: 80dp;
-            			right: 80dp;
-            			top: 50dp;
-            			bottom: 50dp;
-            			max-width: 2000dp;
-            			max-height: 2000dp;
-            		}
-            		#fps
-            		{
-            			position: absolute;
-            			top: 55dp;
-            			left: 20dp;
-            			font-size: 0.85em;
-            			text-align: left;
-            		}
-            		#performance
-            		{
-            			width: 800dp;
-            			height: 300dp;
-            		}
-            	</style>
-            </head>
-
-            <body template="window">
-            <div id="fps"/>
-            <div id="click_test"/>
-            <div id="performance"/>
-            </body>
-            </rml>
-            """
-            /*
-            $$"""
-              <rml>
-                  <head>
-                      <title>Main Menu</title>
-                      <style>
-                          body {
-                              font-family: Quicksand;
-                              font-size: 24px;
-                              width: 100%;
-                              height: 100%;
-                              background-color: #000000aa; /* Semi-transparent background #1#
-                          }
-
-                          .button {
-                              display: block;
-                              background-color: #af0000;
-                              color: white;
-                              text-align: center;
-                              margin: auto;
-                          }
-
-                          .button:hover {
-                              background-color: #ff5555;
-                          }
-
-                          {{style}}
-                      </style>
-                  </head>
-                  <body>
-                      {{html}}
-                  </body>
-              </rml>
-              """*/ /**/);
+        _doc = _context?.LoadDocumentFromMemory(rml);
 
         if (_doc?.GetElementById("title") is { } titleEle)
             titleEle.SetInnerRml("Testing UI Renderer");

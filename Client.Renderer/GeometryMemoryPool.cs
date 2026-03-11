@@ -1,20 +1,18 @@
 ﻿using System.Runtime.InteropServices;
 using Client.Renderer.Resources;
-using Microsoft.Extensions.Logging;
-using RmlUiNet;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
-namespace Client.UI.Desktop.wgpu;
+namespace Client.Renderer;
 
 /// <summary>
 /// Represents a rented range of geometry data in the memory pool.
 /// Contains both vertex and index buffers with their respective offsets.
 /// </summary>
-public class GeometryRent : IDisposable
+public class GeometryRent<T> : IDisposable where T : unmanaged
 {
     /// <summary>Vertex buffer containing the geometry vertices</summary>
-    public required AjivaBuffer<Vertex> VertexBuffer { get; set; }
+    public required AjivaBuffer<T> VertexBuffer { get; set; }
 
     /// <summary>Index buffer containing the geometry indices</summary>
     public required AjivaBuffer<u32> IndexBuffer { get; set; }
@@ -32,7 +30,7 @@ public class GeometryRent : IDisposable
     public required u32 VertexCount { get; set; }
 
     /// <summary>Internal pool reference for cleanup</summary>
-    internal GeometryMemoryPool? Pool { get; set; }
+    internal GeometryMemoryPool<T>? Pool { get; set; }
 
     public void Dispose()
     {
@@ -43,7 +41,7 @@ public class GeometryRent : IDisposable
 /// <summary>
 /// Tracks an allocated range within a buffer
 /// </summary>
-internal record struct AllocationInfo(u32 Offset, u32 Count, bool IsUsed, GeometryRent? Rent);
+internal record struct AllocationInfo<T>(u32 Offset, u32 Count, bool IsUsed, GeometryRent<T>? Rent) where T : unmanaged;
 
 /// <summary>
 /// Represents a single geometry buffer with its allocation tracking and fragmentation score
@@ -52,7 +50,7 @@ internal class BufferPool<T>(AjivaBuffer<T> buffer, u32 capacity)
     where T : unmanaged
 {
     public AjivaBuffer<T> Buffer { get; } = buffer;
-    public List<AllocationInfo> Allocations { get; init; } = [];
+    public List<AllocationInfo<T>> Allocations { get; init; } = [];
     public u32 Capacity { get; } = capacity;
     public u32 UsedCount { get; set; }
 
@@ -93,12 +91,12 @@ internal class BufferPool<T>(AjivaBuffer<T> buffer, u32 capacity)
             if (used > count)
             {
                 // Split the hole
-                Allocations[i] = new AllocationInfo(offset, count, true, null);
-                Allocations.Insert(i + 1, new AllocationInfo(offset + count, used - count, false, null));
+                Allocations[i] = new AllocationInfo<T>(offset, count, true, null);
+                Allocations.Insert(i + 1, new AllocationInfo<T>(offset + count, used - count, false, null));
             }
             else
             {
-                Allocations[i] = new AllocationInfo(offset, count, true, null);
+                Allocations[i] = new AllocationInfo<T>(offset, count, true, null);
             }
 
             UsedCount += count;
@@ -112,7 +110,7 @@ internal class BufferPool<T>(AjivaBuffer<T> buffer, u32 capacity)
 
         if (endOffset + count <= Capacity)
         {
-            Allocations.Add(new AllocationInfo(endOffset, count, true, null));
+            Allocations.Add(new AllocationInfo<T>(endOffset, count, true, null));
             UsedCount += count;
             return endOffset;
         }
@@ -127,14 +125,14 @@ internal class BufferPool<T>(AjivaBuffer<T> buffer, u32 capacity)
             var alloc = Allocations[i];
             if (alloc.Offset == offset && alloc.Count == count && alloc.IsUsed)
             {
-                Allocations[i] = new AllocationInfo(offset, count, false, null);
+                Allocations[i] = new AllocationInfo<T>(offset, count, false, null);
                 UsedCount -= count;
 
                 // Merge with adjacent free blocks
                 if (i > 0 && !Allocations[i - 1].IsUsed)
                 {
                     var prev = Allocations[i - 1];
-                    Allocations[i - 1] = new AllocationInfo(prev.Offset, prev.Count + count, false, null);
+                    Allocations[i - 1] = new AllocationInfo<T>(prev.Offset, prev.Count + count, false, null);
                     Allocations.RemoveAt(i);
                     i--;
                 }
@@ -143,7 +141,7 @@ internal class BufferPool<T>(AjivaBuffer<T> buffer, u32 capacity)
                 {
                     var next = Allocations[i + 1];
                     var merged = Allocations[i];
-                    Allocations[i] = new AllocationInfo(merged.Offset, merged.Count + next.Count, false, null);
+                    Allocations[i] = new AllocationInfo<T>(merged.Offset, merged.Count + next.Count, false, null);
                     Allocations.RemoveAt(i + 1);
                 }
 
@@ -156,15 +154,16 @@ internal class BufferPool<T>(AjivaBuffer<T> buffer, u32 capacity)
 /// <summary>
 /// Geometry memory pool with multiple buffers, freelist allocation, and compaction support
 /// </summary>
-public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<GeometryMemoryPool> logger)
+public class GeometryMemoryPool<T>(ResourceManager resourceManager, ILogger<GeometryMemoryPool<T>> logger)
+    where T : unmanaged
 {
     private const u32 BufferCapacity = 262144; // 256K vertices/indices per buffer
     private const f32 FragmentationThreshold = 0.4f; // Compact when > 40% fragmented
 
-    private readonly List<BufferPool<Vertex>> _vertexBuffers = [];
+    private readonly List<BufferPool<T>> _vertexBuffers = [];
     private readonly List<BufferPool<u32>> _indexBuffers = [];
 
-    private readonly Dictionary<GeometryRent, (i32 VertexBufferIdx, i32 IndexBufferIdx)> _rentToBuffers = new();
+    private readonly Dictionary<GeometryRent<T>, (i32 VertexBufferIdx, i32 IndexBufferIdx)> _rentToBuffers = new();
 
     private bool _isInitialized = false;
 
@@ -187,12 +186,12 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
 
     private void CreateNewVertexBuffer()
     {
-        var buffer = resourceManager.CreateBuffer<Vertex>(
+        var buffer = resourceManager.CreateBuffer<T>(
             BufferUsage.CopyDst | BufferUsage.Vertex | BufferUsage.CopySrc,
             (i32)BufferCapacity,
             $"GeometryPool_VertexBuffer_{_vertexBuffers.Count}"
         );
-        _vertexBuffers.Add(new BufferPool<Vertex>(buffer, BufferCapacity));
+        _vertexBuffers.Add(new BufferPool<T>(buffer, BufferCapacity));
     }
 
     private void CreateNewIndexBuffer()
@@ -208,7 +207,7 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
     /// <summary>
     /// Rents a contiguous range from the memory pool for geometry data.
     /// </summary>
-    public GeometryRent Rent(ReadOnlySpan<Vertex> vertices, ReadOnlySpan<u32> indices, QueuePtr queue)
+    public GeometryRent<T> Rent(ReadOnlySpan<T> vertices, ReadOnlySpan<u32> indices, QueuePtr queue)
     {
         if (!_isInitialized)
             throw new InvalidOperationException("GeometryMemoryPool must be initialized before use");
@@ -224,7 +223,7 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
         WriteToVertexBuffer(vertexBufferIdx, vertexOffset, vertices, queue);
         WriteToIndexBuffer(indexBufferIdx, indexOffset, indices, queue);
 
-        var rent = new GeometryRent
+        var rent = new GeometryRent<T>
         {
             VertexBuffer = _vertexBuffers[vertexBufferIdx].Buffer,
             IndexBuffer = _indexBuffers[indexBufferIdx].Buffer,
@@ -283,11 +282,11 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
         return (_indexBuffers.Count - 1, newOffset);
     }
 
-    private void WriteToVertexBuffer(i32 bufferIdx, u32 offset, ReadOnlySpan<Vertex> data, QueuePtr queue)
+    private void WriteToVertexBuffer(i32 bufferIdx, u32 offset, ReadOnlySpan<T> data, QueuePtr queue)
     {
         queue.WriteBuffer(
             _vertexBuffers[bufferIdx].Buffer.Buffer,
-            offset * AjivaBuffer<Vertex>.SizeOfT,
+            offset * AjivaBuffer<T>.SizeOfT,
             data
         );
     }
@@ -304,7 +303,7 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
     /// <summary>
     /// Returns a rented geometry range back to the pool, freeing its allocation.
     /// </summary>
-    public void Return(GeometryRent rent)
+    public void Return(GeometryRent<T> rent)
     {
         if (!_rentToBuffers.TryGetValue(rent, out var bufferIndices))
             return;
@@ -368,12 +367,12 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
             // All free, just reset
             oldPool.Allocations.Clear();
             oldPool.UsedCount = 0;
-            oldPool.Allocations.Add(new AllocationInfo(0, oldPool.Capacity, false, null));
+            oldPool.Allocations.Add(new AllocationInfo<T>(0, oldPool.Capacity, false, null));
             return;
         }
 
         // Create new buffer for compacted data
-        var newBuffer = resourceManager.CreateBuffer<Vertex>(
+        var newBuffer = resourceManager.CreateBuffer<T>(
             BufferUsage.CopyDst | BufferUsage.Vertex | BufferUsage.CopySrc,
             (i32)oldPool.Capacity,
             $"GeometryPool_VertexBuffer_{_vertexBuffers.Count}_Compact"
@@ -381,16 +380,16 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
 
         // Copy each used allocation to new buffer at packed offset
         u32 newOffset = 0;
-        var newAllocations = new List<AllocationInfo>();
+        var newAllocations = new List<AllocationInfo<T>>();
 
         foreach (var alloc in usedAllocations)
         {
-            var copySize = alloc.Count * (u32)Marshal.SizeOf<Vertex>();
+            var copySize = alloc.Count * (u32)Marshal.SizeOf<T>();
             commandEncoder.CopyBufferToBuffer(
                 oldPool.Buffer.Buffer,
-                alloc.Offset * (u64)Marshal.SizeOf<Vertex>(),
+                alloc.Offset * (u64)Marshal.SizeOf<T>(),
                 newBuffer.Buffer,
-                newOffset * (u64)Marshal.SizeOf<Vertex>(),
+                newOffset * (u64)Marshal.SizeOf<T>(),
                 copySize
             );
 
@@ -401,19 +400,19 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
                 alloc.Rent.BaseVertex = newOffset;
             }
 
-            newAllocations.Add(new AllocationInfo(newOffset, alloc.Count, true, alloc.Rent));
+            newAllocations.Add(new AllocationInfo<T>(newOffset, alloc.Count, true, alloc.Rent));
             newOffset += alloc.Count;
         }
 
         // Add remaining free space as single hole
         if (newOffset < oldPool.Capacity)
         {
-            newAllocations.Add(new AllocationInfo(newOffset, oldPool.Capacity - newOffset, false, null));
+            newAllocations.Add(new AllocationInfo<T>(newOffset, oldPool.Capacity - newOffset, false, null));
         }
 
         // Replace old buffer
         oldPool.Buffer.Dispose();
-        _vertexBuffers[bufferIdx] = new BufferPool<Vertex>(newBuffer, oldPool.Capacity)
+        _vertexBuffers[bufferIdx] = new BufferPool<T>(newBuffer, oldPool.Capacity)
         {
             Allocations = newAllocations,
             UsedCount = newOffset
@@ -433,7 +432,7 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
             // All free, just reset
             oldPool.Allocations.Clear();
             oldPool.UsedCount = 0;
-            oldPool.Allocations.Add(new AllocationInfo(0, oldPool.Capacity, false, null));
+            oldPool.Allocations.Add(new AllocationInfo<u32>(0, oldPool.Capacity, false, null));
             return;
         }
 
@@ -446,7 +445,7 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
 
         // Copy each used allocation to new buffer at packed offset
         u32 newOffset = 0;
-        var newAllocations = new List<AllocationInfo>();
+        var newAllocations = new List<AllocationInfo<u32>>();
 
         foreach (var alloc in usedAllocations)
         {
@@ -466,14 +465,14 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
                 alloc.Rent.FirstIndex = newOffset;
             }
 
-            newAllocations.Add(new AllocationInfo(newOffset, alloc.Count, true, alloc.Rent));
+            newAllocations.Add(new AllocationInfo<u32>(newOffset, alloc.Count, true, alloc.Rent));
             newOffset += alloc.Count;
         }
 
         // Add remaining free space as single hole
         if (newOffset < oldPool.Capacity)
         {
-            newAllocations.Add(new AllocationInfo(newOffset, oldPool.Capacity - newOffset, false, null));
+            newAllocations.Add(new AllocationInfo<u32>(newOffset, oldPool.Capacity - newOffset, false, null));
         }
 
         // Replace old buffer
@@ -498,9 +497,9 @@ public class GeometryMemoryPool(ResourceManager resourceManager, ILogger<Geometr
         return (_vertexBuffers.Count, _indexBuffers.Count,
                 _vertexBuffers.Count > 0 ? _vertexBuffers.Average(b => b.GetFragmentationScore()) : 0f,
                 _indexBuffers.Count > 0 ? _indexBuffers.Average(b => b.GetFragmentationScore()) : 0f,
-                (u32)_vertexBuffers.Sum(b => b.Capacity * (u32)Marshal.SizeOf<Vertex>()) +
+                (u32)_vertexBuffers.Sum(b => b.Capacity * (u32)Marshal.SizeOf<T>()) +
                 (u32)_indexBuffers.Sum(b => b.Capacity * sizeof(u32)),
-                (u32)_vertexBuffers.Sum(b => b.UsedCount * (u32)Marshal.SizeOf<Vertex>()) +
+                (u32)_vertexBuffers.Sum(b => b.UsedCount * (u32)Marshal.SizeOf<T>()) +
                 (u32)_indexBuffers.Sum(b => b.UsedCount * sizeof(u32))
             );
     }

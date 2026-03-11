@@ -4,7 +4,7 @@ using Client.Common;
 using Client.Renderer.Resources;
 using Client.UI;
 using Common.Systems;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 
@@ -28,13 +28,13 @@ public class UiRenderLayer : IUiRenderLayer, IRenderLayer, IEventHandler<AjivaKe
     Vector2 TextureVisibleSize { get; set; }
     Vector2 MousePositionOnTexture { get; set; }
 
-    public void OnEvent(AjivaEvent<AjivaKeyboardEvent> inputEvent)
+    public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
     {
         if (!HoveringUi()) return;
-        _uiRenderer.OnEvent(inputEvent);
+        _uiRenderer.OnEvent(ref inputEvent);
     }
 
-    public void OnEvent(AjivaEvent<AjivaMouseEvent> inputEvent)
+    public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
     {
         MousePositionOnTexture = new Vector2(inputEvent.EventData.X, inputEvent.EventData.Y) - TextureOffset;
         if (!HoveringUi()) return;
@@ -45,7 +45,7 @@ public class UiRenderLayer : IUiRenderLayer, IRenderLayer, IEventHandler<AjivaKe
                 Y = MousePositionOnTexture.Y
             },
             inputEvent.Handled);
-        _uiRenderer.OnEvent(uiEvent);
+        _uiRenderer.OnEvent(ref uiEvent);
         if (uiEvent.Handled)
             inputEvent.Handled = true;
     }
@@ -106,6 +106,29 @@ public class UiRenderLayer : IUiRenderLayer, IRenderLayer, IEventHandler<AjivaKe
     {
         if (ImGui.Begin("UI Layer"))
         {
+            //ImGui.Image(_gpuTexture.View.GetIntPtr(), new Vector2(_gpuTexture.Size.Width, _gpuTexture.Size.Height));
+            if (_uiRenderer.GetTexture() is { } text)
+            {
+                unsafe
+                {
+                    TextureOffset = ImGui.GetCursorScreenPos();
+                    var contentRegionAvail = ImGui.GetContentRegionAvail();
+                    ImGui.Image(new ImTextureRef(texId: text.GetTextureView().GetIntPtr()),
+                        new Vector2(text.Width, text.Height));
+                    TextureVisibleSize = ImGui.GetItemRectSize();
+                    //clip visible size to content region available
+                    TextureVisibleSize = new Vector2(Math.Min(TextureVisibleSize.X, contentRegionAvail.X),
+                        Math.Min(TextureVisibleSize.Y, contentRegionAvail.Y));
+                }
+            }
+            else
+                ImGui.Text("UI Texture not available");
+        }
+
+        ImGui.End();
+
+        if (ImGui.Begin("UI Debug Info"))
+        {
             ImGui.Text("This is the UI Render Layer");
             ImGui.Text($"Delta Time: {info.DeltaTime:F4}s");
             ImGui.Text($"Total Time: {info.TotalTime:F2}s");
@@ -127,18 +150,50 @@ public class UiRenderLayer : IUiRenderLayer, IRenderLayer, IEventHandler<AjivaKe
                                      <h1>My WebGPU Game</h1>
                                      <!-- ID used for C# binding -->
                                      <div id="start_button" class="button">Start Game</div>
-                                     """, "");
+                                     """);
             }
 
-            //ImGui.Image(_gpuTexture.View.GetIntPtr(), new Vector2(_gpuTexture.Size.Width, _gpuTexture.Size.Height));
-            if (_uiRenderer.GetTexture() is { } text)
+            if (ImGui.Button("Load Benchmark HTML"))
             {
-                TextureOffset = ImGui.GetCursorScreenPos();
-                ImGui.Image(text.GetTextureView().GetIntPtr(), new Vector2(text.Width, text.Height));
-                TextureVisibleSize = ImGui.GetItemRectSize();
+                _uiRenderer.LoadHTML("""
+                                     <rml>
+                                     <head>
+                                     	<link type="text/template" href="../resources/rml/window.rml"/>
+                                     	<title>Benchmark Sample</title>
+                                     	<style>
+                                     		body.window
+                                     		{
+                                     			left: 80dp;
+                                     			right: 80dp;
+                                     			top: 50dp;
+                                     			bottom: 50dp;
+                                     			max-width: 2000dp;
+                                     			max-height: 2000dp;
+                                     		}
+                                     		#fps
+                                     		{
+                                     			position: absolute;
+                                     			top: 55dp;
+                                     			left: 20dp;
+                                     			font-size: 0.85em;
+                                     			text-align: left;
+                                     		}
+                                     		#performance
+                                     		{
+                                     			width: 800dp;
+                                     			height: 300dp;
+                                     		}
+                                     	</style>
+                                     </head>
+
+                                     <body template="window">
+                                     <div id="fps"/>
+                                     <div id="click_test"/>
+                                     <div id="performance"/>
+                                     </body>
+                                     </rml>
+                                     """);
             }
-            else
-                ImGui.Text("UI Texture not available");
         }
 
         ImGui.End();

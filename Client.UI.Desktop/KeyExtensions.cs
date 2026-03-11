@@ -1,13 +1,11 @@
 ﻿using System.Diagnostics;
 using RmlUiNet.Input;
-using Silk.NET.Input;
-using MouseButton = Silk.NET.Input.MouseButton;
 
 namespace Client.UI.Desktop;
 
 public static class SilkRmlExtensions
 {
-    extension(Key k)
+    /*extension(Key k)
     {
         public KeyIdentifier ToRmlKeyEvent()
         {
@@ -151,5 +149,5 @@ public static class SilkRmlExtensions
 
             return (i32)mb;
         }
-    }
+    }*/
 }

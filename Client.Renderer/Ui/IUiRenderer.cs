@@ -17,7 +17,7 @@ public interface IUiRenderer : IDisposable
     /// <summary>
     /// Load HTML content
     /// </summary>
-    void LoadHTML(string html, string style);
+    void LoadHTML(string rml);
 
     /// <summary>
     /// Load a URL
