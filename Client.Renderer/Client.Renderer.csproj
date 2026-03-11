@@ -15,19 +15,17 @@
     <ItemGroup>
         <InternalsVisibleTo Include="Client"/>
         <InternalsVisibleTo Include="Client.Editor"/>
-        <Compile Include="../Client/GlobalUsings.cs"/>
+        <Compile Include="../Common/GlobalUsings.cs"/>
     </ItemGroup>
 
 
     <ItemGroup>
         <PackageReference Include="GlmSharp-netstandard" />
+        <PackageReference Include="Hexa.NET.ImGui" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
         <PackageReference Include="Microsoft.Extensions.Hosting" />
-
-        <PackageReference Include="Silk.NET.Maths" />
         <PackageReference Include="Silk.NET.WebGPU" />
         <PackageReference Include="Silk.NET.WebGPU.Native.WGPU" />
-        <PackageReference Include="Silk.NET.WebGPU.Extensions.Disposal" />
         <PackageReference Include="NativeFileDialogExtendedSharp" />
 
         <PackageReference Include="Silk.NET.Assimp" />
