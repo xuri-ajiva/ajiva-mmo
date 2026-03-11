@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using Client.Common;
 using Client.Game;
 using Client.LayerSystem;
 using Client.Networking;
@@ -18,15 +19,15 @@ public class PlayerInputSystem(
     ClientGameLogic gameLogic,
     ClientNetworkManager networkManager,
     ICamera camera,
-    ILogger<PlayerInputSystem> logger,
-    PeriodicUpdater updater)
-    : IHostedService
+    ILogger<PlayerInputSystem> logger)
+    : IAjivaLayer, IEventHandler<AjivaMouseEvent>, IEventHandler<AjivaKeyboardEvent>
 {
-    private readonly ILogger<PlayerInputSystem> _logger = logger;
-    private PeriodicUpdater.UpdateHandle? _updateHandle;
-
     public Vector3 CurrentPosition { get; set; }
     public Quaternion CurrentRotation { get; set; }
+
+    public void Attach()
+    {
+    }
 
     public void Update(UpdateInfo info)
     {
@@ -42,19 +43,31 @@ public class PlayerInputSystem(
             // Send to server
             networkManager.SendPlayerUpdate(cameraPosition, cameraRotation);
         }
+
         CurrentPosition = cameraPosition;
         CurrentRotation = cameraRotation;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public void Detach()
     {
-        _updateHandle = updater.RegisterUpdate(UpdateCycle.Update, Update);
-        return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    private bool _updateEnabled = true;
+    public ref bool Enabled => ref _updateEnabled;
+
+    public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
     {
-        _updateHandle?.Dispose();
-        return Task.CompletedTask;
+        if (camera is IEventHandler<AjivaMouseEvent> handler)
+        {
+            handler.OnEvent(ref inputEvent);
+        }
+    }
+
+    public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
+    {
+        if (camera is IEventHandler<AjivaKeyboardEvent> handler)
+        {
+            handler.OnEvent(ref inputEvent);
+        }
     }
 }
