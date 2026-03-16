@@ -25,11 +25,8 @@ public partial class ImGuiShader
     );
 
     public partial struct Uniforms(
-        mat4 mvp,
-        f32 gamma,
-        f32 padding0,
-        f32 padding1,
-        f32 padding2
+        vec2 scale,
+        vec2 translate
     );
 
     [Group(0), BindingMode(BindingType.Uniform)]
@@ -44,7 +41,7 @@ public partial class ImGuiShader
     public Varyings vs_main(VertexInput input)
     {
         return new Varyings(
-            uniforms.Mvp * vec4f(input.Position, 0.0f, 1.0f),
+            vec4f(input.Position * uniforms.Scale + uniforms.Translate, 0.0f, 1.0f),
             input.Color,
             input.Uv
         );
@@ -54,7 +51,7 @@ public partial class ImGuiShader
     public vec4 fs_main(Varyings v)
     {
         var color = v.Color * textureSample(t, s, v.Uv);
-        var corrected = pow(color.rgb, vec3f(uniforms.Gamma));
+        var corrected = pow(color.rgb, vec3(1.0f));
         return vec4f(corrected, color.a);
     }
 }

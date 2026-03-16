@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
 using Client.Wgsl;
+using GlmSharp;
 using Hexa.NET.ImGui;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
@@ -83,9 +84,11 @@ public partial class ImGuiPlatform
         _pipeline!.UpdateUniform(
             new ImGuiShader.Uniforms
             {
-                MvpRef = Matrix4x4.CreateOrthographicOffCenter(0f, io.DisplaySize.X, io.DisplaySize.Y, 0.0f, -1.0f,
-                    1.0f),
-                Gamma = 1.0f
+                //MvpRef = Matrix4x4.CreateOrthographicOffCenter(0f, io.DisplaySize.X, io.DisplaySize.Y, 0.0f, -1.0f, 1.0f),
+                /*Scale = new vec2(2.0f / data.DisplaySize.X, 2.0f / data.DisplaySize.Y),
+                Translate = new vec2(-1.0f - data.DisplayPos.X * (2.0f / data.DisplaySize.X), -1.0f - data.DisplayPos.Y * (2.0f / data.DisplaySize.Y))*/
+                Scale = new vec2(2.0f / data.DisplaySize.X, -2.0f / data.DisplaySize.Y),
+                Translate = new vec2(-1.0f - data.DisplayPos.X * (2.0f / data.DisplaySize.X), 1.0f + data.DisplayPos.Y * (2.0f / data.DisplaySize.Y))
             }, queue);
 
         pass.SetVertexBuffer(0, _vertexBuffer!.Buffer, _vertexBuffer.OffsetBytes, _vertexBuffer.Size);
@@ -95,6 +98,10 @@ public partial class ImGuiPlatform
 
         data.ScaleClipRects(io.DisplayFramebufferScale);
 
+        // Will project scissor/clipping rectangles into framebuffer space
+        var clip_off = data.DisplayPos;         // (0,0) unless using multi-viewports
+        var clip_scale = data.FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+        
         // Render command lists
         u32 vertexBase = 0;
         u32 indexBase = 0;
@@ -110,9 +117,42 @@ public partial class ImGuiPlatform
 
                 pass.SetBindGroup(1, textureBind, null);
 
-                var clipRect = pcmd.ClipRect;
+                /*var clipRect = pcmd.ClipRect;
                 pass.SetScissorRect((u32)clipRect.X, (u32)clipRect.Y, (u32)(clipRect.Z - clipRect.X),
-                    (u32)(clipRect.W - clipRect.Y));
+                    (u32)(clipRect.W - clipRect.Y));*/
+                
+                /*// Project scissor/clipping rectangles into framebuffer space
+                ImVec2 clip_min((pcmd->ClipRect.x - clip_off.x) * clip_scale.x, (pcmd->ClipRect.y - clip_off.y) * clip_scale.y);
+                ImVec2 clip_max((pcmd->ClipRect.z - clip_off.x) * clip_scale.x, (pcmd->ClipRect.w - clip_off.y) * clip_scale.y);
+
+                // Clamp to viewport as SDL_SetGPUScissor() won't accept values that are off bounds
+                if (clip_min.x < 0.0f) { clip_min.x = 0.0f; }
+                if (clip_min.y < 0.0f) { clip_min.y = 0.0f; }
+                if (clip_max.x > fb_width) { clip_max.x = (float)fb_width; }
+                if (clip_max.y > fb_height) { clip_max.y = (float)fb_height; }
+                if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
+                    continue;
+
+                // Apply scissor/clipping rectangle
+                SDL_Rect scissor_rect = {};
+                scissor_rect.x = (int)clip_min.x;
+                scissor_rect.y = (int)clip_min.y;
+                scissor_rect.w = (int)(clip_max.x - clip_min.x);
+                scissor_rect.h = (int)(clip_max.y - clip_min.y);*/
+                
+                // Project scissor/clipping rectangles into framebuffer space
+                var clip_min = new Vector2((pcmd.ClipRect.X - clip_off.X) * clip_scale.X, (pcmd.ClipRect.Y - clip_off.Y) * clip_scale.Y);
+                var clip_max = new Vector2((pcmd.ClipRect.Z - clip_off.X) * clip_scale.X, (pcmd.ClipRect.W - clip_off.Y) * clip_scale.Y);
+                
+                // Clamp to viewport as SetScissorRect() won't accept values that are off bounds
+                clip_min = Vector2.Max(clip_min, Vector2.Zero);
+                clip_max = Vector2.Min(clip_max, io.DisplaySize * io.DisplayFramebufferScale);
+                if (clip_max.X <= clip_min.X || clip_max.Y <= clip_min.Y)
+                    continue;
+                
+                pass.SetScissorRect((u32)clip_min.X, (u32)clip_min.Y, (u32)(clip_max.X - clip_min.X), (u32)(clip_max.Y - clip_min.Y));
+                
+                
                 pass.DrawIndexed(pcmd.ElemCount, 1, indexBase + pcmd.IdxOffset, (i32)(vertexBase + pcmd.VtxOffset), 0);
             }
 
@@ -183,6 +223,7 @@ public partial class ImGuiPlatform
             logger.LogWarning(
                 "Texture with ID {ID} not found in texture map, creating a speculative bind group for it. This may indicate a problem with texture management in ImGui.",
                 textureId.Handle);
+            //var textureViewPtr = loader.DefaultTexture.View;
             var textureViewPtr = new TextureViewPtr(loader.Api.Device.GetAPI(), (TextureView*)textureId);
             var textureBindGroup = _pipeline!.CreateTextureBindGroup(textureViewPtr);
             _textures.Add(textureId, (null!, textureBindGroup));
@@ -199,7 +240,8 @@ public partial class ImGuiPlatform
             logger.LogDebug("UpdateTexture {UniqueID}: WantCreate {Width}x{Height} Format {Format}", tex.UniqueID,
                 tex.Width, tex.Height, tex.Format);
 
-            texture = AjivaTexture.FromData(loader.CreateTexture(TextureUsage.TextureBinding | TextureUsage.CopyDst,
+            texture = AjivaTexture.FromData(loader.CreateTexture(
+                TextureUsage.TextureBinding | TextureUsage.CopyDst | TextureUsage.RenderAttachment,
                 "ImGui Texture", 1,
                 new Extent3D { Width = (u32)tex.Width, Height = (u32)tex.Height, DepthOrArrayLayers = 1 },
                 TextureFormat.Rgba8Unorm,
