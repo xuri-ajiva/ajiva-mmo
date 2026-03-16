@@ -11,14 +11,12 @@ using Common.Systems;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
 using Silk.NET.WebGPU;
-using Silk.NET.WebGPU.Safe;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
-using SurfaceConfiguration = Silk.NET.WebGPU.Safe.SurfaceConfiguration;
 
 namespace Client.Desktop;
 
 public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyboardEvent>,
-    IEventHandler<AjivaMouseEvent>
+    IEventHandler<AjivaMouseEvent>, IEventHandler<SDLEvent>
 {
     private readonly ILogger<AjivaImGuiLayer> _logger;
     private readonly LayerStack _layerStack;
@@ -28,18 +26,22 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
 
     private ImFontPtr _quicksandFont;
     private readonly AjivaWindow _window;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ImGuiPlatform _imGuiPlatform;
+    private readonly SurfaceManager _surfaceManager;
 
     public AjivaImGuiLayer(ILogger<AjivaImGuiLayer> logger, LayerStack layerStack, RendererApi api,
         PeriodicUpdater periodicUpdater, AjivaWindow window, IServiceProvider serviceProvider,
-        ImGuiPlatform imGuiPlatform)
+        ImGuiPlatform imGuiPlatform, SurfaceManager surfaceManager)
     {
         _logger = logger;
         _layerStack = layerStack;
         _api = api;
         _periodicUpdater = periodicUpdater;
         _window = window;
+        _serviceProvider = serviceProvider;
         _imGuiPlatform = imGuiPlatform;
+        _surfaceManager = surfaceManager;
         // find all types that implement IAjivaLayer
 #if DEBUG
         _layerTypes =
@@ -53,7 +55,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
 
     public unsafe void Attach()
     {
-        _imGuiPlatform.Initialize();
+        _imGuiPlatform.Initialize(_window.Window);
         //_imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
         var io = ImGui.GetIO();
 
@@ -78,7 +80,15 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
         var style = ImGui.GetStyle();
         style.FrameRounding = 4;
         style.FrameBorderSize = 1;
+        //io.ConfigDpiScaleFonts = true;
+        //io.ConfigDpiScaleViewports = true;
         //TODO IMG MIGRATION: io.FontGlobalScale = 1.25f;
+
+        if ((io.ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
+        {
+            style.WindowRounding = 0.0f;
+            style.Colors[(int)ImGuiCol.WindowBg].W = 1.0f;
+        }
     }
 
     public void Update(UpdateInfo info)
@@ -95,108 +105,34 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
     private bool _enabled = true;
     public ref bool Enabled => ref _enabled;
 
-    private TextureViewPtr? _swapchainView;
-    private ImVec2I _lastFramebufferSize = new(0, 0);
-    private bool _requestReConfigure = true;
-
     public void Render(UpdateInfo info)
     {
         if (!_layerStack.Attached) return;
         using var tracer = Instrumentation.Trace(ActivityKind.Client);
 
         var window = _window.Window;
-        var surface = _window.Surface;
-        ImVec2I size = default;
-        SDL.GetWindowSizeInPixels(window, ref size.X, ref size.Y);
-        var framebufferSize = size;
-
-        if (framebufferSize.X * framebufferSize.Y == 0)
-            return;
-
-        if (_requestReConfigure || _lastFramebufferSize.X != framebufferSize.X ||
-            _lastFramebufferSize.Y != framebufferSize.Y)
+        using var surfaceGuard = _surfaceManager.GetWindowSurfaceTexture(window);
+        if (!surfaceGuard.IsValid)
         {
-            _lastFramebufferSize = framebufferSize;
-
-            surface.Configure(new SurfaceConfiguration
-            {
-                AlphaMode = CompositeAlphaMode.Opaque,
-                Device = _api.Device,
-                Usage = TextureUsage.RenderAttachment,
-                Format = TextureFormat.Bgra8Unorm,
-                ViewFormats = [TextureFormat.Bgra8Unorm],
-                Width = (u32)framebufferSize.X,
-                Height = (u32)framebufferSize.Y,
-                PresentMode = PresentMode.Fifo
-            });
+            _logger.LogError("Failed to get surface texture for rendering");
+            return;
         }
 
-        _imGuiPlatform.NewFrame(info, framebufferSize);
-        _swapchainView?.Release();
-
-        (var swapChainTexture, _requestReConfigure, var status) = _window.Surface.GetCurrentTexture();
-        if (!CanContinueRender(status))
-            return;
+        _imGuiPlatform.NewFrame(info, surfaceGuard.Size);
 
         try
         {
-            ActualRender(info, swapChainTexture);
+            ActualRender(info, surfaceGuard);
         }
         catch (Exception e)
         {
             _logger.LogWarning(e, "Exception during rendering");
-            _requestReConfigure = true;
-        }
-
-        try
-        {
-            using var present = Instrumentation.NamedTrace("Presenting");
-            surface.Present();
-        }
-        catch (Exception e)
-        {
-            _logger.LogWarning(e, "Exception during presenting");
-            _requestReConfigure = true;
         }
     }
 
-    private bool CanContinueRender(SurfaceGetCurrentTextureStatus status)
-    {
-        switch (status)
-        {
-            case SurfaceGetCurrentTextureStatus.Success:
-                return true;
-            case SurfaceGetCurrentTextureStatus.Outdated:
-            case SurfaceGetCurrentTextureStatus.Timeout:
-                _requestReConfigure = true;
-                return true;
-            case SurfaceGetCurrentTextureStatus.Lost:
-                _logger.LogError("Surface lost, cannot continue rendering");
-                _requestReConfigure = true;
-                return false;
-            case SurfaceGetCurrentTextureStatus.OutOfMemory:
-                _logger.LogCritical("Out of memory, cannot continue rendering");
-                _requestReConfigure = true;
-                return false;
-            case SurfaceGetCurrentTextureStatus.DeviceLost:
-                _logger.LogCritical("Device lost, cannot continue rendering");
-                _requestReConfigure = true;
-                return false;
-            default:
-                _logger.LogWarning("Unknown surface status: {Status}, cannot continue rendering", status);
-                _requestReConfigure = true;
-                return true;
-        }
-    }
 
-    private void ActualRender(UpdateInfo info, TexturePtr swapChainTexture)
+    private void ActualRender(UpdateInfo info, SurfaceManager.SurfaceUsageInfo surface)
     {
-        _swapchainView = swapChainTexture.CreateView(
-            TextureFormat.Bgra8Unorm,
-            TextureViewDimension.Dimension2D, TextureAspect.All,
-            baseMipLevel: 0, mipLevelCount: 1,
-            baseArrayLayer: 0, arrayLayerCount: 1, label: "SwapchainView");
-
         ImGui.PushFont(_quicksandFont, 0);
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
         using (Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Queue"))
@@ -230,17 +166,20 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
             if (ImGui.GetFrameCount() == 4) //seems to be the magic number for loading dock layouts
                 ImGui.LoadIniSettingsFromDisk("imgui.ini");
 
+            var surfaceTexture = surface.TextureView;
             var cmd = _api.Device.CreateCommandEncoder(label: "ImGui Composite");
             var pass = cmd.BeginRenderPass([
-                    new RenderPassColorAttachment(_swapchainView.Value, resolveTarget: null,
+                    new RenderPassColorAttachment(surfaceTexture, resolveTarget: null,
                         LoadOp.Clear, StoreOp.Store, default)
                 ], null, null,
                 null);
-
             _imGuiPlatform!.Render(pass);
-            ImGui.UpdatePlatformWindows();
-            //ImGui.RenderPlatformWindowsDefault();
-
+            if ((ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
+            {
+                ImGui.UpdatePlatformWindows();
+                ImGui.RenderPlatformWindowsDefault();
+            }
+            
             pass.End();
             guard.Queue.Submit(cmd.Finish());
         }
@@ -436,5 +375,10 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
         {
             inputEvent.Handled = true;
         }
+    }
+
+    public void OnEvent(ref AjivaEvent<SDLEvent> inputEvent)
+    {
+        _imGuiPlatform.OnEvent(ref inputEvent);
     }
 }

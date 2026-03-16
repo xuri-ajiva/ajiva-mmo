@@ -25,6 +25,7 @@ public class
         services.AddService<AjivaWindow>();
         services.AddService<ImGuiPlatform>();
         services.AddService<UiRenderLayer>();
+        services.AddService<SurfaceManager>();
         services.AddService<ExampleGameHudLayer>();
         services.AddService<EventSystem>();
         services.AddService<ViewPortRenderer>();

@@ -3,7 +3,6 @@ using Client.Config;
 using Client.Renderer;
 using Common.Systems;
 using Hexa.NET.SDL3;
-using Silk.NET.WebGPU.Safe;
 
 namespace Client.Desktop.Platform;
 
@@ -20,7 +19,6 @@ public class AjivaWindow(
     internal SDLWindowPtr Window = null!;
     private Thread _windowThread = null!;
 
-    public SurfacePtr Surface;
     private bool _isClosing;
 
 
@@ -32,7 +30,6 @@ public class AjivaWindow(
         firstLoad = false;
         try
         {
-            Surface = PlatformSystem.CreateWebGpuSurface(Window, api.Instance);
             var properties = api.Adapter.GetProperties();
             SDL.SetWindowTitle(Window, $"Ajiva MMO {properties.BackendType} {properties.Name}");
 
@@ -97,8 +94,9 @@ public class AjivaWindow(
         }
     }
 
-    private void ProcessEvent(SDLEvent sdlEvent, uint mainWindowId)
+    private void ProcessEvent(SDLEvent sdlEvent, u32 mainWindowId)
     {
+        eventSystem.Dispatch(sdlEvent);
         switch ((SDLEventType)sdlEvent.Type)
         {
             case SDLEventType.Quit:
