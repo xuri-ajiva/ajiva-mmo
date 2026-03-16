@@ -28,11 +28,11 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
     private readonly AjivaWindow _window;
     private readonly IServiceProvider _serviceProvider;
     private readonly ImGuiPlatform _imGuiPlatform;
-    private readonly SurfaceManager _surfaceManager;
+    private readonly ISurfaceManager _surfaceManager;
 
     public AjivaImGuiLayer(ILogger<AjivaImGuiLayer> logger, LayerStack layerStack, RendererApi api,
         PeriodicUpdater periodicUpdater, AjivaWindow window, IServiceProvider serviceProvider,
-        ImGuiPlatform imGuiPlatform, SurfaceManager surfaceManager)
+        ImGuiPlatform imGuiPlatform, ISurfaceManager surfaceManager)
     {
         _logger = logger;
         _layerStack = layerStack;
@@ -131,7 +131,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
     }
 
 
-    private void ActualRender(UpdateInfo info, SurfaceManager.SurfaceUsageInfo surface)
+    private void ActualRender(UpdateInfo info, SurfaceUsageInfo surface)
     {
         ImGui.PushFont(_quicksandFont, 0);
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
@@ -179,7 +179,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
                 ImGui.UpdatePlatformWindows();
                 ImGui.RenderPlatformWindowsDefault();
             }
-            
+
             pass.End();
             guard.Queue.Submit(cmd.Finish());
         }
