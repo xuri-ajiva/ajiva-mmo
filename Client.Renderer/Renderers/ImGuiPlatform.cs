@@ -4,7 +4,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading.Channels;
 using Client.Common;
 using Client.Renderer.Pipelines;
 using Client.Renderer.Resources;
@@ -12,23 +11,26 @@ using Client.Wgsl;
 using Common.Systems;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
-using Microsoft.AspNetCore.Mvc;
-using Silk.NET.Core.Native;
+using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
-using SixLabors.ImageSharp.PixelFormats;
+using ImGuiImplSDL3 = Hexa.NET.ImGui.Backends.SDL3.ImGuiImplSDL3;
+using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 
 namespace Client.Renderer.Renderers;
 
 public partial class ImGuiPlatform(
     ResourceManager loader,
     ILogger<ImGuiPlatform> logger,
-    ShaderReloadManager shaderReloadManager) : IEventHandler<AjivaMouseEvent>, IEventHandler<AjivaKeyboardEvent>
+    ShaderReloadManager shaderReloadManager,
+    ISurfaceManager surfaceManager)
+    : IEventHandler<AjivaMouseEvent>, IEventHandler<AjivaKeyboardEvent>, IEventHandler<SDLEvent>
 {
     private static readonly Memory<u8> PlatformName = new("Ajiva ImGui Renderer\0"u8.ToArray());
     private ImGuiContextPtr _context;
+    private object delel, delel2, delel3;
 
-    public unsafe bool Initialize()
+    public unsafe bool Initialize(SDLWindowPtr windowWindow)
     {
         _context = ImGui.CreateContext();
         ImGui.SetCurrentContext(_context);
@@ -37,20 +39,71 @@ public partial class ImGuiPlatform(
         io.BackendPlatformName = (u8*)_platformNameHandle.Pointer;
         io.BackendRendererName = (u8*)_platformNameHandle.Pointer;
 
-        io.BackendFlags |= ImGuiBackendFlags.HasMouseCursors | ImGuiBackendFlags.HasSetMousePos |
-                           ImGuiBackendFlags.PlatformHasViewports | ImGuiBackendFlags.HasMouseHoveredViewport |
-                           ImGuiBackendFlags.RendererHasTextures | ImGuiBackendFlags.RendererHasVtxOffset;
+        io.BackendFlags |= ImGuiBackendFlags.RendererHasTextures | ImGuiBackendFlags.RendererHasVtxOffset
+            | ImGuiBackendFlags.RendererHasViewports
+            ;
+
+        io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard
+                          | ImGuiConfigFlags.NavEnableGamepad
+                          | ImGuiConfigFlags.DockingEnable
+                          | ImGuiConfigFlags.ViewportsEnable;
+
+        ImGuiImplSDL3.SetCurrentContext(_context);
+        ImGuiImplSDL3.InitForOther((Hexa.NET.ImGui.Backends.SDL3.SDLWindow*)windowWindow.Handle);
+
+        var platformIO = ImGui.GetPlatformIO();
+        unsafe
+        {
+            platformIO.RendererCreateWindow =
+                (Marshal.GetFunctionPointerForDelegate(delel = ImGui_ImplSDLGPU3_CreateWindow)).ToPointer();
+            platformIO.RendererRenderWindow =
+                (Marshal.GetFunctionPointerForDelegate(delel2 = ImGui_ImplSDLGPU3_RenderWindow)).ToPointer();
+            platformIO.RendererDestroyWindow =
+                (Marshal.GetFunctionPointerForDelegate(delel3 = ImGui_ImplSDLGPU3_DestroyWindow)).ToPointer();
+        }
+
         return true;
+    }
+
+
+    unsafe void ImGui_ImplSDLGPU3_RenderWindow(ImGuiViewport* viewport, void* _)
+    {
+        var window = SDL.GetWindowFromID((u32)viewport->PlatformHandle);
+        using var surfaceGuard = surfaceManager.GetWindowSurfaceTexture(window);
+        using var queueGuard = loader.Api.EnterQueue();
+
+        var surfaceTexture = surfaceGuard.TextureView;
+        var cmd = loader.Api.Device.CreateCommandEncoder(label: "ImGui Composite");
+        var pass = cmd.BeginRenderPass([
+                new RenderPassColorAttachment(surfaceTexture, resolveTarget: null,
+                    LoadOp.Clear, StoreOp.Store, default)
+            ], null, null,
+            null);
+        RenderImDrawData(viewport->DrawData, pass);
+
+        pass.End();
+        queueGuard.Queue.Submit(cmd.Finish());
+    }
+
+    unsafe void ImGui_ImplSDLGPU3_CreateWindow(ImGuiViewport* viewport)
+    {
+        var window = SDL.GetWindowFromID((u32)viewport->PlatformHandle);
+        SDL.ShowWindow(window);
+    }
+
+    unsafe void ImGui_ImplSDLGPU3_DestroyWindow(ImGuiViewport* viewport)
+    {
     }
 
     public void Teardown()
     {
         InvalidateDeviceObjects();
+        ImGuiImplSDL3.Shutdown();
         ImGui.DestroyContext(_context);
     }
 
 
-    public void NewFrame(UpdateInfo info, ImVec2I framebufferSize)
+    public void NewFrame(UpdateInfo info, Vector2D<u32> framebufferSize)
     {
         ImGui.SetCurrentContext(_context);
         var currentShader = shaderReloadManager.GetCurrentShader<IImGuiShader>();
@@ -66,6 +119,7 @@ public partial class ImGuiPlatform(
         io.DisplayFramebufferScale = Vector2.One;
 
         io.DeltaTime = info.DeltaTime;
+        ImGuiImplSDL3.NewFrame();
         ImGui.NewFrame();
 
         UpdateTexture(io.Fonts.TexData);
@@ -82,6 +136,7 @@ public partial class ImGuiPlatform(
 
     public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
     {
+        return;
         var mouseEvent = inputEvent.EventData;
         var io = ImGui.GetIO();
         var buttonIndex = (i32)mouseEvent.Button;
@@ -111,6 +166,7 @@ public partial class ImGuiPlatform(
 
     public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
     {
+        return;
         var keyboardEvent = inputEvent.EventData;
         var io = ImGui.GetIO();
         var keyCore = TranslateKeyCodeToImGui(keyboardEvent.KeyCode);
@@ -168,5 +224,13 @@ public partial class ImGuiPlatform(
         if (result == ImGuiKey.None)
             logger.LogWarning("Unmapped SDL scancode {Scancode} in ImGuiPlatform", keyCode);
         return result;
+    }
+
+    public void OnEvent(ref AjivaEvent<SDLEvent> inputEvent)
+    {
+        if (ImGuiImplSDL3.ProcessEvent(
+                ref Unsafe.As<SDLEvent, Hexa.NET.ImGui.Backends.SDL3.SDLEvent>(ref inputEvent.EventData)))
+        {
+        }
     }
 }

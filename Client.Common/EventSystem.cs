@@ -44,10 +44,10 @@ public readonly record struct AjivaKeyboardEvent(
     SDLKeymod Modifiers,
     AjivaKeyboardEventType IsPressed);
 
-public struct AjivaEvent<T>(T eventData, bool handled)
+public ref struct AjivaEvent<T>(ref T eventData, bool handled)
 {
-    public T EventData { get; } = eventData;
-    public bool Handled { get; set; } = handled;
+    public readonly ref T EventData = ref eventData;
+    public bool Handled  = handled;
 }
 
 public interface IEventHandler<T>
@@ -92,6 +92,10 @@ public class EventSystem(LayerStack layerStack) : IAjivaLayer
     private Channel<AjivaKeyboardEvent> KeyboardEventChannel { get; } =
         Channel.CreateUnbounded<AjivaKeyboardEvent>(new UnboundedChannelOptions
             { SingleReader = true, SingleWriter = false });
+    
+    private Channel<SDLEvent> SdlEvents { get; } =
+        Channel.CreateUnbounded<SDLEvent>(new UnboundedChannelOptions
+            { SingleReader = true, SingleWriter = false });
 
     /*private void InitDevice(IInputDevice context)
     {
@@ -129,7 +133,7 @@ public class EventSystem(LayerStack layerStack) : IAjivaLayer
         using (Instrumentation.NamedTrace("InputSystem.KeyboardEvents"))
             while (KeyboardEventChannel.Reader.TryRead(out var ajivaKeyboardEvent))
             {
-                var evnt = new AjivaEvent<AjivaKeyboardEvent>(ajivaKeyboardEvent, false);
+                var evnt = new AjivaEvent<AjivaKeyboardEvent>(ref ajivaKeyboardEvent, false);
                 foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<AjivaKeyboardEvent>>())
                 {
                     layerStackLayer.OnEvent(ref evnt);
@@ -143,8 +147,22 @@ public class EventSystem(LayerStack layerStack) : IAjivaLayer
         using (Instrumentation.NamedTrace("InputSystem.MouseEvents"))
             while (MouseEventChannel.Reader.TryRead(out var ajivaMouseEvent))
             {
-                var evnt = new AjivaEvent<AjivaMouseEvent>(ajivaMouseEvent, false);
+                var evnt = new AjivaEvent<AjivaMouseEvent>(ref ajivaMouseEvent, false);
                 foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<AjivaMouseEvent>>())
+                {
+                    layerStackLayer.OnEvent(ref evnt);
+                    if (evnt.Handled)
+                    {
+                        break;
+                    }
+                }
+            }
+        
+        using (Instrumentation.NamedTrace("InputSystem.SdlEvents"))
+            while (SdlEvents.Reader.TryRead(out var sdlEvent))
+            {
+                var evnt = new AjivaEvent<SDLEvent>(ref sdlEvent, false);
+                foreach (var layerStackLayer in _layerStack.Layers.OfType<IEventHandler<SDLEvent>>())
                 {
                     layerStackLayer.OnEvent(ref evnt);
                     if (evnt.Handled)
@@ -194,4 +212,5 @@ public class EventSystem(LayerStack layerStack) : IAjivaLayer
     public void Dispatch(AjivaMouseEvent ajivaMouseEvent) => WriteMouseEvent(ajivaMouseEvent);
 
     public void Dispatch(AjivaKeyboardEvent ajivaKeyboardEvent) => WriteKeyboardEvent(ajivaKeyboardEvent);
+    public void Dispatch(SDLEvent sdlEvent) => SdlEvents.Writer.TryWrite(sdlEvent);
 }

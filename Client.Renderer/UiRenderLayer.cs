@@ -38,13 +38,12 @@ public class UiRenderLayer : IUiRenderLayer, IRenderLayer, IEventHandler<AjivaKe
     {
         MousePositionOnTexture = new Vector2(inputEvent.EventData.X, inputEvent.EventData.Y) - TextureOffset;
         if (!HoveringUi()) return;
-        var uiEvent = new AjivaEvent<AjivaMouseEvent>(
-            inputEvent.EventData with
-            {
-                X = MousePositionOnTexture.X,
-                Y = MousePositionOnTexture.Y
-            },
-            inputEvent.Handled);
+        var offsetEvent = inputEvent.EventData with
+        {
+            X = MousePositionOnTexture.X,
+            Y = MousePositionOnTexture.Y
+        };
+        var uiEvent = new AjivaEvent<AjivaMouseEvent>(ref offsetEvent, inputEvent.Handled);
         _uiRenderer.OnEvent(ref uiEvent);
         if (uiEvent.Handled)
             inputEvent.Handled = true;
