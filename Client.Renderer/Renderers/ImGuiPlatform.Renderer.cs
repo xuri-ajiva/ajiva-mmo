@@ -8,6 +8,7 @@ using Client.Renderer.Resources;
 using Client.Wgsl;
 using GlmSharp;
 using Hexa.NET.ImGui;
+using Hexa.NET.SDL3;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 using SixLabors.ImageSharp.PixelFormats;
@@ -20,32 +21,35 @@ public partial class ImGuiPlatform
     private ImGuiPipeline? _pipeline;
     private AjivaBuffer<ImDrawVert>? _vertexBuffer;
     private readonly List<ImDrawVert> _vertexDataCache = [];
-    private readonly List<ushort> _indexDataCache = [];
-    private AjivaBuffer<ushort>? _indexBuffer;
-    private readonly Dictionary<ImTextureID, (AjivaTexture texture, BindGroupPtr? bindGroup)> _textures = [];
+    private readonly List<u16> _indexDataCache = [];
+    private AjivaBuffer<u16>? _indexBuffer;
 
-    private unsafe void RenderImDrawData(ImDrawDataPtr data, RenderPassEncoderPtr pass)
+    internal record TextureBindCacheEntry(AjivaTexture Texture, BindGroupPtr? BindGroup)
     {
-        if (data.CmdListsCount == 0)
+        public u64 LastUsedTick { get; set; } = 0;
+    }
+
+    private readonly Dictionary<ImTextureID, TextureBindCacheEntry> _textures = [];
+
+    private unsafe void RenderImDrawData(ImDrawDataPtr drawData, RenderPassEncoderPtr pass)
+    {
+        if (drawData.CmdListsCount == 0) return;
+
+        if (_vertexBuffer!.Count < (u64)drawData.TotalVtxCount)
+            _vertexBuffer.ResizeWithoutDataPreserve((u64)drawData.TotalVtxCount);
+        if (_indexDataCache.Count < drawData.TotalIdxCount)
         {
-            return;
+            _indexDataCache.Capacity = drawData.TotalIdxCount;
+            _indexDataCache.AddRange(Enumerable.Repeat<u16>(0, drawData.TotalIdxCount - _indexDataCache.Count));
         }
 
-        if (_vertexBuffer!.Count < (u64)data.TotalVtxCount)
-            _vertexBuffer.ResizeWithoutDataPreserve((u64)data.TotalVtxCount);
-        if (_indexDataCache.Count < data.TotalIdxCount)
+        if (_indexBuffer!.Count < (u64)drawData.TotalIdxCount)
+            _indexBuffer.ResizeWithoutDataPreserve((u64)drawData.TotalIdxCount);
+        if (_vertexDataCache.Count < drawData.TotalVtxCount)
         {
-            _indexDataCache.Capacity = data.TotalIdxCount;
-            _indexDataCache.AddRange(Enumerable.Repeat<ushort>(0, data.TotalIdxCount - _indexDataCache.Count));
-        }
-
-        if (_indexBuffer!.Count < (u64)data.TotalIdxCount)
-            _indexBuffer.ResizeWithoutDataPreserve((u64)data.TotalIdxCount);
-        if (_vertexDataCache.Count < data.TotalVtxCount)
-        {
-            _vertexDataCache.Capacity = data.TotalVtxCount;
+            _vertexDataCache.Capacity = drawData.TotalVtxCount;
             _vertexDataCache.AddRange(Enumerable.Repeat<ImDrawVert>(default,
-                data.TotalVtxCount - _vertexDataCache.Count));
+                drawData.TotalVtxCount - _vertexDataCache.Count));
         }
 
         var vertexDataSpan = CollectionsMarshal.AsSpan(_vertexDataCache);
@@ -55,13 +59,13 @@ public partial class ImGuiPlatform
         var queue = guard.Queue;
         var vertexOffsetInVertices = 0;
         var indexOffsetInElements = 0;
-        for (var i = 0; i < data.CmdListsCount; i++)
+        for (var i = 0; i < drawData.CmdListsCount; i++)
         {
-            var cmdList = data.CmdLists[i];
+            var cmdList = drawData.CmdLists[i];
 
             new ReadOnlySpan<ImDrawVert>(cmdList.VtxBuffer.Data, cmdList.VtxBuffer.Size)
                 .CopyTo(vertexDataSpan.Slice(vertexOffsetInVertices, cmdList.VtxBuffer.Size));
-            new ReadOnlySpan<ushort>(cmdList.IdxBuffer.Data, cmdList.IdxBuffer.Size)
+            new ReadOnlySpan<u16>(cmdList.IdxBuffer.Data, cmdList.IdxBuffer.Size)
                 .CopyTo(indexDataSpan.Slice(indexOffsetInElements, cmdList.IdxBuffer.Size));
 
             vertexOffsetInVertices += cmdList.VtxBuffer.Size;
@@ -71,24 +75,21 @@ public partial class ImGuiPlatform
         _vertexBuffer.QueuedWrite(vertexDataSpan, 0, queue);
         _indexBuffer.QueuedWrite(indexDataSpan, 0, queue);
 
-        for (var i = 0; i < data.Textures.Size; i++)
+        for (var i = 0; i < drawData.Textures.Size; i++)
         {
-            var tex = data.Textures[i];
+            var tex = drawData.Textures[i];
             UpdateTexture(tex);
         }
 
-
         var io = ImGui.GetIO();
 
-        // Setup orthographic projection matrix into our constant buffer
         _pipeline!.UpdateUniform(
             new ImGuiShader.Uniforms
             {
-                //MvpRef = Matrix4x4.CreateOrthographicOffCenter(0f, io.DisplaySize.X, io.DisplaySize.Y, 0.0f, -1.0f, 1.0f),
-                /*Scale = new vec2(2.0f / data.DisplaySize.X, 2.0f / data.DisplaySize.Y),
-                Translate = new vec2(-1.0f - data.DisplayPos.X * (2.0f / data.DisplaySize.X), -1.0f - data.DisplayPos.Y * (2.0f / data.DisplaySize.Y))*/
-                Scale = new vec2(2.0f / data.DisplaySize.X, -2.0f / data.DisplaySize.Y),
-                Translate = new vec2(-1.0f - data.DisplayPos.X * (2.0f / data.DisplaySize.X), 1.0f + data.DisplayPos.Y * (2.0f / data.DisplaySize.Y))
+                // flipped Y as per wgpu coordinate system
+                Scale = new vec2(2.0f / drawData.DisplaySize.X, -2.0f / drawData.DisplaySize.Y),
+                Translate = new vec2(-1.0f - drawData.DisplayPos.X * (2.0f / drawData.DisplaySize.X),
+                    1.0f + drawData.DisplayPos.Y * (2.0f / drawData.DisplaySize.Y))
             }, queue);
 
         pass.SetVertexBuffer(0, _vertexBuffer!.Buffer, _vertexBuffer.OffsetBytes, _vertexBuffer.Size);
@@ -96,63 +97,39 @@ public partial class ImGuiPlatform
         pass.SetPipeline(_pipeline!.Pipeline);
         pass.SetBindGroup(0, _pipeline.BindGroup0, null);
 
-        data.ScaleClipRects(io.DisplayFramebufferScale);
+        drawData.ScaleClipRects(io.DisplayFramebufferScale);
 
         // Will project scissor/clipping rectangles into framebuffer space
-        var clip_off = data.DisplayPos;         // (0,0) unless using multi-viewports
-        var clip_scale = data.FramebufferScale; // (1,1) unless using retina display which are often (2,2)
-        
+        var clipOff = drawData.DisplayPos; // (0,0) unless using multi-viewports
+        var clipScale = drawData.FramebufferScale; // (1,1) unless using retina display which are often (2,2)
+
         // Render command lists
         u32 vertexBase = 0;
         u32 indexBase = 0;
-        for (var n = 0; n < data.CmdListsCount; n++)
+        for (var n = 0; n < drawData.CmdListsCount; n++)
         {
-            var cmdList = data.CmdLists[n];
+            var cmdList = drawData.CmdLists[n];
             for (var cmdi = 0; cmdi < cmdList.CmdBuffer.Size; cmdi++)
             {
                 var pcmd = cmdList.CmdBuffer[cmdi];
                 if (pcmd.UserCallback != null) throw new NotSupportedException();
 
-                var textureBind = GetOrCreateTextureBindGroup(pcmd.TexRef);
+                var bindCacheEntry = GetOrCreateTextureBindGroup(pcmd.TexRef);
+                bindCacheEntry.LastUsedTick = _currentTick;
+                pass.SetBindGroup(1, bindCacheEntry.BindGroup!.Value, null);
 
-                pass.SetBindGroup(1, textureBind, null);
-
-                /*var clipRect = pcmd.ClipRect;
-                pass.SetScissorRect((u32)clipRect.X, (u32)clipRect.Y, (u32)(clipRect.Z - clipRect.X),
-                    (u32)(clipRect.W - clipRect.Y));*/
-                
-                /*// Project scissor/clipping rectangles into framebuffer space
-                ImVec2 clip_min((pcmd->ClipRect.x - clip_off.x) * clip_scale.x, (pcmd->ClipRect.y - clip_off.y) * clip_scale.y);
-                ImVec2 clip_max((pcmd->ClipRect.z - clip_off.x) * clip_scale.x, (pcmd->ClipRect.w - clip_off.y) * clip_scale.y);
-
-                // Clamp to viewport as SDL_SetGPUScissor() won't accept values that are off bounds
-                if (clip_min.x < 0.0f) { clip_min.x = 0.0f; }
-                if (clip_min.y < 0.0f) { clip_min.y = 0.0f; }
-                if (clip_max.x > fb_width) { clip_max.x = (float)fb_width; }
-                if (clip_max.y > fb_height) { clip_max.y = (float)fb_height; }
-                if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
-                    continue;
-
-                // Apply scissor/clipping rectangle
-                SDL_Rect scissor_rect = {};
-                scissor_rect.x = (int)clip_min.x;
-                scissor_rect.y = (int)clip_min.y;
-                scissor_rect.w = (int)(clip_max.x - clip_min.x);
-                scissor_rect.h = (int)(clip_max.y - clip_min.y);*/
-                
                 // Project scissor/clipping rectangles into framebuffer space
-                var clip_min = new Vector2((pcmd.ClipRect.X - clip_off.X) * clip_scale.X, (pcmd.ClipRect.Y - clip_off.Y) * clip_scale.Y);
-                var clip_max = new Vector2((pcmd.ClipRect.Z - clip_off.X) * clip_scale.X, (pcmd.ClipRect.W - clip_off.Y) * clip_scale.Y);
-                
                 // Clamp to viewport as SetScissorRect() won't accept values that are off bounds
-                clip_min = Vector2.Max(clip_min, Vector2.Zero);
-                clip_max = Vector2.Min(clip_max, io.DisplaySize * io.DisplayFramebufferScale);
-                if (clip_max.X <= clip_min.X || clip_max.Y <= clip_min.Y)
+                var clipMin = Vector2.Max((new Vector2(pcmd.ClipRect.X, pcmd.ClipRect.Y) - clipOff) * clipScale,
+                    Vector2.Zero);
+                var clipMax = Vector2.Min((new Vector2(pcmd.ClipRect.Z, pcmd.ClipRect.W) - clipOff) * clipScale,
+                    io.DisplaySize * io.DisplayFramebufferScale);
+
+                if (clipMax.X <= clipMin.X || clipMax.Y <= clipMin.Y)
                     continue;
-                
-                pass.SetScissorRect((u32)clip_min.X, (u32)clip_min.Y, (u32)(clip_max.X - clip_min.X), (u32)(clip_max.Y - clip_min.Y));
-                
-                
+
+                pass.SetScissorRect((u32)clipMin.X, (u32)clipMin.Y, (u32)(clipMax.X - clipMin.X),
+                    (u32)(clipMax.Y - clipMin.Y));
                 pass.DrawIndexed(pcmd.ElemCount, 1, indexBase + pcmd.IdxOffset, (i32)(vertexBase + pcmd.VtxOffset), 0);
             }
 
@@ -168,7 +145,7 @@ public partial class ImGuiPlatform
 
         _vertexBuffer ??= loader.CreateBuffer<ImDrawVert>(BufferUsage.Vertex | BufferUsage.CopyDst, 10000,
             label: "ImGui Vertex Input Buffer");
-        _indexBuffer ??= loader.CreateBuffer<ushort>(BufferUsage.Index | BufferUsage.CopyDst, 2000,
+        _indexBuffer ??= loader.CreateBuffer<u16>(BufferUsage.Index | BufferUsage.CopyDst, 2000,
             label: "ImGui Index Buffer");
 
         _pipeline = ImGuiPipeline.Create(loader, currentShader, TextureFormat.Bgra8Unorm);
@@ -185,7 +162,7 @@ public partial class ImGuiPlatform
         _pipeline?.Dispose();
         _pipeline = null;
         var textures = ImGui.GetPlatformIO().Textures;
-        for (int i = 0; i < textures.Size; i++)
+        for (var i = 0; i < textures.Size; i++)
         {
             var tex = textures[i];
             if (tex.RefCount == 1)
@@ -199,36 +176,41 @@ public partial class ImGuiPlatform
 
         if (_textures.Remove(tex.TexID, out var tuple))
         {
-            tuple.texture?.Dispose();
-            tuple.bindGroup?.Release();
+            tuple.Texture?.Dispose();
+            tuple.BindGroup?.Release();
         }
 
         tex.SetStatus(ImTextureStatus.Destroyed);
     }
 
-    private unsafe BindGroupPtr GetOrCreateTextureBindGroup(ImTextureRef imTextureRef)
+    private unsafe TextureBindCacheEntry GetOrCreateTextureBindGroup(ImTextureRef imTextureRef)
     {
         var textureId = imTextureRef.TexData is not null ? imTextureRef.TexData->TexID : imTextureRef.TexID;
 
         if (_textures.TryGetValue(textureId, out var tuple))
         {
-            if (tuple.bindGroup is not null) return tuple.bindGroup.Value;
+            if (tuple.BindGroup is not null) return tuple;
 
-            var textureBindGroup = _pipeline!.CreateTextureBindGroup(tuple.texture.View);
-            _textures[textureId] = (tuple.texture, textureBindGroup);
-            return textureBindGroup;
+            return _textures[textureId] =
+                new TextureBindCacheEntry(tuple.Texture, _pipeline!.CreateTextureBindGroup(tuple.Texture.View));
         }
 
+        TextureViewPtr textureViewPtr;
+        if (loader.IsKnownTextureId(textureId, out var texture))
+        {
+            textureViewPtr = texture.View;
+        }
+        else
         {
             logger.LogWarning(
                 "Texture with ID {ID} not found in texture map, creating a speculative bind group for it. This may indicate a problem with texture management in ImGui.",
                 textureId.Handle);
-            //var textureViewPtr = loader.DefaultTexture.View;
-            var textureViewPtr = new TextureViewPtr(loader.Api.Device.GetAPI(), (TextureView*)textureId);
-            var textureBindGroup = _pipeline!.CreateTextureBindGroup(textureViewPtr);
-            _textures.Add(textureId, (null!, textureBindGroup));
-            return textureBindGroup;
+            textureViewPtr = new TextureViewPtr(loader.Api.Wgpu, (TextureView*)(nint)textureId.Handle);
+            //loader.DefaultTexture.View;
         }
+
+        return _textures[textureId] =
+            new TextureBindCacheEntry(texture!, _pipeline!.CreateTextureBindGroup(textureViewPtr));
     }
 
     private unsafe void UpdateTexture(ImTextureDataPtr tex)
@@ -248,7 +230,7 @@ public partial class ImGuiPlatform
                 TextureAspect.All));
 
             ImTextureID id = texture.View.GetIntPtr();
-            _textures.Add(id, (texture, null));
+            _textures.Add(id, new TextureBindCacheEntry(texture, null));
 
             // Store identifiers
             tex.SetTexID(id);
@@ -278,7 +260,7 @@ public partial class ImGuiPlatform
             tex.SetStatus(ImTextureStatus.Ok);
         }
 
-        if (tex is { Status: ImTextureStatus.Destroyed, UnusedFrames: > 10 })
+        if (tex is { Status: ImTextureStatus.Destroyed })
             DestroyTexture(tex);
     }
 
@@ -288,14 +270,7 @@ public partial class ImGuiPlatform
         if (tex is { IsNull: true, TexID.IsNull: true }) return false;
         var id = tex.TexID;
         if (!_textures.TryGetValue(id, out var bindGroup)) return false;
-        texture = bindGroup.texture;
+        texture = bindGroup.Texture;
         return true;
-    }
-
-    public void Render(RenderPassEncoderPtr pass)
-    {
-        ImGui.Render();
-        ImGui.EndFrame();
-        RenderImDrawData(ImGui.GetDrawData(), pass);
     }
 }

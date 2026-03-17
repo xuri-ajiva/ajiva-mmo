@@ -10,7 +10,9 @@ using Common;
 using Common.Systems;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
+using Silk.NET.Maths;
 using Silk.NET.WebGPU;
+using Silk.NET.WebGPU.Safe;
 using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 
 namespace Client.Desktop;
@@ -25,21 +27,21 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
     private readonly PeriodicUpdater _periodicUpdater;
 
     private ImFontPtr _quicksandFont;
-    private readonly AjivaWindow _window;
     private readonly IServiceProvider _serviceProvider;
+    private readonly WindowingLayer _windowingLayer;
     private readonly ImGuiPlatform _imGuiPlatform;
     private readonly ISurfaceManager _surfaceManager;
 
     public AjivaImGuiLayer(ILogger<AjivaImGuiLayer> logger, LayerStack layerStack, RendererApi api,
-        PeriodicUpdater periodicUpdater, AjivaWindow window, IServiceProvider serviceProvider,
-        ImGuiPlatform imGuiPlatform, ISurfaceManager surfaceManager)
+        PeriodicUpdater periodicUpdater, IServiceProvider serviceProvider,
+        WindowingLayer windowingLayer, ImGuiPlatform imGuiPlatform, ISurfaceManager surfaceManager)
     {
         _logger = logger;
         _layerStack = layerStack;
         _api = api;
         _periodicUpdater = periodicUpdater;
-        _window = window;
         _serviceProvider = serviceProvider;
+        _windowingLayer = windowingLayer;
         _imGuiPlatform = imGuiPlatform;
         _surfaceManager = surfaceManager;
         // find all types that implement IAjivaLayer
@@ -55,7 +57,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
 
     public unsafe void Attach()
     {
-        _imGuiPlatform.Initialize(_window.Window);
+        _imGuiPlatform.Initialize(_windowingLayer.MainWindow);
         //_imguiDefaultFont = ImGui.GetIO().Fonts.AddFontDefault();
         var io = ImGui.GetIO();
 
@@ -110,79 +112,59 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
         if (!_layerStack.Attached) return;
         using var tracer = Instrumentation.Trace(ActivityKind.Client);
 
-        var window = _window.Window;
-        using var surfaceGuard = _surfaceManager.GetWindowSurfaceTexture(window);
-        if (!surfaceGuard.IsValid)
-        {
-            _logger.LogError("Failed to get surface texture for rendering");
-            return;
-        }
+        var window = _windowingLayer.MainWindow;
+        i32 width = 0, height = 0;
+        SDL.GetWindowSize(window, ref width, ref height);
+        using var guard = _api.EnterQueue();
 
-        _imGuiPlatform.NewFrame(info, surfaceGuard.Size);
+        _imGuiPlatform.NewFrame(info, new Vector2D<i32>(width, height));
 
         try
         {
-            ActualRender(info, surfaceGuard);
+            ActualRender(info, guard.Queue);
         }
         catch (Exception e)
         {
             _logger.LogWarning(e, "Exception during rendering");
         }
+
+        _imGuiPlatform.EndFrame(_windowingLayer.MainWindow);
     }
 
 
-    private void ActualRender(UpdateInfo info, SurfaceUsageInfo surface)
+    private void ActualRender(UpdateInfo info, QueuePtr queue)
     {
         ImGui.PushFont(_quicksandFont, 0);
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
-        using (Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Queue"))
-        using (var guard = _api.EnterQueue())
+        using var activity = Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Queue");
+
+        foreach (var layer in _layerStack.Layers)
         {
-            foreach (var layer in _layerStack.Layers)
-            {
-                using var layers =
-                    Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: layer.GetType().ToString());
-                if (!layer.Enabled) continue;
+            using var layers =
+                Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: layer.GetType().ToString());
+            if (!layer.Enabled) continue;
 
-                // ReSharper disable once ConvertIfStatementToSwitchStatement
-                using (Instrumentation.NamedTrace("rendering"))
-                    if (layer is IRenderLayer renderLayer)
-                        renderLayer.Render(info, new RenderTarget(guard.Queue));
+            // ReSharper disable once ConvertIfStatementToSwitchStatement
+            using (Instrumentation.NamedTrace("rendering"))
+                if (layer is IRenderLayer renderLayer)
+                    renderLayer.Render(info, new RenderTarget(queue));
 
-                using (Instrumentation.NamedTrace("ui rendering"))
-                    if (layer is IUiRenderLayer uiRenderLayer)
-                        uiRenderLayer.RenderUi(info);
-            }
-
-            if (_showOverlay)
-                RenderMetrics(info);
-            if (_demoWindow)
-                ImGui.ShowDemoWindow();
-
-            RenderLayerControls();
-
-            ImGui.PopFont();
-
-            if (ImGui.GetFrameCount() == 4) //seems to be the magic number for loading dock layouts
-                ImGui.LoadIniSettingsFromDisk("imgui.ini");
-
-            var surfaceTexture = surface.TextureView;
-            var cmd = _api.Device.CreateCommandEncoder(label: "ImGui Composite");
-            var pass = cmd.BeginRenderPass([
-                    new RenderPassColorAttachment(surfaceTexture, resolveTarget: null,
-                        LoadOp.Clear, StoreOp.Store, default)
-                ], null, null,
-                null);
-            _imGuiPlatform!.Render(pass);
-            if ((ImGui.GetIO().ConfigFlags & ImGuiConfigFlags.ViewportsEnable) != 0)
-            {
-                ImGui.UpdatePlatformWindows();
-                ImGui.RenderPlatformWindowsDefault();
-            }
-
-            pass.End();
-            guard.Queue.Submit(cmd.Finish());
+            using (Instrumentation.NamedTrace("ui rendering"))
+                if (layer is IUiRenderLayer uiRenderLayer)
+                    uiRenderLayer.RenderUi(info);
         }
+
+        if (_showOverlay)
+            RenderMetrics(info);
+        if (_demoWindow)
+            ImGui.ShowDemoWindow();
+
+        RenderLayerControls();
+
+        ImGui.PopFont();
+
+        if (ImGui.GetFrameCount() == 2) //seems to be the magic number for loading dock layouts
+            ImGui.LoadIniSettingsFromDisk("imgui.ini");
     }
 
     [SuppressMessage("ReSharper.DPA", "DPA0002: Excessive memory allocations in SOH",
@@ -361,7 +343,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
 
     public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
     {
-        _imGuiPlatform.OnEvent(ref inputEvent);
+        //_imGuiPlatform.OnEvent(ref inputEvent);
         if (ImGui.GetIO().WantCaptureKeyboard)
         {
             inputEvent.Handled = true;
@@ -370,7 +352,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
 
     public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
     {
-        _imGuiPlatform.OnEvent(ref inputEvent);
+        //_imGuiPlatform.OnEvent(ref inputEvent);
         if (ImGui.GetIO().WantCaptureMouse)
         {
             inputEvent.Handled = true;

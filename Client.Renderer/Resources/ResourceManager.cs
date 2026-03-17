@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Client.Renderer.PbrRenderer;
 using Silk.NET.WebGPU;
@@ -9,7 +10,9 @@ using SixLabors.ImageSharp.Processing;
 using Client.Wgsl;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Hexa.NET.ImGui;
 using Silk.NET.Maths;
+using Silk.NET.WebGPU.Safe;
 
 namespace Client.Renderer.Resources;
 
@@ -478,7 +481,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
             format,
             mipLevelCount: mipLevels,
             sampleCount: 1,
-            viewFormats: new[] { format },
+            viewFormats: [format],
             label: label);
 
         var textureView = texture.CreateView(format, TextureViewDimension.Dimension2D,
@@ -655,4 +658,17 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
     public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public bool IsKnownTextureId(ImTextureID textureId, [NotNullWhen(true)] out AjivaTexture? ajivaTexture)
+    {
+        foreach (var texture in _loadedTextures.Values)
+        {
+            if (!texture.View.GetIntPtr().Equals((nint)textureId.Handle)) continue;
+            ajivaTexture = texture;
+            return true;
+        }
+
+        ajivaTexture = null;
+        return false;
+    }
 }
