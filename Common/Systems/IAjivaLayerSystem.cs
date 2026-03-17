@@ -25,7 +25,6 @@ public ref struct UpdateInfo(u64 ticks, f32 deltaTime, f32 totalTime)
 }
 
 
-
 public interface IAjivaLayer
 {
     void Attach();
@@ -33,7 +32,6 @@ public interface IAjivaLayer
     void Detach();
     ref bool Enabled { get; }
 }
-
 
 public interface IUiRenderLayer : IAjivaLayer
 {

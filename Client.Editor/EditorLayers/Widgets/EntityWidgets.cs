@@ -95,13 +95,13 @@ public class EntityWidgets(
 
             if (ImGui.Button("Trace Renderer"))
             {
-                periodicUpdater.TraceRenderer = true;
+                periodicUpdater.TraceNext(UpdateCycle.Render);
             }
 
             ImGui.SameLine();
             if (ImGui.Button("Trace Update"))
             {
-                periodicUpdater.TraceUpdate = true;
+                periodicUpdater.TraceNext(UpdateCycle.Update);
             }
 
             ImGui.Separator();

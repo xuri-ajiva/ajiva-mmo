@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Common.Helpers;
+using System.Threading.Channels;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -49,7 +49,7 @@ public class PeriodicUpdater : IHostedLifecycleService
 {
     public delegate void UpdateRunnerDelegate(UpdateInfo info);
 
-    public record class UpdateHandle(UpdateCycle Cycle, UpdateRunnerDelegate Action, PeriodicUpdater Runner)
+    public record UpdateHandle(UpdateCycle Cycle, UpdateRunnerDelegate Action, PeriodicUpdater Runner)
         : IDisposable
     {
         public void Dispose()
@@ -58,7 +58,7 @@ public class PeriodicUpdater : IHostedLifecycleService
         }
     }
 
-    internal class UpdateRunner(UpdateCycle cycle) : IDisposable
+    internal class UpdateRunner(UpdateCycle cycle, PeriodicUpdater updater) : IDisposable
     {
         private readonly List<UpdateRunnerDelegate> _tasks = [];
         private readonly Lock _locker = new();
@@ -66,6 +66,13 @@ public class PeriodicUpdater : IHostedLifecycleService
         private bool _running;
         private bool _disposed;
         private AjivaClock _clock;
+        public bool TraceNextRun { get; set; }
+
+        private readonly Channel<Action> _dispatchChannel = Channel.CreateUnbounded<Action>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
 
         public void AddTask(UpdateRunnerDelegate update)
         {
@@ -94,14 +101,30 @@ public class PeriodicUpdater : IHostedLifecycleService
                 while (!_running)
                 {
                     Thread.Sleep(interval == TimeSpan.Zero ? TimeSpan.FromMilliseconds(5) : interval);
+                    RunDispatcher();
                     if (_disposed) return;
                 }
 
                 _clock.Start();
                 while (_running && !_disposed)
                 {
-                    RunOnce();
+                    RunDispatcher();
+                    try
+                    {
+                        RunOnce();
+                    }
+                    catch (Exception e)
+                    {
+                        updater._logger.LogError(e, "Error in UpdateRunner for cycle {Cycle}", cycle);
+                    }
+
                     Thread.Sleep(interval);
+                }
+
+                while (!_disposed)
+                {
+                    RunDispatcher();
+                    Thread.Sleep(interval == TimeSpan.Zero ? TimeSpan.FromMilliseconds(5) : interval);
                 }
             })
             {
@@ -109,6 +132,21 @@ public class PeriodicUpdater : IHostedLifecycleService
                 Name = $"AjivaPeriodicUpdater-{cycle}"
             };
             _thread.Start();
+        }
+
+        private void RunDispatcher()
+        {
+            try
+            {
+                while (_dispatchChannel.Reader.TryRead(out var action))
+                {
+                    action();
+                }
+            }
+            catch (Exception e)
+            {
+                updater._logger.LogError(e, "Error in UpdateRunner dispatcher for cycle {Cycle}", cycle);
+            }
         }
 
         public void Dispose()
@@ -126,27 +164,43 @@ public class PeriodicUpdater : IHostedLifecycleService
             if (_tasks is { Count: 0 })
             {
                 Thread.Sleep(10);
+                return;
+            }
+
+            if (TraceNextRun)
+            {
+                TraceNextRun = false;
+                using var activityRenderer = updater._instrumentation.StartActivity(ActivityKind.Client);
+                Instrumentation.Instance = updater._instrumentation;
+                InvokeOnce(info);
+                Instrumentation.Instance = null!;
             }
             else
             {
-                foreach (var task in _tasks)
-                {
-                    task.Invoke(info);
-                }
+                //GCHelper.RunGCFree(() => InvokeOnce(info));
+                InvokeOnce(info);
             }
+        }
+
+        private void InvokeOnce(UpdateInfo info)
+        {
+            foreach (var task in _tasks)
+            {
+                task.Invoke(info);
+            }
+        }
+
+        public void DispatchNow(Action action)
+        {
+            ArgumentNullException.ThrowIfNull(action);
+            _dispatchChannel.Writer.TryWrite(action);
         }
     }
 
     private readonly Dictionary<UpdateCycle, UpdateRunner> _updateData = new();
     public bool Running { get; private set; }
-    public bool TraceRenderer { get; set; }
-    public bool TraceUpdate { get; set; }
 
     private readonly Lock _locker = new();
-    private Thread? _updateCycle;
-    private Thread? _renderCycle;
-    private readonly AutoResetEvent _resetEvent = new(false);
-    private readonly SemaphoreSlim _globalHandle = new(0, 9999);
     private readonly IConfiguration _configuration;
     private readonly ILogger<PeriodicUpdater> _logger;
     private readonly Instrumentation _instrumentation;
@@ -172,88 +226,28 @@ public class PeriodicUpdater : IHostedLifecycleService
         // populate the dictionary with empty lists
         foreach (var cycle in Enum.GetValues<UpdateCycle>())
         {
-            var r = _updateData[cycle] = new UpdateRunner(cycle);
-            switch (cycle)
-            {
-                case UpdateCycle.Render:
-                    _renderCycle = new Thread(() => RenderUpdate(r))
-                        { Name = "Render Loop", Priority = ThreadPriority.Highest };
-                    break;
-                case UpdateCycle.Update:
-                    _updateCycle = new Thread(() => UpdateUpdate(r))
-                        { Name = "Update Loop", Priority = ThreadPriority.AboveNormal };
-                    break;
-                default:
-                {
-                    if (!TimeSpan.TryParse(updaterSection[cycle.ToString()], out var interval))
-                    {
-                        interval = GetDefaultInterval(cycle);
-                    }
+            var r = _updateData[cycle] = new UpdateRunner(cycle, this);
 
-                    r.StartDynamicUpdater(interval);
-                    break;
-                }
+            if (!TimeSpan.TryParse(updaterSection[cycle.ToString()], out var interval))
+            {
+                interval = GetDefaultInterval(cycle);
             }
+
+            r.StartDynamicUpdater(interval);
         }
 
-
-        _updateCycle?.Start();
-        _renderCycle?.Start();
 
         return Task.CompletedTask;
     }
 
-    private void UpdateUpdate(UpdateRunner updateRunner)
-    {
-        while (Running)
-        {
-            _resetEvent.WaitOne();
-            ReleaseAllWaiting();
-            if (TraceUpdate)
-            {
-                TraceUpdate = false;
-                using var activityRenderer = _instrumentation.StartActivity(ActivityKind.Client);
-                Instrumentation.Instance = _instrumentation;
-                updateRunner.RunOnce();
-                Instrumentation.Instance = null!;
-            }
-            else
-            {
-                updateRunner.RunOnce();
-            }
-        }
-    }
-
-
-    private void RenderUpdate(UpdateRunner updateRunner)
-    {
-        while (Running)
-        {
-            _resetEvent.Set();
-            ReleaseAllWaiting();
-            if (TraceRenderer)
-            {
-                TraceRenderer = false;
-                using var activityRenderer = _instrumentation.StartActivity(ActivityKind.Client);
-                Instrumentation.Instance = _instrumentation;
-                updateRunner.RunOnce();
-                Instrumentation.Instance = null!;
-            }
-            else
-            {
-                GCHelper.RunGCFree(updateRunner.RunOnce);
-            }
-        }
-    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private TimeSpan GetDefaultInterval(UpdateCycle cycle)
+    private static TimeSpan GetDefaultInterval(UpdateCycle cycle)
     {
         return cycle switch
         {
             UpdateCycle.None => TimeSpan.MaxValue,
-            UpdateCycle.Render => TimeSpan.FromMilliseconds(1),
-            UpdateCycle.Update => TimeSpan.FromMilliseconds(1),
+            UpdateCycle.Render or UpdateCycle.Update => TimeSpan.FromMilliseconds(1),
             UpdateCycle.FixedUpdate => TimeSpan.FromMilliseconds(30),
             UpdateCycle.Reduced => TimeSpan.FromMilliseconds(100),
             UpdateCycle.EverySecond => TimeSpan.FromSeconds(1),
@@ -270,7 +264,7 @@ public class PeriodicUpdater : IHostedLifecycleService
 
         if (!_updateData.TryGetValue(cycle, out var r))
         {
-            r = new UpdateRunner(cycle);
+            r = new UpdateRunner(cycle, this);
             _updateData[cycle] = r;
         }
 
@@ -279,6 +273,19 @@ public class PeriodicUpdater : IHostedLifecycleService
         // todo restart updater if it was stopped
         // r.StartDynamicUpdater();
         return new UpdateHandle(cycle, update, this);
+    }
+
+    public void DispatchNowOn(UpdateCycle render, Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        if (!_updateData.TryGetValue(render, out var r)) return;
+        r.DispatchNow(action);
+    }
+
+    public void TraceNext(UpdateCycle render)
+    {
+        if (!_updateData.TryGetValue(render, out var r)) return;
+        r.TraceNextRun = true;
     }
 
     private void UnregisterUpdate(UpdateCycle cycle, UpdateRunnerDelegate action)
@@ -290,60 +297,19 @@ public class PeriodicUpdater : IHostedLifecycleService
         r.RemoveTask(action);
     }
 
+
     private Task StopRunners()
     {
         if (!Running)
             return Task.CompletedTask;
         Running = false;
-        _globalHandle.Release(999);
-        _globalHandle.Dispose();
-        _resetEvent.Set();
 
         foreach (var runner in _updateData.Values)
         {
             runner.Dispose();
         }
 
-        _resetEvent.Set();
-        DisposeFor(_updateCycle);
-        DisposeFor(_renderCycle);
         return Task.CompletedTask;
-    }
-
-    private void DisposeFor(Thread? thread)
-    {
-        if (thread is null) return;
-        thread.Join(100);
-        thread.Interrupt();
-        thread.Join(100);
-        thread.Interrupt();
-        if (thread.IsAlive)
-        {
-            _logger.LogCritical("PeriodicUpdater thread {ThreadName} did not stop gracefully, handle will be lost!",
-                thread.Name);
-        }
-    }
-
-    /// <summary>
-    /// Sleeps until any next update cycle is triggered.
-    /// </summary>
-    /// <exception cref="NotImplementedException"></exception>
-    public void SleepSignal()
-    {
-        if (!Running) return;
-        try
-        {
-            _globalHandle.Wait();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-    }
-
-    private void ReleaseAllWaiting()
-    {
-        if (_globalHandle.CurrentCount == 0)
-            _globalHandle.Release(10);
     }
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
