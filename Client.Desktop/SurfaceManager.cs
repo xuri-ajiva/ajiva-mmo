@@ -9,17 +9,13 @@ using SurfaceConfiguration = Silk.NET.WebGPU.Safe.SurfaceConfiguration;
 
 namespace Client.Desktop;
 
-public class SurfaceManager(RendererApi api, ILogger<SurfaceManager> logger) : ISurfaceManager
+public class SurfaceManager(RendererApi api, ILogger<SurfaceManager> logger) : ISurfaceManager, IHostedService
 {
     public TextureFormat DefaultSurfaceFormat => TextureFormat.Bgra8Unorm;
     public PresentMode DefaultPresentMode => PresentMode.Fifo;
-
-
     private readonly Dictionary<SDLWindowPtr, SurfaceInfo> _windowSurfaces = new();
-    private readonly ILogger<SurfaceManager> _logger = logger;
 
-
-    public SurfaceUsageInfo GetWindowSurfaceTexture(SDLWindowPtr window)
+    public SurfaceUsageInfoGuard GetWindowSurfaceTexture(SDLWindowPtr window)
     {
         var width = 0;
         var height = 0;
@@ -27,7 +23,7 @@ public class SurfaceManager(RendererApi api, ILogger<SurfaceManager> logger) : I
         return GetSurfaceTexture(window, new Vector2D<u32>((u32)width, (u32)height));
     }
 
-    public SurfaceUsageInfo GetSurfaceTexture(SDLWindowPtr window, Vector2D<u32> requestedSize)
+    public SurfaceUsageInfoGuard GetSurfaceTexture(SDLWindowPtr window, Vector2D<u32> requestedSize)
     {
         if (!_windowSurfaces.TryGetValue(window, out var surface))
         {
@@ -41,23 +37,41 @@ public class SurfaceManager(RendererApi api, ILogger<SurfaceManager> logger) : I
 
         surface.ReleaseView();
 
-        if (surface.LastSize != requestedSize)
+        if (surface.Size != requestedSize)
         {
             ReconfigureSurface(surface, requestedSize);
+            //TODO implement dynamic surface format selection based on capabilities and preferences
+            surface.Ptr.GetCapabilities(api.Adapter, out var capabilities);
+            var textureFormat = surface.Ptr.GetPreferredFormat(api.Adapter);
         }
 
-        return new SurfaceUsageInfo(CanContinueRender(surface) ? surface : null, this);
+        unsafe
+        {
+            logger.LogTrace("Acquiring surface texture for window {Window} with size {Size}", (nint)window.Handle,
+                requestedSize);
+        }
+
+        return new SurfaceUsageInfoGuard(CanContinueRender(surface) ? surface : null, this);
     }
 
-    public void LogError(Exception exception, string message) => _logger.LogError(exception, message);
+    public void LogError(Exception exception, string message) => logger.LogError(exception, message);
+
+    public void ReleaseWindowSurfaceTexture(SDLWindowPtr window)
+    {
+        if (_windowSurfaces.TryGetValue(window, out var surface))
+        {
+            surface.Ptr.Release();
+            _windowSurfaces.Remove(window);
+        }
+    }
 
     private void ReconfigureSurface(SurfaceInfo surface, Vector2D<u32> requestedSize)
     {
         using var reconfigure = Instrumentation.NamedTrace("Reconfiguring Surface");
-        surface.LastSize = requestedSize;
+        surface.Size = requestedSize;
         surface.Ptr.Configure(new SurfaceConfiguration
         {
-            AlphaMode = CompositeAlphaMode.Opaque,
+            AlphaMode = CompositeAlphaMode.Auto,
             Device = api.Device,
             Usage = TextureUsage.RenderAttachment,
             Format = surface.Format,
@@ -82,22 +96,36 @@ public class SurfaceManager(RendererApi api, ILogger<SurfaceManager> logger) : I
                 info.RequestReConfigure = true;
                 return true;
             case SurfaceGetCurrentTextureStatus.Lost:
-                _logger.LogError("Surface lost, cannot continue rendering");
+                logger.LogError("Surface lost, cannot continue rendering");
                 info.RequestReConfigure = true;
                 return false;
             case SurfaceGetCurrentTextureStatus.OutOfMemory:
-                _logger.LogCritical("Out of memory, cannot continue rendering");
+                logger.LogCritical("Out of memory, cannot continue rendering");
                 info.RequestReConfigure = true;
                 return false;
             case SurfaceGetCurrentTextureStatus.DeviceLost:
-                _logger.LogCritical("Device lost, cannot continue rendering");
+                logger.LogCritical("Device lost, cannot continue rendering");
                 info.RequestReConfigure = true;
                 return false;
             case SurfaceGetCurrentTextureStatus.Force32:
             default:
-                _logger.LogWarning("Unknown surface status: {Status}, cannot continue rendering", status);
+                logger.LogWarning("Unknown surface status: {Status}, cannot continue rendering", status);
                 info.RequestReConfigure = true;
                 return true;
         }
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        foreach (var surface in _windowSurfaces.Values)
+        {
+            surface.Ptr.Release();
+            surface.Texture?.Release();
+        }
+
+        _windowSurfaces.Clear();
+        return Task.CompletedTask;
     }
 }
