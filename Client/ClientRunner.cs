@@ -42,7 +42,7 @@ public class ClientRunner<[DynamicallyAccessedMembers(DynamicallyAccessedMemberT
         services.AddService<PlayerInputSystem>();
 
         // UI/Rendering
-        services.AddSingleton<LayerStack>();
+        services.AddService<LayerStack>();
         services.AddSingleton<Instanced3dDeferredRenderer>();
         services.AddSingleton<ClientConnectionLayer>();
 

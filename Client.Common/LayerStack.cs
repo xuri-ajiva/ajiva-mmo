@@ -4,8 +4,9 @@ using Common.Systems;
 
 namespace Client.Common;
 
-public class LayerStack : IDisposable
+public class LayerStack : IDisposable, IHostedLifecycleService
 {
+    private readonly PeriodicUpdater _periodicUpdater;
     private readonly List<IAjivaLayer> _layers = [];
     public bool Attached { get; private set; }
 
@@ -16,6 +17,7 @@ public class LayerStack : IDisposable
 
     public LayerStack(PeriodicUpdater periodicUpdater, IServiceProvider serviceProvider)
     {
+        _periodicUpdater = periodicUpdater;
         _scope = serviceProvider.CreateScope();
         _updateHandle = periodicUpdater.RegisterUpdate(UpdateCycle.Update, Update);
     }
@@ -106,5 +108,24 @@ public class LayerStack : IDisposable
     {
         _scope.Dispose();
         _updateHandle.Dispose();
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken)
+    {
+        _periodicUpdater.DispatchNowOn(UpdateCycle.Render, Attach);
+        return Task.CompletedTask;
+    }
+
+    public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken)
+    {
+        _periodicUpdater.DispatchNowOn(UpdateCycle.Render, Detach);
+        return Task.CompletedTask;
     }
 }

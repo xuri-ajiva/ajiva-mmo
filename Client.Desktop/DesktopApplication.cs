@@ -47,6 +47,7 @@ public class DesktopApplication(
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _layerSystem.PushLayer<EventSystem>();
+        _layerSystem.PushLayer<WindowingLayer>();
         _layerSystem.PushLayer<UiRenderLayer>();
         _layerSystem.PushLayer<ExampleGameHudLayer>();
         _layerSystem.PushLayer<PlayerInputSystem>();

@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using Client.Config;
 using Hexa.NET.SDL3;
 using Silk.NET.WebGPU.Safe;
 
@@ -9,7 +10,9 @@ public class PlatformSystem(ILogger<PlatformSystem> logger)
     public void Init()
     {
         SDL.SetHint(SDL.SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
-        SDL.Init(SDL.SDL_INIT_EVENTS);
+        SDL.SetHint(SDL.SDL_HINT_FRAMEBUFFER_ACCELERATION, "1");
+        SDL.Init(SDL.SDL_INIT_VIDEO | SDL.SDL_INIT_EVENTS);
+
         logger.LogInformation("PlatformSystem Init");
     }
 
@@ -23,9 +26,9 @@ public class PlatformSystem(ILogger<PlatformSystem> logger)
         var props = SDL.GetWindowProperties(window);
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return instance.CreateSurfaceFromWindowsHWND(
-                (IntPtr)SDL.GetPointerProperty(props, SDL.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null),
-                (IntPtr)SDL.GetPointerProperty(props, SDL.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null), "canvas");
+            var hwnd = (IntPtr)SDL.GetPointerProperty(props, SDL.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null);
+            var hInstance = (IntPtr)SDL.GetPointerProperty(props, SDL.SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, null);
+            return instance.CreateSurfaceFromWindowsHWND(hwnd, hInstance, "canvas");
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Create("BROWSER")))

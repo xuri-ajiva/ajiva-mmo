@@ -7,6 +7,7 @@ using Client.Renderer.Renderers;
 using Client.UI;
 using Client.UI.Desktop;
 using Common;
+using Common.Systems;
 
 namespace Client.Desktop;
 
@@ -22,7 +23,7 @@ public class
         var services = builder.Services;
         services.AddSingleton<PlatformSystem>();
         services.AddService<AjivaImGuiLayer>();
-        services.AddService<AjivaWindow>();
+        services.AddService<WindowingLayer>();
         services.AddService<ImGuiPlatform>();
         services.AddService<UiRenderLayer>();
         services.AddService<SurfaceManager, ISurfaceManager>();
@@ -37,8 +38,9 @@ public class
         var services = root.ServiceProvider;
 
         var platform = services.GetRequiredService<PlatformSystem>();
-        platform.Init();
+        var updater = services.GetRequiredService<PeriodicUpdater>();
+        updater.DispatchNowOn(UpdateCycle.Render, () => platform.Init());
         await base.RunAsync(app, root);
-        platform.Shutdown();
+        updater.DispatchNowOn(UpdateCycle.Render, () => platform.Shutdown());
     }
 }
