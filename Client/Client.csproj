@@ -19,30 +19,30 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <InternalsVisibleTo Include="Composer"/>
-        <InternalsVisibleTo Include="Client.Editor"/>
-        <Compile Include="../Common/GlobalUsings.cs"/>
+        <InternalsVisibleTo Include="Composer" />
+        <InternalsVisibleTo Include="Client.Editor" />
+        <Compile Include="../Common/GlobalUsings.cs" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="GlmSharp-netstandard"/>
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp"/>
-        <PackageReference Include="Microsoft.Extensions.Hosting"/>
+        <PackageReference Include="GlmSharp-netstandard" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
         <PackageReference Include="Polly" />
-        <PackageReference Include="Silk.NET.WebGPU"/>
-        <PackageReference Include="Silk.NET.WebGPU.Native.WGPU"/>
-        <PackageReference Include="NativeFileDialogExtendedSharp"/>
+        <PackageReference Include="Silk.NET.WebGPU" />
+        <PackageReference Include="Silk.NET.WebGPU.Native.WGPU" />
+        <PackageReference Include="NativeFileDialogExtendedSharp" />
 
-        <PackageReference Include="Silk.NET.Assimp"/>
-        <PackageReference Include="SixLabors.ImageSharp"/>
+        <PackageReference Include="Silk.NET.Assimp" />
+        <PackageReference Include="SixLabors.ImageSharp" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Client.Common\Client.Common.csproj"/>
-        <ProjectReference Include="..\Client.Renderer\Client.Renderer.csproj"/>
-        <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
-        <ProjectReference Include="..\Common\Common.csproj"/>
-        <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Extensions.ImGui\Silk.NET.WebGPU.Extensions.ImGui.csproj"/>
+        <ProjectReference Include="..\Client.Common\Client.Common.csproj" />
+        <ProjectReference Include="..\Client.Renderer\Client.Renderer.csproj" />
+        <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer" />
+        <ProjectReference Include="..\Common\Common.csproj" />
+        <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Safe\Silk.NET.WebGPU.Safe.csproj" />
     </ItemGroup>
 
     <ItemGroup>

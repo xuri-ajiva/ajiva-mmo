@@ -10,6 +10,7 @@ using Common.Ecs;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
 using Common.Networking.AjivaQuic.ReplaySystem;
+using Common.SpacialPartitioning;
 using Common.Systems;
 using NetworkPackets;
 using Polly;
@@ -242,6 +243,9 @@ public partial class ClientNetworkManager(
         Capturer = new NetworkPacketCapturer();
         await Capturer.LoadFromFileAsync(filename);
         _primaryContext.Client = new ReplayClient(Capturer);
+        Gateway.Handle(
+            new GatewayPackets.LoadLevelPacket("Sponza", new SpacialGridInfo(new ChunkCoord(32, 32, 32, 0))),
+            _gatewayContext);
         await _primaryContext.Client.ConnectAsync(instrumentation);
         _clients.Add(_primaryContext);
     }

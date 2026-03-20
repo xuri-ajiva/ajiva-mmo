@@ -27,14 +27,14 @@ public class EditorLayer(IEnumerable<IEditorWidget> widgets)
     public void RenderUi(UpdateInfo info)
     {
         ImGui.BeginMainMenuBar();
-        foreach (var iEditorWidget in widgets)
+        foreach (var iEditorWidget in _widgets)
         {
             iEditorWidget.RenderMenu();
         }
 
         ImGui.EndMainMenuBar();
 
-        foreach (var iEditorWidget in widgets)
+        foreach (var iEditorWidget in _widgets)
         {
             iEditorWidget.Render();
         }

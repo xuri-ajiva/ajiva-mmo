@@ -18,7 +18,6 @@
     <ItemGroup>
         <ProjectReference Include="..\Client.Desktop\Client.Desktop.csproj" />
         <ProjectReference Include="..\Client.Editor\Client.Editor.csproj" />
-        <ProjectReference Include="..\Client.Web\Client.Web.csproj" />
         <ProjectReference Include="..\ClusterManager\ClusterManager.csproj"/>
         <ProjectReference Include="..\Server\Server.csproj"/>
     </ItemGroup>

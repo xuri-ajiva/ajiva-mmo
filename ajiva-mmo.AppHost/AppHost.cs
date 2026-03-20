@@ -50,6 +50,9 @@ if (editorClients > 0)
             "--ClientConfiguration:ClusterManagerAddress", clusterManager.GetEndpoint("management")
         );
 
+/*
+TODO readd if web client is developed
+
 if (webClients > 0)
     builder.AddProject<Projects.Client_Web>("webClient")
         .WaitFor(clusterManager)
@@ -57,6 +60,7 @@ if (webClients > 0)
         .WithArgs("--ClientConfiguration:AutoConnect=true",
             "--ClientConfiguration:AutoConnectAddress", clusterManager.GetEndpoint("clients")
         );
+*/
 
 
 builder.Build().Run();

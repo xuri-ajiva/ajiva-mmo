@@ -129,12 +129,13 @@ public class RendererApi(ILogger<RendererApi> logger)
     public readonly ref struct QueueGuard : IDisposable
     {
         private readonly RendererApi _api;
-        public QueuePtr Queue => _api.Queue;
+        public readonly ref readonly QueuePtr Queue;
         private readonly bool _skipped = false;
 
         public QueueGuard(RendererApi api)
         {
             _api = api;
+            Queue = ref api.Queue;
             if (_api._frameQueueHoldingThread == (u32)Environment.CurrentManagedThreadId)
             {
                 _skipped = true;

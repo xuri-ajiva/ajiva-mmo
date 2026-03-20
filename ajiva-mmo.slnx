@@ -12,7 +12,7 @@
     <Project Path="Generators/WgslGenerator/WgslGenerator.csproj" />
   </Folder>
   <Folder Name="/Libs/">
-    <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/Silk.NET.WebGPU.Extensions.ImGui/Silk.NET.WebGPU.Extensions.ImGui.csproj" />
+    <Project Path="../RmlUi.Net/RmlUi.Net/RmlUi.Net.csproj" />
     <Project Path="Libs/WebGPU-Wrappers-for-Silk.Net/Silk.NET.WebGPU.Safe/Silk.NET.WebGPU.Safe.csproj" />
   </Folder>
   <Folder Name="/Safe/">
@@ -27,8 +27,6 @@
   <Project Path="Client.Editor/Client.Editor.csproj" />
   <Project Path="Client.Renderer/Client.Renderer.csproj" />
   <Project Path="Client.UI.Desktop/Client.UI.Desktop.csproj" />
-  <Project Path="Client.UI.Web/Client.UI.Web.csproj" />
-  <Project Path="Client.Web\Client.Web.csproj" />
   <Project Path="Client/Client.csproj" />
   <Project Path="ClusterManager\ClusterManager.csproj" />
   <Project Path="Common/Common.csproj" />

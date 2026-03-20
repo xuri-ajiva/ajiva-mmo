@@ -1,7 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
-using System.Reflection;
 using Client.Common;
 using Client.Desktop.Platform;
 using Client.Renderer;
@@ -11,9 +10,6 @@ using Common.Systems;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
 using Silk.NET.Maths;
-using Silk.NET.WebGPU;
-using Silk.NET.WebGPU.Safe;
-using RenderPassColorAttachment = Silk.NET.WebGPU.Safe.RenderPassColorAttachment;
 
 namespace Client.Desktop;
 
@@ -46,10 +42,11 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
         _surfaceManager = surfaceManager;
         // find all types that implement IAjivaLayer
 #if DEBUG
-        _layerTypes =
-            GetType().Assembly.DefinedTypes
-                .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IAjivaLayer).IsAssignableFrom(t))
-                .ToArray();
+        _layerTypes = [];
+        /*serviceProvider.GetRequiredService<IServiceCollection>()
+            .Select(x=> x.ServiceType)
+            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IAjivaLayer).IsAssignableFrom(t))
+            .ToArray();*/
 #else
         _layerTypes = [];
 #endif
@@ -344,23 +341,24 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
     public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
     {
         //_imGuiPlatform.OnEvent(ref inputEvent);
-        if (ImGui.GetIO().WantCaptureKeyboard)
-        {
-            inputEvent.Handled = true;
-        }
     }
 
     public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
     {
         //_imGuiPlatform.OnEvent(ref inputEvent);
-        if (ImGui.GetIO().WantCaptureMouse)
-        {
-            inputEvent.Handled = true;
-        }
     }
 
     public void OnEvent(ref AjivaEvent<SDLEvent> inputEvent)
     {
         _imGuiPlatform.OnEvent(ref inputEvent);
+        if (ImGui.GetIO().WantCaptureKeyboard)
+        {
+            inputEvent.Handled = true;
+        }
+
+        if (ImGui.GetIO().WantCaptureMouse)
+        {
+            inputEvent.Handled = true;
+        }
     }
 }

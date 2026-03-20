@@ -103,6 +103,7 @@ public class UiRenderLayer : IUiRenderLayer, IRenderLayer, IEventHandler<AjivaKe
 
     public void RenderUi(UpdateInfo info)
     {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0));
         if (ImGui.Begin("UI Layer"))
         {
             //ImGui.Image(_gpuTexture.View.GetIntPtr(), new Vector2(_gpuTexture.Size.Width, _gpuTexture.Size.Height));
@@ -125,6 +126,7 @@ public class UiRenderLayer : IUiRenderLayer, IRenderLayer, IEventHandler<AjivaKe
         }
 
         ImGui.End();
+        ImGui.PopStyleVar();
 
         if (ImGui.Begin("UI Debug Info"))
         {

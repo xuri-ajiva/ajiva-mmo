@@ -22,7 +22,7 @@ public interface IApplication : IHostedLifecycleService;
 
 public class ClientRunner<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TApplication> where TApplication : class, IApplication
 {
-    public ClientRunner(IHostApplicationBuilder builder, ClientConfiguration? clientConfiguration)
+    protected ClientRunner(IHostApplicationBuilder builder, ClientConfiguration? clientConfiguration)
     {
         var services = builder.Services;
         services.AddSingleton(clientConfiguration ?? new ClientConfiguration());

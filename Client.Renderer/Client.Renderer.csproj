@@ -38,6 +38,6 @@
         <ProjectReference Include="..\Generators\InterceptionTraceGenerator\InterceptionTraceGenerator.csproj" OutputItemType="Analyzer"/>
         <ProjectReference Include="..\Generators\WgslGenerator\WgslGenerator.csproj" OutputItemType="Analyzer"/>
         <ProjectReference Include="..\Common\Common.csproj"/>
-        <ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Extensions.ImGui\Silk.NET.WebGPU.Extensions.ImGui.csproj"/>
-    </ItemGroup>
+		<ProjectReference Include="..\Libs\WebGPU-Wrappers-for-Silk.Net\Silk.NET.WebGPU.Safe\Silk.NET.WebGPU.Safe.csproj" />
+	</ItemGroup>
 </Project>
