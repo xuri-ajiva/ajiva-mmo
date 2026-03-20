@@ -115,10 +115,10 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
         using var guard = _api.EnterQueue();
 
         _imGuiPlatform.NewFrame(info, new Vector2D<i32>(width, height));
-
+        var renderTarget = new RenderTarget(in guard.Queue);
         try
         {
-            ActualRender(info, guard.Queue);
+            ActualRender(info, renderTarget);
         }
         catch (Exception e)
         {
@@ -129,26 +129,29 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
     }
 
 
-    private void ActualRender(UpdateInfo info, QueuePtr queue)
+    private void ActualRender(UpdateInfo info, RenderTarget target)
     {
         ImGui.PushFont(_quicksandFont, 0);
         ImGui.DockSpaceOverViewport(0, ImGui.GetMainViewport(), ImGuiDockNodeFlags.PassthruCentralNode);
         using var activity = Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: "Queue");
 
-        foreach (var layer in _layerStack.Layers)
+        foreach (var layer in _layerStack.LayersSpan)
         {
             using var layers =
                 Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: layer.GetType().ToString());
             if (!layer.Enabled) continue;
 
-            // ReSharper disable once ConvertIfStatementToSwitchStatement
-            using (Instrumentation.NamedTrace("rendering"))
-                if (layer is IRenderLayer renderLayer)
-                    renderLayer.Render(info, new RenderTarget(queue));
-
-            using (Instrumentation.NamedTrace("ui rendering"))
-                if (layer is IUiRenderLayer uiRenderLayer)
-                    uiRenderLayer.RenderUi(info);
+            switch (layer)
+            {
+                case IRenderLayer renderLayer:
+                    using (Instrumentation.NamedTrace("rendering"))
+                        renderLayer.Render(info, target);
+                    break;
+                case IUiRenderLayer uiRenderLayer:
+                    using (Instrumentation.NamedTrace("ui rendering"))
+                        uiRenderLayer.RenderUi(info);
+                    break;
+            }
         }
 
         if (_showOverlay)
@@ -180,13 +183,15 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
             IAjivaLayer? layerToRemove = null;
             foreach (var layer in _layerStack.Layers)
             {
+                ImGui.BeginDisabled(layer is AjivaImGuiLayer or WindowingLayer);
                 ImGui.Checkbox(layer.GetType().Name, ref layer.Enabled);
                 ImGui.NextColumn();
-                if (ImGui.Button("X"))
+                if (ImGui.Button("Remove##" + layer.GetHashCode()))
                 {
                     layerToRemove = layer;
                 }
 
+                ImGui.EndDisabled();
                 ImGui.NextColumn();
             }
 
@@ -270,7 +275,7 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
     private i32 _location = -1;
     private bool _showOverlay = true, _demoWindow;
     private readonly f32[] _frameTimes = new f32[100];
-    private readonly TypeInfo[] _layerTypes;
+    private readonly Type[] _layerTypes;
     private PeriodicUpdater.UpdateHandle? _renderUpdateHandle;
 
     private void RenderMetrics(UpdateInfo info)

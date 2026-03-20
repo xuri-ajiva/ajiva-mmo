@@ -1,16 +1,6 @@
 ﻿namespace Common.Systems;
 
-public interface IAjivaLayerSystem<TParent>
-{
-    void Attach(TParent parent);
-    void Update(UpdateInfo info);
-    void PushLayer<T>(T? layer = default) where T : IAjivaLayer;
-    void PopLayer<T>() where T : IAjivaLayer;
-    void Detach();
-    void Render(UpdateInfo info);
-}
-
-public ref struct UpdateInfo(u64 ticks, f32 deltaTime, f32 totalTime)
+public readonly ref struct UpdateInfo(u64 ticks, f32 deltaTime, f32 totalTime)
 {
     public UpdateInfo(AjivaClock updateClock) : this(
         updateClock.Ticks,

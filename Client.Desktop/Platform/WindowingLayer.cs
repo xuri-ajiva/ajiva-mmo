@@ -9,7 +9,7 @@ namespace Client.Desktop.Platform;
 public class WindowingLayer(
     WindowConfig config,
     RendererApi api,
-    EventSystem eventSystem,
+    LayerStack layerStack,
     IHostApplicationLifetime lifetime,
     ILogger<WindowingLayer> logger) : IRenderLayer
 {
@@ -38,9 +38,9 @@ public class WindowingLayer(
 
     private void ProcessEvent(SDLEvent sdlEvent)
     {
-        eventSystem.Dispatch(sdlEvent);
         //logger.LogInformation("SDL event {SdlEventType}", (SDLEventType)sdlEvent.Type);
-
+        i32 x = 0, y = 0;
+        var captured = false;
         switch ((SDLEventType)sdlEvent.Type)
         {
             case SDLEventType.WindowCloseRequested:
@@ -59,17 +59,19 @@ public class WindowingLayer(
                 //TODO Load();
                 break;
             case SDLEventType.MouseMotion:
-                eventSystem.Dispatch(new AjivaMouseEvent
+                SDL.GetWindowPosition(SDL.GetWindowFromID(sdlEvent.Motion.WindowID), ref x, ref y);
+                captured = layerStack.DispatchEvent(new AjivaMouseEvent
                 {
                     Type = AjivaMouseEventType.Move,
-                    X = sdlEvent.Motion.X,
-                    Y = sdlEvent.Motion.Y,
+                    X = sdlEvent.Motion.X + x,
+                    Y = sdlEvent.Motion.Y + y,
                     DeltaX = sdlEvent.Motion.Xrel,
                     DeltaY = sdlEvent.Motion.Yrel
                 });
                 break;
             case SDLEventType.MouseButtonUp or SDLEventType.MouseButtonDown:
-                eventSystem.Dispatch(new AjivaMouseEvent
+                SDL.GetWindowPosition(SDL.GetWindowFromID(sdlEvent.Motion.WindowID), ref x, ref y);
+                var ajivaMouseEvent = new AjivaMouseEvent
                 {
                     Type = sdlEvent.Button.Down == 0 ? AjivaMouseEventType.ButtonUp : AjivaMouseEventType.ButtonDown,
                     Button = sdlEvent.Button.Button switch
@@ -83,12 +85,13 @@ public class WindowingLayer(
                             (a - SDL.SDL_BUTTON_X2 + (i32)AjivaMouseButton.Button5 + 1),
                         _ => AjivaMouseButton.Left
                     },
-                    X = sdlEvent.Button.X,
-                    Y = sdlEvent.Button.Y
-                });
+                    X = sdlEvent.Button.X + x,
+                    Y = sdlEvent.Button.Y + y
+                };
+                captured = layerStack.DispatchEvent(ajivaMouseEvent);
                 break;
             case SDLEventType.MouseWheel:
-                eventSystem.Dispatch(new AjivaMouseEvent
+                captured = layerStack.DispatchEvent(new AjivaMouseEvent
                 {
                     Type = AjivaMouseEventType.Scroll,
                     DeltaX = sdlEvent.Wheel.X,
@@ -97,12 +100,14 @@ public class WindowingLayer(
                 break;
             case SDLEventType.KeyDown:
                 if (sdlEvent.Key.Repeat == 0)
-                    eventSystem.Dispatch(new AjivaKeyboardEvent(sdlEvent.Key.Scancode, (SDLKeymod)sdlEvent.Key.Mod,
+                    captured = layerStack.DispatchEvent(new AjivaKeyboardEvent(sdlEvent.Key.Scancode,
+                        (SDLKeymod)sdlEvent.Key.Mod,
                         AjivaKeyboardEventType.KeyDown));
                 break;
             case SDLEventType.KeyUp:
                 if (sdlEvent.Key.Repeat == 0)
-                    eventSystem.Dispatch(new AjivaKeyboardEvent(sdlEvent.Key.Scancode, (SDLKeymod)sdlEvent.Key.Mod,
+                    captured = layerStack.DispatchEvent(new AjivaKeyboardEvent(sdlEvent.Key.Scancode,
+                        (SDLKeymod)sdlEvent.Key.Mod,
                         AjivaKeyboardEventType.KeyUp));
                 break;
 
@@ -114,6 +119,9 @@ public class WindowingLayer(
                 logger.LogWarning("Unhandled SDL event {SdlEventType}", (SDLEventType)sdlEvent.Type);
                 break;
         }
+
+        if (!captured)
+            layerStack.DispatchEvent(sdlEvent);
     }
 
     private void RequestQuit() => lifetime.StopApplication();

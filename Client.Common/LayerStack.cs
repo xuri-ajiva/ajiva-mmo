@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Runtime.InteropServices;
 using Common;
 using Common.Systems;
 
@@ -7,12 +8,13 @@ namespace Client.Common;
 public class LayerStack : IDisposable, IHostedLifecycleService
 {
     private readonly PeriodicUpdater _periodicUpdater;
-    private readonly List<IAjivaLayer> _layers = [];
+    internal readonly List<IAjivaLayer> _layers = [];
     public bool Attached { get; private set; }
 
     private readonly IServiceScope _scope;
     private readonly PeriodicUpdater.UpdateHandle _updateHandle;
 
+    public ReadOnlySpan<IAjivaLayer> LayersSpan => CollectionsMarshal.AsSpan(_layers);
     public IReadOnlyList<IAjivaLayer> Layers => _layers;
 
     public LayerStack(PeriodicUpdater periodicUpdater, IServiceProvider serviceProvider)
@@ -59,6 +61,22 @@ public class LayerStack : IDisposable, IHostedLifecycleService
         }
     }
 
+    public bool DispatchEvent<T>(T data) where T : struct
+    {
+        using var trace = Instrumentation.NamedTrace($"EventSystem.Dispatch<{typeof(T).Name}>");
+        var e = new AjivaEvent<T>(ref data, false);
+        foreach (var layer in Layers.OfType<IEventHandler<T>>())
+        {
+            layer.OnEvent(ref e);
+            if (e.Handled)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public void PushLayer<T>(T? layer = default) where T : IAjivaLayer
     {
         IAjivaLayer service;
@@ -83,7 +101,7 @@ public class LayerStack : IDisposable, IHostedLifecycleService
             service.Attach();
     }
 
-    public void CreateLayer(TypeInfo layerType)
+    public void CreateLayer(Type layerType)
     {
         if (_scope.ServiceProvider.GetService(layerType) is IAjivaLayer layer)
             PushLayer(layer);

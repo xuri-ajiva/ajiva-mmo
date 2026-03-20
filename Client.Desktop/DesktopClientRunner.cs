@@ -28,7 +28,6 @@ public class
         services.AddService<UiRenderLayer>();
         services.AddService<SurfaceManager, ISurfaceManager>();
         services.AddService<ExampleGameHudLayer>();
-        services.AddService<EventSystem>();
         services.AddService<ViewPortRenderer>();
         services.AddService<RmlUiRenderer, IUiTextureRenderer>();
     }
