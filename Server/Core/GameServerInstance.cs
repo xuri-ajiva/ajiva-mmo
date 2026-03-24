@@ -19,6 +19,10 @@ public class GameServerInstanceConfig
     public WorkerManagementServer? ManagementServer { get; set; }
     public GlobalTickInfo TickInfo { get; set; } = new(TimeSpan.FromMilliseconds(50), 0, 0, 0);
 
+    // Multi-threaded simulation configuration
+    public ThreadPoolConfig ThreadPoolConfig { get; set; } = new();
+    public bool UseMultiThreadedSimulation { get; set; } = true;
+
     public void Validate()
     {
         if (Id == ServerId.Invalid)
@@ -32,6 +36,7 @@ public class GameServerInstanceConfig
 
 /// <summary>
 /// A complete game server instance that manages all server systems
+/// Supports both single-threaded and multi-threaded simulation modes
 /// </summary>
 public class GameServerInstance(
     ILogger<GameServerInstance> logger,
@@ -43,6 +48,9 @@ public class GameServerInstance(
     // Systems
     private NetworkSystem _networkSystem = null!;
     internal TransactionSystem TransactionSystem = null!;
+
+    // Multi-threaded simulation manager (optional)
+    private MultiThreadedSimulationManager? _simulationManager;
 
     private bool _isInitialized;
     private bool _isRunning;
@@ -69,10 +77,26 @@ public class GameServerInstance(
         var ecs = serviceProvider.GetRequiredService<NServerEcs>();
         ecs.Grid = new SpacialGrid(config.GridInfo);
 
+        // Initialize multi-threaded simulation manager if enabled
+        if (config.UseMultiThreadedSimulation)
+        {
+            _simulationManager = new MultiThreadedSimulationManager(
+                serviceProvider.GetRequiredService<ILogger<MultiThreadedSimulationManager>>(),
+                ecs,
+                config.ThreadPoolConfig,
+                instrumentation);
+        }
+
         systemManager.RegisterSystem(_networkSystem = serviceProvider.GetRequiredService<NetworkSystem>());
         systemManager.RegisterSystem(serviceProvider.GetRequiredService<ChunkSystem>());
         systemManager.RegisterSystem(serviceProvider.GetRequiredService<GameLogicSystem>());
-        systemManager.RegisterSystem(serviceProvider.GetRequiredService<SimplePhysicsSystem>());
+
+        // Only register SimplePhysicsSystem if not using multi-threaded simulation
+        if (!config.UseMultiThreadedSimulation)
+        {
+            systemManager.RegisterSystem(serviceProvider.GetRequiredService<SimplePhysicsSystem>());
+        }
+
         systemManager.RegisterSystem(TransactionSystem = serviceProvider.GetRequiredService<TransactionSystem>());
 
         await systemManager.InitializeAsync();
@@ -105,6 +129,9 @@ public class GameServerInstance(
         await systemManager.StartAsync();
         _highResolutionTicker.Start();
 
+        // Start multi-threaded simulation if enabled
+        _simulationManager?.Start();
+
         _isRunning = true;
         logger.LogInformation("Game server instance {ServerId} started. Client endpoint: {ClientEndPoint}",
             config.Id, ClientEndPoint);
@@ -116,6 +143,10 @@ public class GameServerInstance(
     public async Task StopAsync()
     {
         if (!_isRunning) return;
+
+        // Stop multi-threaded simulation first
+        _simulationManager?.Stop();
+
         _highResolutionTicker.Stop();
         await systemManager.StopAsync();
         _isRunning = false;
@@ -128,6 +159,7 @@ public class GameServerInstance(
             await StopAsync();
         }
 
+        _simulationManager?.Dispose();
         await systemManager.DisposeAsync();
         logger.LogInformation("Game server instance {ServerId} disposed", config.Id);
     }
