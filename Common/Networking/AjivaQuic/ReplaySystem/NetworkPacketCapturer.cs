@@ -15,6 +15,7 @@ public class NetworkPacketCapturer
     {
         _capturedPackets.Clear();
         _startTime = Stopwatch.GetTimestamp();
+        IsCapturing = true;
     }
 
 
@@ -48,7 +49,7 @@ public class NetworkPacketCapturer
     }
 
     public bool IsReplaying { get; private set; } = false;
-    public bool IsCapturing => !IsReplaying && _capturedPackets.Count > 0;
+    public bool IsCapturing { get; private set; } = false;
 
     public void StopReplay()
     {

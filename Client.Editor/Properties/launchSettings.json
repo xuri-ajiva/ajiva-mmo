@@ -1,12 +1,9 @@
-﻿{
-  "$schema": "https://json.schemastore.org/launchsettings.json",
+{
   "profiles": {
     "Client.Editor": {
       "commandName": "Project",
-      "dotnetRunMessages": true,
+      "commandLineArgs": "--ClientConfiguration:AutoConnect=true --ClientConfiguration:AutoConnectAddress udp://localhost:7776 --ClientConfiguration:ClusterManagerAddress udp://localhost:8887",
       "workingDirectory": "../Client",
-      "nativeDebugging": true,
-      "enableNativeCodeDebugging": true,
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development",
         "RUST_BACKTRACE": "full",
@@ -17,7 +14,26 @@
         "DISABLE_SAMPLE_LAYER": "1",
         "RUST_LOG": "wgpu=trace,wgpu_hal=trace"
       },
-      "commandLineArgs": "--ClientConfiguration:AutoConnect=true --ClientConfiguration:AutoConnectAddress udp://localhost:7776 --ClientConfiguration:ClusterManagerAddress udp://localhost:8887"
+      "dotnetRunMessages": true,
+      "nativeDebugging": true,
+      "enableNativeCodeDebugging": true,
+      "jsWebView2Debugging": false,
+      "sqlDebugging": false
+    },
+    "WSL": {
+      "commandName": "WSL2",
+      "environmentVariables": {
+        "DISABLE_SAMPLE_LAYER": "1",
+        "DOTNET_ENVIRONMENT": "Development",
+        "EFC_9348": "1",
+        "ENABLE_VULKAN_RENDERDOC_CAPTURE": "1",
+        "NODEVICE_SELECT": "1",
+        "RUST_BACKTRACE": "full",
+        "RUST_LOG": "wgpu=trace,wgpu_hal=trace",
+        "WGPU_TRACE_DIR": "./wgpu_traces"
+      },
+      "distributionName": ""
     }
-  }
+  },
+  "$schema": "https://json.schemastore.org/launchsettings.json"
 }
