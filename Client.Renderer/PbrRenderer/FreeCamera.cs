@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using Client.Common;
+using Common.Helpers;
 using Common.Systems;
 using Hexa.NET.SDL3;
 
@@ -9,9 +10,9 @@ public class FreeCamera : ICamera, IEventHandler<AjivaMouseEvent>, IEventHandler
 {
     private Vector3 _position = new(0.0f, 0.0f, 3.0f); // Default position
     private f32 _aspectRatio = 16.0f / 9.0f; // Default aspect ratio
-    private f32 _fieldOfViewRadians = MathHelper.DegreesToRadians(75.0f); // Default FOV
+    private f32 _fieldOfViewRadians = MathHelper.ToRadians(75.0f); // Default FOV
     private f32 _nearPlane = 0.01f;
-    private f32 _farPlane = 1000.0f;
+    private f32 _farPlane = 100000.0f;
 
     private f32 _yaw = -MathF.PI / 2.0f; // Initialize looking along -Z
     private f32 _pitch;
@@ -36,7 +37,17 @@ public class FreeCamera : ICamera, IEventHandler<AjivaMouseEvent>, IEventHandler
     public f32 MinPitchRadians { get; set; } = -MathF.PI / 2.0f + 0.01f; // Limit looking straight down
     public f32 MaxPitchRadians { get; set; } = MathF.PI / 2.0f - 0.01f; // Limit looking straight up
 
+    private bool _inputEnabled = true;
 
+    private bool _moveForward;
+    private bool _moveBackward;
+    private bool _moveLeft;
+    private bool _moveRight;
+    private bool _moveUp;
+    private bool _moveDown;
+    private bool _sprint;
+    private bool _isLooking;
+    private bool _hasMouseAnchor;
     public Vector3 Position => _position;
 
     public f32 AspectRatio
@@ -55,6 +66,21 @@ public class FreeCamera : ICamera, IEventHandler<AjivaMouseEvent>, IEventHandler
     public Matrix4x4 ProjectionMatrix => _projectionMatrix;
     public Matrix4x4 ViewProjectionMatrix => _viewProjectionMatrix;
 
+    public bool InputEnabled => _inputEnabled;
+
+    public void SetInputEnabled(bool enabled)
+    {
+        if (_inputEnabled == enabled)
+        {
+            return;
+        }
+
+        _inputEnabled = enabled;
+        if (!enabled)
+        {
+            ClearInputState();
+        }
+    }
 
     public void Update(UpdateInfo info)
     {
@@ -87,14 +113,14 @@ public class FreeCamera : ICamera, IEventHandler<AjivaMouseEvent>, IEventHandler
 
     public void SetLookDirection(f32 yawDegrees, f32 pitchDegrees)
     {
-        _yaw = MathHelper.DegreesToRadians(yawDegrees);
-        _pitch = MathHelper.Clamp(MathHelper.DegreesToRadians(pitchDegrees), MinPitchRadians, MaxPitchRadians);
+        _yaw = MathHelper.ToRadians(yawDegrees);
+        _pitch = Math.Clamp(MathHelper.ToRadians(pitchDegrees), MinPitchRadians, MaxPitchRadians);
         UpdateVectors(); // This sets _needsViewUpdate = true
     }
 
     public void SetFieldOfView(f32 fovDegrees)
     {
-        f32 newFovRad = MathHelper.DegreesToRadians(fovDegrees);
+        var newFovRad = MathHelper.ToRadians(fovDegrees);
         if (_fieldOfViewRadians != newFovRad)
         {
             _fieldOfViewRadians = newFovRad;
@@ -153,96 +179,145 @@ public class FreeCamera : ICamera, IEventHandler<AjivaMouseEvent>, IEventHandler
         }
     }
 
-    Vector3 moveInput = Vector3.Zero;
-    Vector3 moveDirection = Vector3.Zero;
-    bool isSprinting = false;
+    private void ClearInputState()
+    {
+        _moveForward = false;
+        _moveBackward = false;
+        _moveLeft = false;
+        _moveRight = false;
+        _moveUp = false;
+        _moveDown = false;
+        _sprint = false;
+
+        _isLooking = false;
+        _hasMouseAnchor = false;
+        _lastMousePosition = Vector2.Zero;
+    }
 
     public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
     {
-        var delta = inputEvent.EventData.KeyCode switch
+        if (!_inputEnabled)
         {
-            SDLScancode.W => _front,
-            SDLScancode.S => -_front,
-            SDLScancode.A => -_right,
-            SDLScancode.D => _right,
-            SDLScancode.Q => _worldUp,
-            SDLScancode.E => _worldUp,
-            _ => Vector3.Zero
-        };
-        var keyDown = inputEvent.EventData.IsPressed == AjivaKeyboardEventType.KeyDown;
-        moveInput += keyDown ? delta : -delta;
+            return;
+        }
 
-        if (inputEvent.EventData.KeyCode is SDLScancode.Lshift or SDLScancode.Rshift)
+        var keyDown = inputEvent.EventData.IsPressed == AjivaKeyboardEventType.KeyDown;
+
+        switch (inputEvent.EventData.KeyCode)
         {
-            isSprinting = keyDown;
+            case SDLScancode.W:
+                _moveForward = keyDown;
+                break;
+            case SDLScancode.S:
+                _moveBackward = keyDown;
+                break;
+            case SDLScancode.A:
+                _moveLeft = keyDown;
+                break;
+            case SDLScancode.D:
+                _moveRight = keyDown;
+                break;
+            case SDLScancode.E:
+                _moveUp = keyDown;
+                break;
+            case SDLScancode.Q:
+                _moveDown = keyDown;
+                break;
+            case SDLScancode.Lshift:
+            case SDLScancode.Rshift:
+                _sprint = keyDown;
+                break;
         }
     }
 
     private bool ProcessInput(f32 deltaTime)
     {
-        var positionChanged = false;
+        var moveDirection = Vector3.Zero;
 
-        if (moveInput != Vector3.Zero)
+        if (_moveForward) moveDirection += _front;
+        if (_moveBackward) moveDirection -= _front;
+        if (_moveLeft) moveDirection -= _right;
+        if (_moveRight) moveDirection += _right;
+        if (_moveUp) moveDirection += _worldUp;
+        if (_moveDown) moveDirection -= _worldUp;
+
+        if (moveDirection == Vector3.Zero)
         {
-            moveDirection += moveInput;
+            return false;
         }
 
-        if (moveDirection != Vector3.Zero)
+        moveDirection = Vector3.Normalize(moveDirection);
+        var currentSpeed = MovementSpeed;
+        if (_sprint)
         {
-            moveDirection = Vector3.Normalize(moveDirection);
-            var currentSpeed = MovementSpeed;
-            if (isSprinting)
-            {
-                currentSpeed *= SprintMultiplier;
-            }
-
-            _position += moveDirection * currentSpeed * deltaTime;
-            positionChanged = true;
+            currentSpeed *= SprintMultiplier;
         }
 
-
-        /*
-         TODO
-         var mouse = _inputContext.Mice[0];
-        if (mouse.IsButtonPressed(MouseButton.Right))
-        {
-            Vector2 mouseDelta = mouse.Position - _lastMousePosition;
-            if (mouseDelta.X != 0 || mouseDelta.Y != 0)
-            {
-                _yaw += mouseDelta.X * MouseSensitivity;
-                _pitch -= mouseDelta.Y * MouseSensitivity; // Reversed Y
-
-                // Clamp pitch
-                _pitch = MathHelper.Clamp(_pitch, MinPitchRadians, MaxPitchRadians);
-
-                UpdateVectors(); // Recalculate Front, Right, Up vectors and flag view matrix update
-            }
-        }
-
-        _lastMousePosition = mouse.Position;
-*/
-        return positionChanged;
+        _position += moveDirection * currentSpeed * deltaTime;
+        return true;
     }
 
     public void OnEvent(ref AjivaEvent<AjivaMouseEvent> inputEvent)
     {
-    }
-}
+        if (!_inputEnabled)
+        {
+            return;
+        }
 
-public static class MathHelper
-{
-    public static f32 DegreesToRadians(f32 degrees)
-    {
-        return degrees * (MathF.PI / 180.0f);
-    }
+        var data = inputEvent.EventData;
 
-    public static f32 RadiansToDegrees(f32 radians)
-    {
-        return radians * (180.0f / MathF.PI);
-    }
+        // NOTE:
+        // Adjust these property names/enums if your AjivaMouseEvent differs.
+        // The pattern is: right button gates look, motion rotates camera.
+        switch (data.Type)
+        {
+            case AjivaMouseEventType.ButtonDown:
+                if (data.Button == AjivaMouseButton.Right)
+                {
+                    _isLooking = true;
+                    _hasMouseAnchor = false; // avoid first-frame jump
+                }
 
-    public static f32 Clamp(f32 value, f32 min, f32 max)
-    {
-        return Math.Max(min, Math.Min(value, max));
+                break;
+
+            case AjivaMouseEventType.ButtonUp:
+                if (data.Button == AjivaMouseButton.Right)
+                {
+                    _isLooking = false;
+                    _hasMouseAnchor = false;
+                }
+
+                break;
+
+            case AjivaMouseEventType.Move:
+                if (!_isLooking)
+                {
+                    return;
+                }
+
+                var current = new Vector2(data.X, data.Y);
+
+                if (!_hasMouseAnchor)
+                {
+                    _lastMousePosition = current;
+                    _hasMouseAnchor = true;
+                    return;
+                }
+
+                var delta = current - _lastMousePosition;
+                _lastMousePosition = current;
+
+                if (delta.X == 0 && delta.Y == 0)
+                {
+                    return;
+                }
+
+                _yaw += delta.X * MouseSensitivity;
+                _pitch -= delta.Y * MouseSensitivity; // invert Y for FPS feel
+                _pitch = Math.Clamp(_pitch, MinPitchRadians, MaxPitchRadians);
+
+                UpdateVectors();
+                break;
+        }
     }
 }
