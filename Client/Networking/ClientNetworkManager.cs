@@ -244,7 +244,7 @@ public partial class ClientNetworkManager(
         await Capturer.LoadFromFileAsync(filename);
         _primaryContext.Client = new ReplayClient(Capturer);
         Gateway.Handle(
-            new GatewayPackets.LoadLevelPacket("Sponza", new SpacialGridInfo(new ChunkCoord(32, 32, 32, 0))),
+            new GatewayPackets.LoadLevelPacket("Sponza", new SpacialGridInfo(new ChunkCoord(32, 32, 32, 0), 45, 0)),
             _gatewayContext);
         await _primaryContext.Client.ConnectAsync(instrumentation);
         _clients.Add(_primaryContext);

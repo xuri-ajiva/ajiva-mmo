@@ -11,7 +11,7 @@ namespace Common.Ecs;
 public partial struct Position(Vector3 value) : IComponent
 {
     public Vector3 Value = value;
-    public i32 Level;
+    public i32 W; // Multiverse dimension (was Level)
 }
 
 [EcsComponent(ComponentScope.Shared, ComponentSync.ServerToClient,
@@ -125,7 +125,7 @@ public partial struct NetState : IComponent
 public partial struct Transform() : IComponent
 {
     public Vector3 Position;
-    public i32 Level;
+    public i32 W; // Multiverse dimension
     public Quaternion Rotation = Quaternion.Identity;
     public Vector3 Scale = Vector3.One;
 }

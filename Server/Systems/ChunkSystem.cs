@@ -69,7 +69,7 @@ public class ChunkSystem(
         {
             if (!world.Spacial.TryGet(kv.Key, out var spacialData)) continue;
 
-            var currentChunk = world.Grid.GetChunkCoord(kv.Value.Value, kv.Value.Level);
+            var currentChunk = world.Grid.GetChunkCoord(kv.Value.Value, kv.Value.W);
 
             if (currentChunk.Equals(spacialData.CurrentChunk)) continue;
 
@@ -103,7 +103,7 @@ public class ChunkSystem(
     public void UnloadPlayerChunks(ConnectionContext context)
     {
         var playerPosition = context.Position;
-        var playerChunk = world.Grid.GetChunkCoord(playerPosition.Value, playerPosition.Level);
+        var playerChunk = world.Grid.GetChunkCoord(playerPosition.Value, playerPosition.W);
         var visibleChunks = context.LoadedChunks;
         foreach (var coord in
                  visibleChunks.Where(chunkCoord => chunkCoord.PosDistanceTo(playerChunk) > MaxSendRangeChunks))
@@ -144,7 +144,7 @@ public class ChunkSystem(
             visibleChunksSnapshot.Clear();
             foreach (var context in _networkSystem._connectionContexts.Values)
             {
-                var playerChunk = world.Grid.GetChunkCoord(context.Position.Value, context.Position.Level);
+                var playerChunk = world.Grid.GetChunkCoord(context.Position.Value, context.Position.W);
                 var chunkDistance = playerChunk.PosDistanceTo(chunkCoord);
                 if (chunkDistance <= _currentSendRangeChunks)
                     visibleChunksSnapshot.Add(context);
@@ -246,22 +246,22 @@ public class ChunkSystem(
 
         // Notify other players in range
         using var msg = new ToClientPackets.EntityDestroyedPacket(new NetEntId(_serverId, playerEntity)).ToMessage();
-        SendToPlayersInRange(position.Value, position.Level, msg);
+        SendToPlayersInRange(position.Value, position.W, msg);
 
         context.PrimaryEntity = EntityId.Invalid;
         context.LoadedChunks.Clear();
         world.DeleteEntity(playerEntity);
     }
 
-    private void SendToPlayersInRange(Vector3 position, i32 level, SerializedMessage packet)
+    private void SendToPlayersInRange(Vector3 position, i32 w, SerializedMessage packet)
     {
         // Calculate which chunk this position is in
-        var chunkCoord = world.Grid.GetChunkCoord(position, level);
+        var chunkCoord = world.Grid.GetChunkCoord(position, w);
 
         foreach (var context in _networkSystem._connectionContexts.Values)
         {
             var playerPosition = context.Position;
-            var playerChunk = world.Grid.GetChunkCoord(playerPosition.Value, playerPosition.Level);
+            var playerChunk = world.Grid.GetChunkCoord(playerPosition.Value, playerPosition.W);
             if (playerChunk.PosDistanceTo(chunkCoord) > MaxSendRangeChunks) continue;
             context.Connection.Send(packet);
         }

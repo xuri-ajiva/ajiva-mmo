@@ -90,7 +90,7 @@ public class ClusterMap
     }
 
     /// <summary>
-    /// Get all neighboring chunks for a given chunk (26 neighbors in 3D)
+    /// Get all neighboring chunks for a given chunk (80 neighbors in 4D: 3^4 - 1)
     /// </summary>
     public IEnumerable<ChunkCoord> GetNeighboringChunks(ChunkCoord chunk, i32 range = 1)
     {
@@ -100,15 +100,18 @@ public class ClusterMap
             {
                 for (var dz = -range; dz <= range; dz++)
                 {
-                    if (dx == 0 && dy == 0 && dz == 0)
-                        continue;
+                    for (var dw = -range; dw <= range; dw++)
+                    {
+                        if (dx == 0 && dy == 0 && dz == 0 && dw == 0)
+                            continue;
 
-                    yield return new ChunkCoord(
-                        chunk.X + dx,
-                        chunk.Y + dy,
-                        chunk.Z + dz,
-                        chunk.Level
-                    );
+                        yield return new ChunkCoord(
+                            chunk.X + dx,
+                            chunk.Y + dy,
+                            chunk.Z + dz,
+                            chunk.W + dw
+                        );
+                    }
                 }
             }
         }

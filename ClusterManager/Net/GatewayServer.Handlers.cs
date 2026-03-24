@@ -43,7 +43,7 @@ public partial class GatewayServer
         new Packets.Hello(0, Packets.ServerType.EntryPoint).Send(connection);
         var servers = Cluster.FindServersForConnection(connection);
         new GatewayPackets.ServerList(servers).Send(connection);
-        new GatewayPackets.LoadLevelPacket("Sponza", new SpacialGridInfo(configuration.GridSize)).Send(connection);
+        new GatewayPackets.LoadLevelPacket("Sponza", new SpacialGridInfo(configuration.GridSize, configuration.SimulationLevel, configuration.AggregatorMinLevel)).Send(connection);
     }
 
     public void OnClientDisconnected(IQConnection connection)
