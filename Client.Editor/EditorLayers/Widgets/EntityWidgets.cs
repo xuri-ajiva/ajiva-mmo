@@ -165,7 +165,7 @@ public class EntityWidgets(
                 ImGui.Text("No object under mouse");
             }
 
-            ImGui.DragFloat("GizmoSie", ref renderer._gizmoUniform.GizmoPixelSize, 1, 0, 100);
+            ImGui.DragFloat("GizmoSie", ref renderer.GizmoUniform.GizmoPixelSize, 1, 0, 100);
 
             if (_selectedObjectId != 0 && _selectedObjectId <= dynamicInstances.OpaqueMeshes.Count)
             {

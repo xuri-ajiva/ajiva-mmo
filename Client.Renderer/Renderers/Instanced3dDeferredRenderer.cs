@@ -52,6 +52,7 @@ public class Instanced3dDeferredRenderer(
     private WboitPipeline? _transparentPipeline;
     private GizmoPipeline? _gizmoPipeline;
     private bool _enabled = true;
+    internal GizmoShader.SceneUniform GizmoUniform = new() { GizmoPixelSize = 5f };
 
     public void Initiallize()
     {
@@ -177,16 +178,14 @@ public class Instanced3dDeferredRenderer(
             Time = info.TotalTime
         });
 
-        _gizmoPipeline!.WriteSceneUniforms(target.QueuePtr, new GizmoShader.SceneUniform
-        {
-            ViewRef = _camera.ViewMatrix,
-            ProjectionRef = _camera.ProjectionMatrix,
-            CameraPositionRef = _camera.Position,
-            Time = info.TotalTime,
-            ObjectId = u32.MaxValue,
-            GizmoPixelSize = 5,
-            ViewportSize = new vec2(sceneViewport.Width, sceneViewport.Height)
-        });
+        GizmoUniform.ViewRef = _camera.ViewMatrix;
+        GizmoUniform.ProjectionRef = _camera.ProjectionMatrix;
+        GizmoUniform.CameraPositionRef = _camera.Position;
+        GizmoUniform.Time = info.TotalTime;
+        GizmoUniform.ObjectId = u32.MaxValue;
+        GizmoUniform.ViewportSize = new vec2(sceneViewport.Width, sceneViewport.Height);
+
+        _gizmoPipeline!.WriteSceneUniforms(target.QueuePtr, GizmoUniform);
 
         if (_sceneRenderCollection != _scene.RenderableInstances || _sceneRenderCollection == null)
         {
@@ -287,11 +286,10 @@ public class Instanced3dDeferredRenderer(
     public VirtualFramebuffer.ColorTargetView? Render(UpdateInfo info, RenderTarget target, u32 width, u32 height,
         bool isSceneViewHovered)
     {
-        if (isSceneViewHovered)
+        if (_camera is FreeCamera freeCamera)
         {
-            _camera.Update(info);
+            freeCamera.SetInputEnabled(isSceneViewHovered);
         }
-
 
         if (_sceneGBuffer is null || _finalSceneTexture is null)
         {
