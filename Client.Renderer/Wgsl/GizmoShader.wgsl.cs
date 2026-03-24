@@ -48,10 +48,9 @@ public partial class GizmoShader
     public partial struct Varyings(
         [Builtin("position")] vec4 position,
         vec4 highlightColor,
-        u32 objectId,
         u32 instanceId,
         vec2 uv,
-        vec2 screenSpaceSize
+        vec3 worldPos
     );
 
     public partial struct GizmoOutputs(
@@ -66,53 +65,74 @@ public partial class GizmoShader
     public Varyings vs_main(Attributes a, Instance i, [Builtin("instance_index")] u32 iId)
     {
         var instanceTransform = new mat4(i.Transform0, i.Transform1, i.Transform2, i.Transform3);
-
-        // Standard model-view-projection transform
         var worldPos = instanceTransform * vec4(a.Position, 1.0f);
-        var viewPos = ubScene.View * worldPos;
-        var clipPos = ubScene.Projection * viewPos;
 
         return new Varyings(
-            clipPos,
+            ubScene.Projection * (ubScene.View * worldPos),
             i.HighlightColor,
-            ubScene.ObjectId,
             iId,
             a.Tex0Coord,
-            vec2(ubScene.GizmoPixelSize, ubScene.GizmoPixelSize)
+            worldPos.xyz
         );
     }
 
     [FragmentShader]
     public GizmoOutputs fs_main(Varyings v)
     {
-        // Calculate derivatives to determine pixel size in UV space
-        var uvDx = dpdx(v.Uv);
-        var uvDy = dpdy(v.Uv);
+        // --- Grid Constants ---
+        const f32 baseGridSpacing = 1.00f;
+        const f32 lodBias = -0.20f;
+        const f32 lodBlendStart = 0.40f;
+        const f32 lodBlendEnd = 0.60f;
+        const f32 lineWidthFine = .00f;
+        const f32 lineWidthCoarse = 1.25f;
+        const f32 intensityFine = 1.00f;
+        const f32 intensityCoarse = 0.90f;
+        const f32 minDistance = 0.01f;
 
-        // Estimate UV distance per pixel
-        var uvPerPixel = max(length(uvDx), length(uvDy));
+        // 1. Screen-space Edge Logic
+        // Using fwidth is slightly faster than manual dpdx/dpdy for thickness
+        var uvThickness = fwidth(v.Uv) * ubScene.GizmoPixelSize;
+        var distFromEdge = min(v.Uv, 1.0f - v.Uv);
 
-        // Calculate UV threshold for the wireframe
-        var uvThickness = uvPerPixel * ubScene.GizmoPixelSize;
+        // 2. Camera-distance-based Continuous LOD
+        var cameraDist = max(length(v.WorldPos - ubScene.CameraPosition), minDistance);
+        var lodCont = max(log2(cameraDist / baseGridSpacing) + lodBias, 0.0f);
+        var lodFloor = floor(lodCont);
+        var lodFrac = fract(lodCont);
 
-        // Calculate distance from edges in UV space
-        var distFromEdgeX = min(v.Uv.x, 1.0f - v.Uv.x);
-        var distFromEdgeY = min(v.Uv.y, 1.0f - v.Uv.y);
-        var distFromEdge = min(distFromEdgeX, distFromEdgeY);
+        // 3. Grid Spacing
+        var spacingFine = baseGridSpacing * exp2(lodFloor);
+        var spacingCoarse = spacingFine * 2.0f;
 
-        // Discard if we're too far from the edge
-        if (distFromEdge > uvThickness)
-        {
-            // discard();
-            return new GizmoOutputs(
-                v.HighlightColor * 0.05f,
-                vec2u(v.ObjectId, v.InstanceId)
-            );
-        }
+        // 4. Vectorized Fine Grid
+        var pFine = v.WorldPos / spacingFine;
+        var dFine = abs(fract(pFine) - 0.5f);
+        var fwFine = max(fwidth(pFine), vec3(1e-4f));
+        var maskFineVec = 1.0f - smoothstep(vec3(0.0f), fwFine * lineWidthFine, dFine);
+        var fineMask = max(max(maskFineVec.x, maskFineVec.y), maskFineVec.z) * intensityFine;
+
+        // 5. Vectorized Coarse Grid
+        var pCoarse = v.WorldPos / spacingCoarse;
+        var dCoarse = abs(fract(pCoarse) - 0.5f);
+        var fwCoarse = max(fwidth(pCoarse), vec3(1e-4f));
+        var maskCoarseVec = 1.0f - smoothstep(vec3(0.0f), fwCoarse * lineWidthCoarse, dCoarse);
+        var coarseMask = max(max(maskCoarseVec.x, maskCoarseVec.y), maskCoarseVec.z) * intensityCoarse;
+
+        // 6. Final Mask and Color Calculation
+        var lodBlend = smoothstep(lodBlendStart, lodBlendEnd, lodFrac) + lodFrac * 0.5f;
+        var worldGridMask = clamp(mix(fineMask, coarseMask, lodBlend), 0.0f, 1.0f);
+
+        // Branchless edge vs fill selection
+        var isInsideVec = step(uvThickness, distFromEdge);
+        var isInside = isInsideVec.x * isInsideVec.y;
+
+        var baseColor = mix(v.HighlightColor, v.HighlightColor * 0.05f, isInside);
+        var finalColor = baseColor + (v.HighlightColor * worldGridMask);
 
         return new GizmoOutputs(
-            v.HighlightColor,
-            vec2u(v.ObjectId, v.InstanceId)
+            finalColor,
+            vec2u(ubScene.ObjectId, v.InstanceId)
         );
     }
 }
