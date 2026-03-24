@@ -31,6 +31,8 @@ public class PlayerInputSystem(
 
     public void Update(UpdateInfo info)
     {
+        camera.Update(info);
+
         if (!networkManager.IsConnected) return;
 
         // Get camera transform

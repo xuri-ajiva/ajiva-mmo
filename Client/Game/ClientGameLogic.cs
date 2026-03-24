@@ -84,6 +84,14 @@ public partial class ClientGameLogic : IDisposable
         IncrementRenderVersion();
     }
 
+    private void SpecialEntity(NetEntId entId, string reason)
+    {
+        /*if (entId.Server == 4 && entId.Entity.Value == 1451)
+        {
+            _logger.LogInformation("Tracking special entity {NetEntId} for reason: {Reason}", entId, reason);
+        }*/
+    }
+
     public NetEntId? GetNetworkId(EntityId ecsEntity)
     {
         return World.NetState.TryGet(ecsEntity, out var netState) ? netState.Id : null;
@@ -123,40 +131,70 @@ public partial class ClientGameLogic : IDisposable
 
     private bool TryMarkEntityForDeletion(EntityId entity, NetEntId netEntId)
     {
-        if (World.NetState.Has(entity))
+        SpecialEntity(netEntId, nameof(TryMarkEntityForDeletion));
+        if (World.NetState.TryGet(entity, out var netState))
         {
-            ref var updateNetState = ref World.NetState.Update(entity);
-            if (updateNetState.CreatedTick == _lastTick) return false;
-            updateNetState.DeletedTick = _lastTick;
+            if (netState.CreatedTick == _lastTick)
+            {
+                SpecialEntity(netEntId, "Entity created and deleted in the same tick, skipping deletion");
+                return false;
+            }
+
+            World.NetState.Update(entity).DeletedTick = _lastTick;
+        
+            // DELETED: Phantom chunk logic. 
+            // We do NOT want to guess the chunk by spatial position here, 
+            // because the position might already be in the NEW chunk!
         }
         else
         {
             return TryDeleteEntity(entity, netEntId);
         }
 
+        SpecialEntity(netEntId, "Deletion marked");
         return true;
     }
 
     private bool TryResurrectEntity(NetEntId netId, out EntityId id)
     {
-        if (!_networkToEcs.TryGetValue(netId, out id) || !World.NetState.Has(id)) return false;
+        SpecialEntity(netId, nameof(TryResurrectEntity));
+        if (!_networkToEcs.TryGetValue(netId, out id) || !World.NetState.Has(id))
+        {
+            SpecialEntity(netId, "No existing entity to resurrect");
+            return false;
+        }
+
         ref var state = ref World.NetState.Update(id);
         state.DeletedTick = null;
         state.CreatedTick = _lastTick;
-        if (state.GhostChunk is not { } chunk) return true;
+
+        // DELETED: Phantom chunk logic. 
+
+        if (state.GhostChunk is not { } chunk)
+        {
+            SpecialEntity(netId, "No ghost chunk to remove on resurrection");
+            return true;
+        }
+
+        SpecialEntity(netId, "Removing from ghost chunk on resurrection");
+
+        // The GhostChunk exists because the server explicitly told us it was removed from an older chunk.
         chunk.Remove(id);
         state.GhostChunk = null;
         return true;
     }
 
+
     private bool TryCleanUpEntity(EntityId entityId)
     {
         ref var netState = ref World.NetState.Update(entityId);
-        if (!netState.DeletedTick.HasValue || netState.DeletedTick.Value + 100 >= _lastTick) return false;
+        if (!netState.DeletedTick.HasValue || netState.DeletedTick.Value + 2 >= _lastTick) return false;
+    
         netState.GhostChunk?.Remove(entityId);
         netState.GhostChunk = null;
+    
         var trans = World.Transform.Get(entityId);
-        _logger.LogDebug("Auto-deleting entity {EntityId} due to inactivity", netState.Id);
+        //_logger.LogDebug("Auto-deleting entity {EntityId} due to inactivity", netState.Id);
 
         Lock.Scope scope = default;
         try
@@ -164,8 +202,12 @@ public partial class ClientGameLogic : IDisposable
             if (Grid is not null && Grid.TryGetChunk(Grid.GetChunkCoord(trans.Position, trans.Level), out var chunk))
             {
                 scope = chunk.UseLock();
+                // ADDED: When the entity is FINALLY hard-deleted by auto-cleanup, 
+                // we ensure it is purged from whatever physical chunk it ended up in.
+                chunk.Entities.Remove(entityId);
             }
 
+            SpecialEntity(netState.Id, "Auto-cleanup deletion");
             return TryDeleteEntity(entityId, netState.Id);
         }
         finally
@@ -177,6 +219,8 @@ public partial class ClientGameLogic : IDisposable
 
     private bool TryDeleteEntity(EntityId id, NetEntId netId)
     {
+        SpecialEntity(netId, nameof(TryDeleteEntity));
+
         _networkToEcs.Remove(netId, out var entity);
         Debug.Assert(entity == id, "EntityId mismatch on deletion");
         World.DeleteEntity(id);
@@ -185,8 +229,13 @@ public partial class ClientGameLogic : IDisposable
 
     private EntityId CreateEntity(NetEntId netEntId, u32 typeId)
     {
+        SpecialEntity(netEntId, nameof(CreateEntity));
+
         if (_networkToEcs.TryGetValue(netEntId, out var id))
+        {
+            SpecialEntity(netEntId, "Entity already exists for this NetEntId, returning existing entity");
             return id;
+        }
 
         Debug.Assert(!_networkToEcs.ContainsKey(netEntId), "Entity with the same NetEntId already exists.");
         // Store network -> ECS mapping

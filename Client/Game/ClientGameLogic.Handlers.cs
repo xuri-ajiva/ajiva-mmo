@@ -15,7 +15,6 @@ public partial class ClientGameLogic
         IncrementRenderVersion();
     }
 
-
     public void HandleEntityUpdate(ToClientPackets.EntityUpdatePacket packet)
     {
         if (!_networkToEcs.TryGetValue(packet.Id, out var entity))
@@ -52,13 +51,12 @@ public partial class ClientGameLogic
 
     public void HandleChunkUpdate(ToClientPackets.ChunkUpdatePacket packet)
     {
-        _logger.LogTrace("Chunk update received: {ChunkCoord} with {Type}", packet.Coord, packet.Data.GetType());
+       // _logger.LogTrace("Chunk update received: {ChunkCoord} with {Type}", packet.Coord, packet.Data.GetType());
 
         if (!GridCheck()) return;
         if (!Grid.TryGetChunk(packet.Coord, out var chunk)) return;
         switch (packet.Data)
         {
-            // todo make a universal handler that checks if IndexOverride is used
             case ChunkData<PositionChunkData> posUpdate:
                 using (var _ = chunk.UseLock())
                 {
@@ -101,6 +99,7 @@ public partial class ClientGameLogic
                 }
 
                 break;
+
             case ChunkData<ScaleChunkData> rotUpdate:
                 using (var _ = chunk.UseLock())
                 {
@@ -128,6 +127,7 @@ public partial class ClientGameLogic
                 }
 
                 break;
+
             default:
                 return;
         }
@@ -144,15 +144,12 @@ public partial class ClientGameLogic
         {
             anyRemoved = true;
             using var _ = chunk.UseLock();
-            /*foreach (var entity in chunk.Entities)
-            {
-                anyRemoved |= TryHandleLocalEntityDeletion(entity);
-            }*/
             chunk.Entities.Clear();
         }
 
         foreach (var netEntId in packet.NetEntIds)
         {
+            SpecialEntity(netEntId, nameof(HandleChunkUnload));
             if (!_networkToEcs.TryGetValue(netEntId, out var ecsEntity)) continue;
             anyRemoved |= TryMarkEntityForDeletion(ecsEntity, netEntId);
         }
@@ -163,45 +160,54 @@ public partial class ClientGameLogic
 
     public void HandleChunkDelta(ToClientPackets.ChunkDeltaPacket message)
     {
-        _logger.LogTrace("Chunk delta received: {ChunkCoord} with {NewCount} new and {RemovedCount} removed entities",
-            message.Coord, message.NewIds.Count, message.RemovedIds.Count);
-
         if (!GridCheck()) return;
         if (!Grid.TryGetChunk(message.Coord, out var chunk)) return;
         using var _ = chunk.UseLock();
-        if (message.NewIds is { Count: > 0 } newIds)
-        {
-            foreach (var netEntId in newIds)
-            {
-                if (!TryResurrectEntity(netEntId, out var id))
-                {
-                    id = CreateEntity(netEntId, 1);
-                }
 
-                chunk.Entities.Add(id);
-            }
-        }
-
-        // todo bug: this dont seam to work properly, entities dont seam to get marked for deletion
-        // maybe even the server dont do delta properly?
-        // the main problem is the the delete has to be handled before the add in a new chunk
-        // bbut we cannot guarantee this as chunk order isn't guaranteed
+        // 1. Process REMOVALS FIRST
+        // Fixes the issue where an entity bouncing between chunks in the same tick 
+        // would get added, and then immediately marked for deletion.
         if (message.RemovedIds is { Count: > 0 } removedIds)
         {
             foreach (var entId in removedIds)
             {
+                SpecialEntity(entId, "RemovedIds in ChunkDelta");
                 if (!_networkToEcs.TryGetValue(entId, out var local)) continue;
+
                 if (TryMarkEntityForDeletion(local, entId))
                 {
-                    World.NetState.Update(local).GhostChunk = chunk;
+                    ref var netState = ref World.NetState.Update(local);
+
+                    // Philosophy implementation: Only set ghost chunk if it is currently null
+                    if (netState.GhostChunk == null)
+                    {
+                        netState.GhostChunk = chunk;
+                    }
                 }
 
                 chunk.Entities.Remove(local);
             }
         }
 
+        // 2. Process ADDITIONS SECOND
+        // Philosophy implementation: All added are immediately resurrected/created.
+        if (message.NewIds is { Count: > 0 } newIds)
+        {
+            foreach (var netEntId in newIds)
+            {
+                SpecialEntity(netEntId, "NewIds in ChunkDelta");
+
+                if (!TryResurrectEntity(netEntId, out var id))
+                {
+                    id = CreateEntity(netEntId, 1);
+                }
+
+                // Immediately register to the current chunk's bounds
+                chunk.Entities.Add(id);
+            }
+        }
+
         chunk.MarkDirty();
-        //IncrementRenderVersion();
     }
 
     public void HandleChunkLoad(ToClientPackets.ChunkLoadPacket message)
@@ -210,6 +216,7 @@ public partial class ClientGameLogic
         _logger.LogTrace("Chunk load received: {ChunkCoord} with {EntityCount} entities",
             message.Coord, entityCount);
         if (!GridCheck()) return;
+
         if (entityCount == 0)
         {
             if (!Grid.TryGetChunk(message.Coord, out var chunk) || chunk is not { Entities.Count: > 0 }) return;
@@ -228,6 +235,7 @@ public partial class ClientGameLogic
 
             foreach (var netEntId in message.NetEntIds)
             {
+                SpecialEntity(netEntId, nameof(HandleChunkLoad));
                 if (!TryResurrectEntity(netEntId, out var id))
                 {
                     id = CreateEntity(netEntId, 1);
