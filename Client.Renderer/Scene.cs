@@ -39,6 +39,11 @@ public class Scene(ResourceManager loader, ModelHelper modelHelper)
 
     public PbrInstancedMeshBuffer[] CreateModelBuffers(string path, string? label = null)
     {
+        if (!Path.Exists(path))
+        {
+            _loader.Logger.LogError("Model file not found at path: {Path}", path);
+            return [];
+        }
         var (meshDatas, data, root, materials) = _modelHelper.LoadModels(path);
 
         var buffers = new PbrInstancedMeshBuffer[meshDatas.Count];
