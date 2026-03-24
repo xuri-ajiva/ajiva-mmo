@@ -3,8 +3,10 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using Client.Renderer;
 using Client.Renderer.Instancing;
+using Client.Renderer.PbrRenderer;
 using Client.Renderer.Renderers;
 using Client.Renderer.Resources;
+using Client.Wgsl;
 using Common;
 using Common.Ecs;
 using Common.Systems;
@@ -29,12 +31,22 @@ public class EntityWidgets(
     private u32 _selectedInstanceId = 0;
     private f32 _textureSize = 128f;
     private i32 _maxConcurrentLoads = 4;
+    private u32? gizmoEntityId;
 
     public void Render()
     {
         using var tracer = Instrumentation.Instance?.StartActivity(ActivityKind.Internal);
         if (_entityInspectorEnabled && ImGui.Begin("Entity Inspector", ref _entityInspectorEnabled))
         {
+            if (gizmoEntityId is null)
+            {
+                if (scene.RenderableInstances.GizmoMeshes.FirstOrDefault() is { } gizmos)
+                {
+                    gizmoEntityId = (u32)gizmos.InstanceInfos.Length;
+                    gizmos._instanceInfos.Add(new GizmoShader.Instance());
+                }
+            }
+
             ImGui.DragInt("##EntityId", ref Unsafe.As<EntityId, i32>(ref _selectedEntityId));
             if (_selectedEntityId != EntityId.Invalid && world.Transform.Has(_selectedEntityId))
             {
@@ -69,6 +81,16 @@ public class EntityWidgets(
                 else
                 {
                     ImGui.Text("No Spatial Chunk");
+                }
+
+                if (gizmoEntityId is { } gizmoId && scene.RenderableInstances.GizmoMeshes.FirstOrDefault() is
+                        { } gizmos)
+                {
+                    var tmp = new GizmoShader.Instance();
+                    tmp.SetTransform(Matrix4x4.CreateScale(transform.Scale) *
+                                     Matrix4x4.CreateTranslation(transform.Position));
+                    tmp.HighlightColorRef = new Vector4(1, 1, 1, 1);
+                    gizmos.InstanceInfos[(i32)gizmoId] = tmp;
                 }
             }
             else
@@ -143,6 +165,8 @@ public class EntityWidgets(
                 ImGui.Text("No object under mouse");
             }
 
+            ImGui.DragFloat("GizmoSie", ref renderer._gizmoUniform.GizmoPixelSize, 1, 0, 100);
+
             if (_selectedObjectId != 0 && _selectedObjectId <= dynamicInstances.OpaqueMeshes.Count)
             {
                 var y = ImGui.GetCursorPosY();
@@ -201,7 +225,7 @@ public class EntityWidgets(
                 {
                     unsafe
                     {
-                        if (ImGui.ImageButton("ChooseTextureE", new ImTextureRef(texId:emission.View.GetIntPtr()),
+                        if (ImGui.ImageButton("ChooseTextureE", new ImTextureRef(texId: emission.View.GetIntPtr()),
                                 new Vector2(imageButtonSize)))
                         {
                             Task.Run(() =>

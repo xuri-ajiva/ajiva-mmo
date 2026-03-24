@@ -211,8 +211,8 @@ public class NetworkWidgets(
                             var maxWorld = maxChunks * chunkSize;
                             var sizeWorld = maxWorld - minWorld; // exclusive max -> correct full size in world units
                             var centerWorld = minWorld + maxWorld;
-                            sizeWorld.Y = 0.0001f;
-                            centerWorld.Y = -5.0f;
+                            sizeWorld.Y = 100;
+                            centerWorld.Y = sizeWorld.Y / 2;
                             instance.SetTransform(Matrix4x4.CreateScale(sizeWorld) *
                                                   Matrix4x4.CreateTranslation(centerWorld));
                             instance.HighlightColorRef =
