@@ -135,7 +135,7 @@ public class MultiThreadedSimulationManager : IDisposable
             {
                 Key = key,
                 Node = node,
-                DeltaTime = (f32)info.DeltaTime.TotalSeconds
+                DeltaTime = info.DeltaTime
             });
         }
     }
@@ -207,7 +207,7 @@ public class MultiThreadedSimulationManager : IDisposable
 
     private void ProcessSimulationWork(SimulationWorkItem workItem)
     {
-        using var trace = _instrumentation.Trace("SimulationWork");
+        using var trace = Instrumentation.Trace();
 
         // Get all entities in this node
         var entities = workItem.Node.GetEntities();
@@ -244,7 +244,7 @@ public class MultiThreadedSimulationManager : IDisposable
 
     private void ProcessAggregationWork(AggregationWorkItem workItem)
     {
-        using var trace = _instrumentation.Trace("AggregationWork");
+        using var trace = Instrumentation.Trace();
 
         // Get all child nodes and aggregate their data into an LOD proxy
         var childKeys = workItem.Key.GetChildren().ToList();

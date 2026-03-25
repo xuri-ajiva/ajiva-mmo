@@ -1,8 +1,9 @@
 using System.Numerics;
 using Common.Ecs;
+using Common.SpacialPartitioning;
 using MemoryPack;
 
-namespace Common.SpacialPartitioning;
+namespace Server.Core;
 
 /// <summary>
 /// LOD (Level of Detail) proxy entity
