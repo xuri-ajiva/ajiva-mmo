@@ -75,7 +75,15 @@ public class ChunkSystem(
 
             spacialData.PreviousChunk = spacialData.CurrentChunk;
             spacialData.CurrentChunk = currentChunk;
+
+            // Update legacy chunk-based storage
             world.Grid.MoveEntity(kv.Key, spacialData.PreviousChunk, spacialData.CurrentChunk);
+
+            // Update Morton-based KD-Tree
+            var oldKey = spacialData.PreviousChunk.ToMortonKey(world.Grid.GridInfo.SimulationLevel, world.Grid.GridInfo.ChunkSize.X);
+            var newKey = spacialData.CurrentChunk.ToMortonKey(world.Grid.GridInfo.SimulationLevel, world.Grid.GridInfo.ChunkSize.X);
+            world.Grid.MoveEntityInTree(oldKey, newKey, kv.Key);
+
             world.Spacial.Update(kv.Key) = spacialData;
         }
     }

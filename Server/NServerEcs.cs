@@ -43,6 +43,27 @@ public class NServerEcs
 
     public EntityId CreateEntity() => new(_entityIdFreeList.GetFreeId());
 
+    /// <summary>
+    /// Add entity to spatial partitioning (both legacy and new KD-Tree)
+    /// Call this after adding Position and SpacialData components
+    /// </summary>
+    public void AddEntityToSpatialPartitioning(EntityId entityId)
+    {
+        if (!Position.TryGet(entityId, out var position)) return;
+        if (!Spacial.TryGet(entityId, out var spacialData)) return;
+
+        var chunkCoord = Grid.GetChunkCoord(position.Value, position.W);
+
+        // Add to legacy chunk storage
+        var chunk = Grid.GetChunkData(chunkCoord);
+        chunk.Add(entityId);
+        chunk.MarkDirty();
+
+        // Add to Morton-based KD-Tree
+        var mortonKey = chunkCoord.ToMortonKey(Grid.GridInfo.SimulationLevel, Grid.GridInfo.ChunkSize.X);
+        Grid.AddEntityToTree(mortonKey, entityId);
+    }
+
     public Iterator GetEnumerator() => new Iterator(Position.GetEnumerator());
 
     public ref struct Iterator(DenseStore<Position>.Iterator iterator)
@@ -81,6 +102,14 @@ public class NServerEcs
 
     public void DeleteEntity(EntityId id)
     {
+        // Remove from spatial partitioning if entity has spatial data
+        if (Spacial.TryGet(id, out var spacialData) && Position.TryGet(id, out var position))
+        {
+            var chunkCoord = Grid.GetChunkCoord(position.Value, position.W);
+            var mortonKey = chunkCoord.ToMortonKey(Grid.GridInfo.SimulationLevel, Grid.GridInfo.ChunkSize.X);
+            Grid.RemoveEntityFromTree(mortonKey, id);
+        }
+
         _entityIdFreeList.ReleaseId(id.Value);
         NetState.Remove(id);
         Position.Remove(id);
