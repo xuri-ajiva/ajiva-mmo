@@ -54,12 +54,7 @@ public class NServerEcs
 
         var chunkCoord = Grid.GetChunkCoord(position.Value, position.W);
 
-        // Add to legacy chunk storage
-        var chunk = Grid.GetChunkData(chunkCoord);
-        chunk.Add(entityId);
-        chunk.MarkDirty();
-
-        // Add to Morton-based KD-Tree
+        // Add to Morton-based KD-Tree only
         var mortonKey = chunkCoord.ToMortonKey(Grid.GridInfo.SimulationLevel, Grid.GridInfo.ChunkSize.X);
         Grid.AddEntityToTree(mortonKey, entityId);
     }

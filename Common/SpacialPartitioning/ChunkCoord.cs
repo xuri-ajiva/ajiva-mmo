@@ -62,6 +62,33 @@ public readonly partial record struct ChunkCoord(i32 X, i32 Y, i32 Z, i32 W)
         return new MortonKey(code, level);
     }
 
+    /// <summary>
+    /// Convert from Morton key back to ChunkCoord
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ChunkCoord FromMortonKey(MortonKey key, i32 chunkSize)
+    {
+        // Get the prefix for this level
+        var prefix = key.GetPrefix();
+
+        // Decode to normalized coordinates [0, 1)
+        var (xu32, yu32, zu32, wu32) = prefix.Decode();
+
+        // Convert from 32-bit fixed point back to normalized float
+        f32 x = xu32 / (f32)uint.MaxValue;
+        f32 y = yu32 / (f32)uint.MaxValue;
+        f32 z = zu32 / (f32)uint.MaxValue;
+        f32 w = wu32 / (f32)uint.MaxValue;
+
+        // Convert normalized [0, 1) to chunk coordinates
+        i32 cx = (i32)Math.Floor(x * chunkSize);
+        i32 cy = (i32)Math.Floor(y * chunkSize);
+        i32 cz = (i32)Math.Floor(z * chunkSize);
+        i32 cw = (i32)Math.Floor(w * chunkSize);
+
+        return new ChunkCoord(cx, cy, cz, cw);
+    }
+
     public Vector4 ToVector4() => new(X, Y, Z, W);
 
     public string ReadableString()

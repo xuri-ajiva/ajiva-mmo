@@ -76,10 +76,7 @@ public class ChunkSystem(
             spacialData.PreviousChunk = spacialData.CurrentChunk;
             spacialData.CurrentChunk = currentChunk;
 
-            // Update legacy chunk-based storage
-            world.Grid.MoveEntity(kv.Key, spacialData.PreviousChunk, spacialData.CurrentChunk);
-
-            // Update Morton-based KD-Tree
+            // Update Morton-based KD-Tree only (no more legacy chunk system)
             var oldKey = spacialData.PreviousChunk.ToMortonKey(world.Grid.GridInfo.SimulationLevel, world.Grid.GridInfo.ChunkSize.X);
             var newKey = spacialData.CurrentChunk.ToMortonKey(world.Grid.GridInfo.SimulationLevel, world.Grid.GridInfo.ChunkSize.X);
             world.Grid.MoveEntityInTree(oldKey, newKey, kv.Key);
@@ -124,31 +121,42 @@ public class ChunkSystem(
     [TraceInterception]
     public void SendUnloadChunk(ConnectionContext context, ChunkCoord chunkCoord)
     {
-        new ToClientPackets.ChunkUnloadPacket(chunkCoord, world.Grid.GetChunkData(chunkCoord).Entities
+        // Get Morton key for this chunk
+        var mortonKey = chunkCoord.ToMortonKey(world.Grid.GridInfo.SimulationLevel, world.Grid.GridInfo.ChunkSize.X);
+
+        // Try to get node from KD-Tree
+        List<EntityId> entityIds = [];
+        if (world.Grid.TryGetTreeNode(mortonKey, out var node))
+        {
+            entityIds = node.GetEntities();
+        }
+
+        new ToClientPackets.ChunkUnloadPacket(chunkCoord, entityIds
             .Select(x => new NetEntId(_serverId, x)).ToList()).Send(context.Connection);
     }
 
-    public void SendLoadChunk(ConnectionContext context, ChunkCoord chunkCoord)
+    public void SendLoadChunk(ConnectionContext context, ChunkCoord chunkCoord, KDTreeNode node)
     {
-        var chunk = world.Grid.GetChunkData(chunkCoord);
-        using var _ = chunk.UseLock();
-        new ToClientPackets.ChunkLoadPacket(chunkCoord, chunk.Entities
+        new ToClientPackets.ChunkLoadPacket(chunkCoord, node.GetEntities()
             .Select(x => new NetEntId(_serverId, x)).ToList()).Send(context.Connection);
     }
 
 
     private void SendChunkUpdates()
     {
-        // Get all dirty chunks from the spatial grid
-        var dirtyChunks = world.Grid.GetDirtyChunks().ToList();
+        // Get all dirty nodes from the KD-Tree
+        var dirtyNodes = world.Grid.GetDirtyTreeNodes().ToList();
 
-        if (dirtyChunks.Count == 0) return;
+        if (dirtyNodes.Count == 0) return;
         List<ConnectionContext> visibleChunksSnapshot = [];
-        foreach (var (chunkCoord, chunk) in dirtyChunks)
+        foreach (var (mortonKey, node) in dirtyNodes)
         {
-            //if (chunk.Entities.Count == 0) continue; we still need to delta removed entities
-            if (chunk.Entities.Count == 0 &&
-                !world.Grid.TryGetDeltaInfo(chunkCoord, out var added, out var removed)) continue;
+            // Convert Morton key back to ChunkCoord for network compatibility
+            var chunkCoord = ChunkCoord.FromMortonKey(mortonKey, world.Grid.GridInfo.ChunkSize.X);
+
+            //if (node.Entities.Count == 0) continue; we still need to delta removed entities
+            if (node.Entities.Count == 0 &&
+                !world.Grid.TryGetTreeDeltaInfo(mortonKey, out var added, out var removed)) continue;
             visibleChunksSnapshot.Clear();
             foreach (var context in _networkSystem._connectionContexts.Values)
             {
@@ -160,14 +168,14 @@ public class ChunkSystem(
 
             if (visibleChunksSnapshot.Count == 0) continue;
 
-            using var chunkData = BuildChunkData(chunkCoord, chunk);
+            using var chunkData = BuildChunkData(chunkCoord, mortonKey, node);
 
             // Send to all players who can see this chunk
             foreach (var context in visibleChunksSnapshot)
             {
                 if (context.LoadedChunks.Add(chunkCoord))
                 {
-                    SendLoadChunk(context, chunkCoord);
+                    SendLoadChunk(context, chunkCoord, node);
                 }
 
                 context.Connection.Send(chunkData);
@@ -178,12 +186,12 @@ public class ChunkSystem(
         world.Grid.ClearDirtyFlags();
     }
 
-    private SerializedMessage BuildChunkData(ChunkCoord chunkCoord, SpatialChunk chunk)
+    private SerializedMessage BuildChunkData(ChunkCoord chunkCoord, MortonKey mortonKey, KDTreeNode node)
     {
         var serializer = new SerializedMessage();
         var writer = new MemoryPackWriter<ReusableLinkedArrayBufferWriter>(ref serializer.Writer, serializer.State);
 
-        if (world.Grid.TryGetDeltaInfo(chunkCoord, out var added, out var removed))
+        if (world.Grid.TryGetTreeDeltaInfo(mortonKey, out var added, out var removed))
         {
             var addedIds = (added ?? []).Select(x => new NetEntId(_serverId, x)).ToList();
             var removedIds = (removed ?? []).Select(x => new NetEntId(_serverId, x)).ToList();
@@ -194,9 +202,9 @@ public class ChunkSystem(
         ChunkData<RotationChunkData> rotations = new([], []);
         ChunkData<ScaleChunkData> scales = new([], []);
 
-        using var _ = chunk.UseLock();
+        var entities = node.GetEntities();
         u8 i = 0;
-        foreach (var entityId in chunk.Entities)
+        foreach (var entityId in entities)
         {
             if (!world.Position.TryGet(entityId, out var position))
                 position = default;

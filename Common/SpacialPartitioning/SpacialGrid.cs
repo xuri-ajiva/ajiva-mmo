@@ -14,17 +14,20 @@ public readonly partial record struct SpacialGridInfo(ChunkCoord ChunkSize, i32 
 /// <summary>
 /// Spatial grid using Morton-encoded 4D Hashed KD-Tree
 /// Manages both simulation nodes (deep levels) and aggregator nodes (shallow levels)
+///
+/// SERVER: Uses KD-Tree for entity storage and spatial queries
+/// CLIENT: Uses legacy chunk-based storage (server sends ChunkCoord reference frames)
 /// </summary>
 public class SpacialGrid
 {
     public SpacialGridInfo GridInfo { get; }
 
-    // Legacy chunk-based storage (for backward compatibility during migration)
+    // Legacy chunk-based storage (used by CLIENT for receiving server updates)
     private readonly ConcurrentDictionary<ChunkCoord, SpatialChunk> _chunks = new();
     private readonly ConcurrentDictionary<ChunkCoord, List<EntityId>> _deltaAdded = new();
     private readonly ConcurrentDictionary<ChunkCoord, List<EntityId>> _deltaRemoved = new();
 
-    // New Morton-based KD-Tree
+    // Morton-based KD-Tree (used by SERVER for entity storage and queries)
     private readonly HashedKDTree _kdTree;
 
     public SpacialGrid(SpacialGridInfo spacialGridInfo)
@@ -51,7 +54,7 @@ public class SpacialGrid
         return chunkCoord.ToMortonKey(level, GridInfo.ChunkSize.X);
     }
 
-    // Legacy chunk-based API (maintained for backward compatibility)
+    // Legacy chunk-based API (maintained for CLIENT compatibility)
     public ConcurrentDictionary<ChunkCoord, SpatialChunk> Chunks => _chunks;
 
     public SpatialChunk GetChunkData(ChunkCoord chunkCoord) =>
@@ -65,6 +68,10 @@ public class SpacialGrid
     public bool TryGetChunk(ChunkCoord chunkCoord, [MaybeNullWhen(false)] out SpatialChunk chunk) =>
         _chunks.TryGetValue(chunkCoord, out chunk);
 
+    /// <summary>
+    /// Move entity between chunks (CLIENT ONLY - for legacy chunk tracking)
+    /// Server should use MoveEntityInTree instead
+    /// </summary>
     public void MoveEntity(EntityId entityId, ChunkCoord oldCoord, ChunkCoord newCoord)
     {
         // Legacy chunk-based movement
@@ -113,6 +120,14 @@ public class SpacialGrid
     public void MoveEntityInTree(MortonKey oldKey, MortonKey newKey, EntityId entityId)
     {
         _kdTree.MoveEntity(oldKey, newKey, entityId);
+    }
+
+    /// <summary>
+    /// Try to get a node from the KD-Tree
+    /// </summary>
+    public bool TryGetTreeNode(MortonKey key, [MaybeNullWhen(false)] out KDTreeNode node)
+    {
+        return _kdTree.TryGetNode(key, out node);
     }
 
     /// <summary>

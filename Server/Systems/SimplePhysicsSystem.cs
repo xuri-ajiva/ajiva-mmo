@@ -64,7 +64,12 @@ public class SimplePhysicsSystem(NServerEcs world) : IServerSystem
 
             if (world.Spacial.TryGet(entityId, out var spacial))
             {
-                world.Grid.GetChunkData(spacial.CurrentChunk).MarkDirty();
+                // Mark KD-Tree node as dirty
+                var mortonKey = spacial.CurrentChunk.ToMortonKey(world.Grid.GridInfo.SimulationLevel, world.Grid.GridInfo.ChunkSize.X);
+                if (world.Grid.TryGetTreeNode(mortonKey, out var node))
+                {
+                    node.MarkDirty();
+                }
             }
         }
     }

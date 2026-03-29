@@ -86,7 +86,12 @@ public partial class NetworkSystem : IServerPacketHandler<ConnectionContext>, QS
         world.Scale.Update(entity).Value = transform.Scale;
         if (world.Spacial.TryGet(entity, out var spacialData))
         {
-            world.Grid.GetChunkData(spacialData.CurrentChunk).MarkDirty();
+            // Mark KD-Tree node as dirty
+            var mortonKey = spacialData.CurrentChunk.ToMortonKey(world.Grid.GridInfo.SimulationLevel, world.Grid.GridInfo.ChunkSize.X);
+            if (world.Grid.TryGetTreeNode(mortonKey, out var node))
+            {
+                node.MarkDirty();
+            }
         }
     }
 

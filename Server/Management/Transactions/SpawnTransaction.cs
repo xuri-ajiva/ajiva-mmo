@@ -43,11 +43,14 @@ public class SpawnTransaction(ILogger<SpawnTransaction> logger, NServerEcs ecs) 
                         var pos = new Vector3(x, MinBounds.Y, z);
                         var entity = prefab.Generator(worldWrapper, pos, Quaternion.Identity);
                         var chunkCoord = ecs.Grid.GetChunkCoord(pos, 0);
-                        var spatialChunk = ecs.Grid.GetChunkData(chunkCoord);
+
+                        // Add to spatial data and KD-Tree
                         ecs.Spacial.Add(entity,
                             new SpacialData { CurrentChunk = chunkCoord, PreviousChunk = chunkCoord });
-                        spatialChunk.Add(entity);
-                        spatialChunk.MarkDirty();
+
+                        var mortonKey = chunkCoord.ToMortonKey(ecs.Grid.GridInfo.SimulationLevel, ecs.Grid.GridInfo.ChunkSize.X);
+                        ecs.Grid.AddEntityToTree(mortonKey, entity);
+
                         count++;
                     }
                 }
