@@ -70,7 +70,7 @@ public class EntityWidgets(
                     ImGui.Text("No Network State");
                 }
 
-                if (world.Grid?.GetChunkCoord(transform.Position, transform.Level) is { } chunk)
+                if (world.Grid?.GetChunkCoord(transform.Position, transform.W) is { } chunk)
                 {
                     ImGui.Text($"Chunk Coord: {chunk}");
                     var spatialChunk = world.Grid.GetChunkData(chunk);

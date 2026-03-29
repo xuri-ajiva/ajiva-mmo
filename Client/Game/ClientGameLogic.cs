@@ -199,7 +199,7 @@ public partial class ClientGameLogic : IDisposable
         Lock.Scope scope = default;
         try
         {
-            if (Grid is not null && Grid.TryGetChunk(Grid.GetChunkCoord(trans.Position, trans.Level), out var chunk))
+            if (Grid is not null && Grid.TryGetChunk(Grid.GetChunkCoord(trans.Position, trans.W), out var chunk))
             {
                 scope = chunk.UseLock();
                 // ADDED: When the entity is FINALLY hard-deleted by auto-cleanup, 
