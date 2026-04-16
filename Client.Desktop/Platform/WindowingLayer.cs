@@ -112,7 +112,7 @@ public class WindowingLayer(
                 break;
 
             case SDLEventType.WindowMouseEnter or SDLEventType.WindowMouseLeave or SDLEventType.WindowFocusGained
-                or SDLEventType.WindowFocusLost or SDLEventType.WindowMoved:
+                or SDLEventType.WindowFocusLost or SDLEventType.WindowMoved or SDLEventType.WindowPixelSizeChanged or SDLEventType.WindowSafeAreaChanged or SDLEventType.WindowResized or SDLEventType.WindowExposed:
                 break;
 
             default:

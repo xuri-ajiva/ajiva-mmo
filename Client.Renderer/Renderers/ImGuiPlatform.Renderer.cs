@@ -9,6 +9,7 @@ using Client.Wgsl;
 using GlmSharp;
 using Hexa.NET.ImGui;
 using Hexa.NET.SDL3;
+using Silk.NET.Maths;
 using Silk.NET.WebGPU;
 using Silk.NET.WebGPU.Safe;
 using SixLabors.ImageSharp.PixelFormats;
@@ -31,7 +32,8 @@ public partial class ImGuiPlatform
 
     private readonly Dictionary<ImTextureID, TextureBindCacheEntry> _textures = [];
 
-    private unsafe void RenderImDrawData(ImDrawDataPtr drawData, RenderPassEncoderPtr pass)
+    private unsafe void RenderImDrawData(ImDrawDataPtr drawData, RenderPassEncoderPtr pass,
+        Vector2D<u32> surfaceSize)
     {
         if (drawData.CmdListsCount == 0) return;
 
@@ -124,6 +126,9 @@ public partial class ImGuiPlatform
                     Vector2.Zero);
                 var clipMax = Vector2.Min((new Vector2(pcmd.ClipRect.Z, pcmd.ClipRect.W) - clipOff) * clipScale,
                     io.DisplaySize * io.DisplayFramebufferScale);
+                
+                // clamp Max Window again
+                clipMax = Vector2.Min(clipMax, surfaceSize.As<f32>().ToSystem());
 
                 if (clipMax.X <= clipMin.X || clipMax.Y <= clipMin.Y)
                     continue;

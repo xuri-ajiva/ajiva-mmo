@@ -79,7 +79,7 @@ public partial class ImGuiPlatform(
                     LoadOp.Clear, StoreOp.Store, default)
             ], null, null,
             null);
-        RenderImDrawData(drawData, pass);
+        RenderImDrawData(drawData, pass, surfaceGuard.Size);
 
         pass.End();
         queueGuard.Queue.Submit(cmd.Finish());
