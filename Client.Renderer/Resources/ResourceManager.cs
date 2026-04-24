@@ -145,6 +145,15 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "m_currentCount")]
     static extern ref i32 SemaphoreSlim_currentCount(SemaphoreSlim semaphore);
 
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "m_waitCount")]
+    static extern ref i32 SemaphoreSlim_waitCount(SemaphoreSlim semaphore);
+
+    public i32 GetLoadsInFlight()
+    {
+        ref var count = ref SemaphoreSlim_waitCount(_loadSem);
+        return count;
+    }
+
     public void UpdateMaxConcurrentLoads(i32 maxConcurrentLoads)
     {
         if (maxConcurrentLoads > 100)

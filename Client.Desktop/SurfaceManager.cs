@@ -119,10 +119,11 @@ public class SurfaceManager(RendererApi api, ILogger<SurfaceManager> logger) : I
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
+        api.Poll();
         foreach (var surface in _windowSurfaces.Values)
         {
-            surface.Ptr.Release();
             surface.Texture?.Release();
+            surface.Ptr.Release();
         }
 
         _windowSurfaces.Clear();

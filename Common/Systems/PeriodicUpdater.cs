@@ -67,6 +67,10 @@ public class PeriodicUpdater : IHostedLifecycleService
         private bool _disposed;
         private AjivaClock _clock;
         public bool TraceNextRun { get; set; }
+        private readonly TaskCompletionSource _stopping = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task Stopping => _stopping.Task;
+        public Task Started => _started.Task;
 
         private readonly Channel<Action> _dispatchChannel = Channel.CreateUnbounded<Action>(new UnboundedChannelOptions
         {
@@ -79,7 +83,6 @@ public class PeriodicUpdater : IHostedLifecycleService
             ArgumentNullException.ThrowIfNull(update);
             using var l = _locker.EnterScope();
             _tasks.Add(update);
-            if (!_disposed) _running = true;
         }
 
         public void RemoveTask(UpdateRunnerDelegate action)
@@ -93,18 +96,14 @@ public class PeriodicUpdater : IHostedLifecycleService
 
         public void StartDynamicUpdater(TimeSpan interval)
         {
-            if (interval == TimeSpan.MaxValue)
+            using var l = _locker.EnterScope();
+            if (interval == TimeSpan.MaxValue || _running)
                 return;
 
+            _running = true;
             _thread = new Thread(() =>
             {
-                while (!_running)
-                {
-                    Thread.Sleep(interval == TimeSpan.Zero ? TimeSpan.FromMilliseconds(5) : interval);
-                    RunDispatcher();
-                    if (_disposed) return;
-                }
-
+                _started.SetResult();
                 _clock.Start();
                 while (_running && !_disposed)
                 {
@@ -121,6 +120,7 @@ public class PeriodicUpdater : IHostedLifecycleService
                     Thread.Sleep(interval);
                 }
 
+                _stopping.SetResult();
                 while (!_disposed)
                 {
                     RunDispatcher();
@@ -149,12 +149,6 @@ public class PeriodicUpdater : IHostedLifecycleService
             }
         }
 
-        public void Dispose()
-        {
-            _disposed = true;
-            _running = false;
-            _thread?.Join();
-        }
 
         public void RunOnce()
         {
@@ -195,6 +189,18 @@ public class PeriodicUpdater : IHostedLifecycleService
             ArgumentNullException.ThrowIfNull(action);
             _dispatchChannel.Writer.TryWrite(action);
         }
+
+        public void StopUpdates()
+        {
+            _running = false;
+        }
+
+        public void Dispose()
+        {
+            _disposed = true;
+            _running = false;
+            _thread?.Join();
+        }
     }
 
     private readonly Dictionary<UpdateCycle, UpdateRunner> _updateData = new();
@@ -215,10 +221,9 @@ public class PeriodicUpdater : IHostedLifecycleService
         InitRunners();
     }
 
-    private Task InitRunners()
+    private async Task InitRunners()
     {
-        if (Running)
-            return Task.CompletedTask;
+        if (Running) return;
         Running = true;
 
         var updaterSection = _configuration.GetRequiredSection("PeriodicUpdater");
@@ -236,8 +241,7 @@ public class PeriodicUpdater : IHostedLifecycleService
             r.StartDynamicUpdater(interval);
         }
 
-
-        return Task.CompletedTask;
+        await Task.WhenAny(_updateData.Select(x => x.Value.Started));
     }
 
 
@@ -306,9 +310,20 @@ public class PeriodicUpdater : IHostedLifecycleService
 
         foreach (var runner in _updateData.Values)
         {
+            runner.StopUpdates();
+        }
+
+        return Task.WhenAll(_updateData.Select(x => x.Value.Stopping));
+    }
+
+    private Task DisposeRunners()
+    {
+        foreach (var runner in _updateData.Values)
+        {
             runner.Dispose();
         }
 
+        _updateData.Clear();
         return Task.CompletedTask;
     }
 
@@ -317,5 +332,5 @@ public class PeriodicUpdater : IHostedLifecycleService
     public Task StartingAsync(CancellationToken cancellationToken) => InitRunners();
     public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StoppingAsync(CancellationToken cancellationToken) => StopRunners();
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StoppedAsync(CancellationToken cancellationToken) => DisposeRunners();
 }
