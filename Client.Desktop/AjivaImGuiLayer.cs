@@ -141,16 +141,30 @@ public class AjivaImGuiLayer : IAjivaLayer, IDisposable, IEventHandler<AjivaKeyb
                 Instrumentation.Instance?.StartActivity(ActivityKind.Client, name: layer.GetType().ToString());
             if (!layer.Enabled) continue;
 
-            switch (layer)
+            if (layer is IRenderLayer renderLayer)
             {
-                case IRenderLayer renderLayer:
+                try
+                {
                     using (Instrumentation.NamedTrace("rendering"))
                         renderLayer.Render(info, target);
-                    break;
-                case IUiRenderLayer uiRenderLayer:
+                }
+                catch (Exception e)
+                {
+                    _logger.LogError(e, "Exception while rendering layer {LayerName}", layer.GetType().Name);
+                }
+            }
+
+            if (layer is IUiRenderLayer uiRenderLayer)
+            {
+                try
+                {
                     using (Instrumentation.NamedTrace("ui rendering"))
                         uiRenderLayer.RenderUi(info);
-                    break;
+                }
+                catch (Exception e)
+                {
+                    _logger.LogError(e, "Exception while rendering UI layer {LayerName}", layer.GetType().Name);
+                }
             }
         }
 
