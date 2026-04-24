@@ -6,6 +6,7 @@ using Client.UI.Desktop.wgpu;
 using Client.Wgsl;
 using Common;
 using GlmSharp;
+using Hexa.NET.SDL3;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RmlUiNet;
@@ -35,7 +36,7 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
 
     public void Initialize()
     {
-        _logger.LogInformation("Initializing Ultralight renderer {Width}x{Height}", _width, _height);
+        _logger.LogInformation("Initializing RmlUi renderer {Width}x{Height}", _width, _height);
 
 
         _renderInterface = new RmlWebGpuRenderer(
@@ -65,7 +66,7 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
             }
         }
 
-        _context = Rml.CreateContext("MainContext", new Vector2i((i32)_width, (i32)_height), _renderInterface);
+        _context = Rml.CreateContext("MainContext", new Vector2i((i32)_width, (i32)_height), _renderInterface)!;
         Debugger.Initialise(_context);
         Debugger.SetVisible(true);
         Rml.LoadFontFace("resources/Quicksand-SemiBold.ttf");
@@ -75,7 +76,7 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
         Rml.LoadFontFace("resources/LatoLatin-Regular.ttf");
         Rml.LoadFontFace("resources/NotoEmoji-Regular.ttf");
 
-        _logger.LogInformation("Ultralight renderer initialized");
+        _logger.LogInformation("RmlUi renderer initialized");
         _isReady = true;
     }
 
@@ -167,12 +168,12 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
     {
         StringBuilder rml = new();
 
-        for (i32 i = 0; i < 50; i++)
+        for (var i = 0; i < 50; i++)
         {
-            i32 index = Random.Shared.Next() % 1000;
-            i32 route = Random.Shared.Next() % 50;
-            i32 max = Random.Shared.Next() % 40 + 10;
-            i32 value = Random.Shared.Next() % max;
+            var index = Random.Shared.Next() % 1000;
+            var route = Random.Shared.Next() % 50;
+            var max = Random.Shared.Next() % 40 + 10;
+            var value = Random.Shared.Next() % max;
             rml.AppendLine($"""
                             <div class="row">
                                 <div class="col col1"><button class="expand" index="{index}">+</button>&nbsp;<a>Route {route}</a></div>
@@ -204,31 +205,60 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
 
     public void Dispose()
     {
-        _logger.LogInformation("Disposing Ultralight renderer");
+        if (!IsReady) return;
+        _logger.LogInformation("Disposing RmlUi renderer");
         _isReady = false;
+        _doc?.Close();
+        _context?.Dispose();
+        _renderInterface.Dispose();
+        Rml.Shutdown();
     }
 
     public void OnEvent(ref AjivaEvent<AjivaKeyboardEvent> inputEvent)
     {
         if (_context is null) return;
         var data = inputEvent.EventData;
-        /*switch (data.IsPressed)
+        switch (data.IsPressed)
         {
             case AjivaKeyboardEventType.KeyDown:
-                if (!_context.ProcessKeyDown(data.KeyCode.ToRmlKeyEvent(), KeyModifier.None))
+                if (!_context.ProcessKeyDown(ToRmlKeyEvent(data.KeyCode), KeyModifier.None))
                     inputEvent.Handled = true;
                 break;
             case AjivaKeyboardEventType.KeyUp:
-                if (!_context.ProcessKeyUp(data.KeyCode.ToRmlKeyEvent(), KeyModifier.None))
+                if (!_context.ProcessKeyUp(ToRmlKeyEvent(data.KeyCode), KeyModifier.None))
                     inputEvent.Handled = true;
-                break;
-            case AjivaKeyboardEventType.Key:
-                if (!_context.ProcessTextInput(char.ConvertFromUtf32((i32)data.KeyCode))) ;
-                inputEvent.Handled = true;
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
-        }*/
+        }
+    }
+
+    private KeyIdentifier ToRmlKeyEvent(SDLScancode dataKeyCode)
+    {
+        return dataKeyCode switch
+        {
+            SDLScancode.Unknown => KeyIdentifier.KI_UNKNOWN,
+            >= SDLScancode.A and <= SDLScancode.Z => KeyIdentifier.KI_A + (u8)(dataKeyCode - SDLScancode.A),
+            >= SDLScancode.Scancode1 and <= SDLScancode.Scancode9 => KeyIdentifier.KI_1 + (u8)(dataKeyCode - SDLScancode.Scancode1),
+            SDLScancode.Scancode0 => KeyIdentifier.KI_0,
+            SDLScancode.Space => KeyIdentifier.KI_SPACE,
+            SDLScancode.Minus => KeyIdentifier.KI_OEM_MINUS,
+            SDLScancode.Equals => KeyIdentifier.KI_OEM_PLUS,
+            SDLScancode.Comma => KeyIdentifier.KI_OEM_COMMA,
+            SDLScancode.Period => KeyIdentifier.KI_OEM_PERIOD,
+            SDLScancode.Slash => KeyIdentifier.KI_OEM_2,
+            SDLScancode.Backslash => KeyIdentifier.KI_OEM_5,
+            SDLScancode.Semicolon => KeyIdentifier.KI_OEM_1,
+            SDLScancode.Grave => KeyIdentifier.KI_OEM_3,
+            SDLScancode.Leftbracket => KeyIdentifier.KI_OEM_4,
+            SDLScancode.Rightbracket => KeyIdentifier.KI_OEM_6,
+            SDLScancode.Apostrophe => KeyIdentifier.KI_OEM_7,
+            SDLScancode.Capslock => KeyIdentifier.KI_OEM_8,
+            SDLScancode.Numlockclear => KeyIdentifier.KI_OEM_102,
+            >= SDLScancode.Kp1 and <= SDLScancode.Kp9 => KeyIdentifier.KI_NUMPAD1 + (u8)(dataKeyCode - SDLScancode.Kp1),
+            SDLScancode.Kp0 => KeyIdentifier.KI_NUMPAD0,
+                _ => KeyIdentifier.KI_UNKNOWN  
+        };
     }
 
 
@@ -256,7 +286,7 @@ public class RmlUiRenderer(ILoggerFactory logger, IServiceProvider services, u32
                     inputEvent.Handled = true;
                 break;
             case AjivaMouseEventType.DoubleClick:
-                    inputEvent.Handled = true;
+                inputEvent.Handled = true;
                 break;
             default:
                 throw new ArgumentOutOfRangeException();

@@ -174,6 +174,10 @@ public class RendererApi(ILogger<RendererApi> logger)
         {
             await _frameQueueAccessWaitQueue.WaitAsync(cancellationToken);
         }
+        catch (TaskCanceledException)
+        {
+            //ignore
+        }
         finally
         {
             Device.Destroy();

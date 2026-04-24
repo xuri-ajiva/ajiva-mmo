@@ -4,7 +4,7 @@ namespace Client.UI;
 
 /// <summary>
 /// Platform-agnostic UI rendering interface.
-/// Desktop: Ultralight renders to texture
+/// Desktop: RmlUi renders to texture
 /// Web: DOM manipulation via JavaScript
 /// </summary>
 public interface IUiRenderer : IDisposable

@@ -12,7 +12,7 @@ namespace Client.Renderer;
 
 /// <summary>
 /// Desktop UI rendering layer that composites UI texture over 3D content
-/// Uses Ultralight texture rendered to WebGPU
+/// Uses RmlUi texture rendered to WebGPU
 /// </summary>
 public class UiRenderLayer : IUiRenderLayer, IRenderLayer, IEventHandler<AjivaKeyboardEvent>,
     IEventHandler<AjivaMouseEvent>

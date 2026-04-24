@@ -4,7 +4,7 @@ namespace Client.UI;
 
 /// <summary>
 /// Represents a UI texture that can be uploaded to the GPU
-/// Desktop: Ultralight pixel buffer
+/// Desktop: RmlUi pixel buffer
 /// Web: Not used (direct DOM rendering)
 /// </summary>
 public interface IUiTexture
