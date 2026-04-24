@@ -31,10 +31,10 @@ public partial class ClientNetworkManager
         switch (context.ServerType)
         {
             case Packets.ServerType.EntryPoint:
-                Task.Run(Gateway.DisconnectGateway);
+                _ = Task.Run(Gateway.DisconnectGateway);
                 break;
             case Packets.ServerType.GameServer:
-                Task.Run(DisconnectGame);
+                _ = Task.Run(DisconnectGame);
                 break;
             case Packets.ServerType.Management:
             case Packets.ServerType.Unknown:
@@ -105,7 +105,6 @@ public partial class ClientNetworkManager
     private void PacketDispatcher(PacketType packetType, scoped ref MemoryPackReader reader,
         ClientConnectionContext context)
     {
-        
         // using var a = Instrumentation.NamedTrace("PacketDispatcher");
         try
         {

@@ -136,7 +136,7 @@ public class Instanced3dDeferredRenderer(
         if (_gizmoPipeline?.IsUpToDate(gizmoShader) != true)
         {
             _gizmoPipeline?.Dispose();
-            _gizmoPipeline = GizmoPipeline.Create(api, _loader, gizmoShader, _sceneGBuffer!);
+            _gizmoPipeline = GizmoPipeline.Create(_api, _loader, gizmoShader, _sceneGBuffer!);
         }
     }
 

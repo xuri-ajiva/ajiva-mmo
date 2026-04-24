@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Net;
-using Amazon.Runtime.Internal.Util;
 using Common;
 using Common.Helpers;
 using Common.Networking;
@@ -8,7 +7,6 @@ using Common.Networking.AjivaQuic;
 using Common.SpacialPartitioning;
 using NetworkPackets;
 using Server.Core;
-using Server.Systems;
 
 namespace Server.Management;
 
@@ -43,7 +41,7 @@ public partial class WorkerManagementServer(
         AssignedRegion = init.Assignment;
         LocalServerId = init.ServerId;
 
-        AsyncHelper.Run(async () =>
+        _ = AsyncHelper.Run(async () =>
         {
             if (_worker is not null)
             {
@@ -82,9 +80,9 @@ public partial class WorkerManagementServer(
     }
 
     private readonly SemaphoreSlim _connectSemaphore = new(1, 1);
+
     private async Task ConnectToNeighbors()
     {
-
         if (LocalServerId == ServerId.Invalid || clusterStateCache.ServerMap == null ||
             clusterStateCache.ClusterMap == null)
             return;

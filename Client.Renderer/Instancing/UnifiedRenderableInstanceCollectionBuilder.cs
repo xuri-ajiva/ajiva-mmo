@@ -110,7 +110,7 @@ public class UnifiedRenderableInstanceCollectionBuilder(NClientEcsWorld world, R
                 ecs.Rotation.TryGet(entity, out var rot) &&
                 ecs.Scale.TryGet(entity, out var scale))
             {
-                var cc = world.Grid!.GetChunkCoord(pos.Value, 0);
+                var cc = _world.Grid!.GetChunkCoord(pos.Value, 0);
                 const f32 max = 10.0f;
                 instance.HighlightColorRef = new Vector4(cc.X / max, cc.Y / max, cc.Z / max, 1f);
                 var currentTransform = instance.GetTransform();
@@ -135,7 +135,7 @@ public class UnifiedRenderableInstanceCollectionBuilder(NClientEcsWorld world, R
             ref var instance = ref dynamicMesh.InstanceInfos[i];
             if (ecs.Transform.TryGet(entity, out var transform))
             {
-                var cc = world.Grid!.GetChunkCoord(transform.Position, 0);
+                var cc = _world.Grid!.GetChunkCoord(transform.Position, 0);
                 const f32 max = 10.0f;
                 instance.HighlightColorRef = new Vector4(cc.X / max, cc.Y / max, cc.Z / max, 1f);
                 var currentTransform = instance.GetTransform();

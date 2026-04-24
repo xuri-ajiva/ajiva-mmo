@@ -79,7 +79,7 @@ public partial class ManagementClient(
     public Task StoppingAsync(CancellationToken cancellationToken) => _cts.CancelAsync();
 
 
-    public void Handle(Packets.Disconnect message, IQConnection userData) => Task.Run(userData.DisposeAsync);
+    public void Handle(Packets.Disconnect message, IQConnection userData) => _ = Task.Run(userData.DisposeAsync);
     public void Handle(Packets.Ping message, IQConnection userData) => Ignore.ForNow();
     public void Handle(ClusterManagementPackets.InitServer message, IQConnection userData) => Ignore.ForNow();
 
@@ -142,7 +142,7 @@ public partial class ManagementClient(
             collector.TotalServers++;
             collector.Servers.Add(serverInfoAndRegion);
 
-            Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
                 await serverInfoAndRegion.Connect(factory, instrumentation);
                 new WorkerManagement.SpawnPrefabRequest(transactionId, new PrefabId(0),

@@ -103,7 +103,7 @@ public class NetworkWidgets(
 
                 if (ImGui.Button("Start Replay"))
                 {
-                    Task.Run(async () =>
+                    _ = Task.Run(async () =>
                     {
                         try
                         {
@@ -123,7 +123,7 @@ public class NetworkWidgets(
                     ImGui.Text($"Capturing Packets: {clientNetwork.Capturer.CapturedPackets.Count} packets captured");
                     if (ImGui.Button("Stop Capture"))
                     {
-                        Task.Run(async () =>
+                        _ = Task.Run(async () =>
                         {
                             try
                             {

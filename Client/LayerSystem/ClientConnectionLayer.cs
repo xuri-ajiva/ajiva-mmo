@@ -39,12 +39,12 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager) : IUiRen
             ImGui.InputText("Address Gateway", ref _address, 100);
             if (ImGui.Button("Connect Gateway"))
             {
-                Task.Run(() => networkManager.Gateway.ConnectGateway(_address));
+                _ = Task.Run(() => networkManager.Gateway.ConnectGateway(_address));
             }
 
             if (ImGui.Button("Disconnect Gateway"))
             {
-                Task.Run(networkManager.Gateway.DisconnectGateway);
+                _ = Task.Run(networkManager.Gateway.DisconnectGateway);
             }
 
             ImGui.TextWrapped($"Gateway Server: {networkManager.Gateway.Client}");
@@ -52,7 +52,7 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager) : IUiRen
             ImGui.InputText("Address Game", ref _address, 100);
             if (networkManager.Gateway.Client.IsNotConnected && ImGui.Button("Connect Game"))
             {
-                Task.Run(() => networkManager.ConnectGame(_address));
+                _ = Task.Run(() => networkManager.ConnectGame(_address));
             }
 
             if (networkManager.GameServerEndpoints.Length == 0)
@@ -66,24 +66,24 @@ public class ClientConnectionLayer(ClientNetworkManager networkManager) : IUiRen
                 ImGui.Text(networkManager.GameServerEndpoints.Length.ToString());
                 if (ImGui.Button("Connect To All"))
                 {
-                    Task.Run(networkManager.ConnectToAllGameServers);
+                    _ = Task.Run(networkManager.ConnectToAllGameServers);
                 }
 
                 foreach (var serverEndpoint in networkManager.GameServerEndpoints)
                 {
                     if (ImGui.Button($"Connect to {serverEndpoint}"))
                     {
-                        Task.Run(() => networkManager.ConnectGame(serverEndpoint));
+                        _ = Task.Run(() => networkManager.ConnectGame(serverEndpoint));
                     }
                 }
             }
 
             if (networkManager.IsConnected && ImGui.Button("Disconnect Game"))
             {
-                Task.Run(networkManager.DisconnectGame);
+                _ = Task.Run(networkManager.DisconnectGame);
             }
 
-            ImGui.TextWrapped($"Game Server: {networkManager}");
+            ImGui.TextWrapped($"Game Server: {networkManager.RemoteEndPoint}");
         }
 
         ImGui.End();

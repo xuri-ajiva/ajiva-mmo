@@ -64,7 +64,7 @@ public partial class PbrGBufferShader
             Transform3 = new vec4(transform.M41, transform.M42, transform.M43, transform.M44);
         }
 
-        public Matrix4x4 GetTransform()
+        public readonly Matrix4x4 GetTransform()
         {
             return new Matrix4x4(
                 Transform0.x, Transform0.y, Transform0.z, Transform0.w,

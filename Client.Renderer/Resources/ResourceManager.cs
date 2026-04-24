@@ -10,6 +10,7 @@ using SixLabors.ImageSharp.Processing;
 using Client.Wgsl;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Common.Helpers;
 using Hexa.NET.ImGui;
 using Silk.NET.Maths;
 using Silk.NET.WebGPU.Safe;
@@ -230,7 +231,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
             return;
         }
 
-        Task.Run(async () =>
+        _ = AsyncHelper.Run(async () =>
         {
             try
             {
@@ -246,7 +247,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
             {
                 _loadSem.Release();
             }
-        });
+        }, Logger);
     }
 
     public AjivaTexture AsyncTextureLoad(string path, TextureUsage usage = TextureUsage.TextureBinding,
@@ -413,6 +414,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
             return testAgainst.EndsWith(join, StringComparison.InvariantCultureIgnoreCase);
         }
 
+        Exception? e = null;
         var errors = 0;
         try
         {
@@ -423,8 +425,9 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
                 return foundFile;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            e = ex;
             errors++;
         }
 
@@ -437,8 +440,9 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
                 return foundFile2;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            e = ex;
             errors++;
         }
 
@@ -456,12 +460,13 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
                 return foundFile4;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            e = ex;
             errors++;
         }
 
-        Logger.LogError(
+        Logger.LogError(e,
             "Failed to find file '{FilePath}' in any of the searched locations. Errors: {Errors}, Checks: 5", filePath,
             errors);
 
@@ -560,7 +565,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
             return;
         }
 
-        Task.Run(async () =>
+        _ = AsyncHelper.Run(async () =>
         {
             try
             {
@@ -591,7 +596,7 @@ public class ResourceManager(RendererApi api, ILogger<ResourceManager> logger)
             {
                 _loadSem.Release();
             }
-        });
+        }, Logger);
     }
 
     public MeshData<T> CreateMesh<T>(string label, ReadOnlySpan<T> modelVertices, ReadOnlySpan<u32> indices)

@@ -18,7 +18,6 @@ namespace Server.Systems;
 /// </summary>
 public class ChunkSystem(
     ILogger<ChunkSystem> logger,
-    Instrumentation instrumentation,
     NServerEcs world,
     GameServerInstanceConfig config)
     : IServerSystem

@@ -16,7 +16,6 @@ namespace Client.Game;
 /// </summary>
 [ExcludeFromInterception]
 public class PlayerInputSystem(
-    ClientGameLogic gameLogic,
     ClientNetworkManager networkManager,
     ICamera camera,
     ILogger<PlayerInputSystem> logger)

@@ -2,7 +2,21 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
+  
   <ItemGroup>
+    <PackageReference Include="ErrorProne.NET.CoreAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="ErrorProne.NET.Structs">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageVersion Include="ErrorProne.NET.CoreAnalyzers" Version="0.8.2-beta.1" />
+    <PackageVersion Include="ErrorProne.NET.Structs" Version="0.6.1-beta.1" />
     <PackageVersion Include="Mars.Numerics" Version="5.3.1" />
     <PackageVersion Include="YamlDotNet" Version="16.3.0" />
     <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.1.1" />

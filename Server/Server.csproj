@@ -15,7 +15,6 @@
 
     <ItemGroup>
         <PackageReference Include="GlmSharp-netstandard" />
-        <PackageReference Include="Mars.Life.Simulations" />
     </ItemGroup>
 
     <ItemGroup>

@@ -119,8 +119,9 @@ public class PixelSamplingPipeline : IDisposable
             _resultStagingBuffer.Unmap();
             return result;
         }
-        catch
+        catch (Exception e)
         {
+            _api._logger.LogError(e, "Failed to read result buffer mapping");
             return null;
         }
     }
