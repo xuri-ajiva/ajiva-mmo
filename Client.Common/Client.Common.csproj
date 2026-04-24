@@ -10,6 +10,7 @@
     
     <ItemGroup>
         <InternalsVisibleTo Include="Client"/>
+        <InternalsVisibleTo Include="Client.Editor"/>
         <Compile Include="../Common/GlobalUsings.cs"/>
     </ItemGroup>
     

@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Ajiva.Ecs;
 using Client.Renderer;
 using Client.Renderer.Instancing;
 using Client.Renderer.PbrRenderer;
@@ -23,7 +24,7 @@ public class EntityWidgets(
     Instanced3dDeferredRenderer renderer,
     ResourceManager loader,
     Scene scene,
-    PeriodicUpdater periodicUpdater) : IEditorWidget
+    PeriodicUpdater periodicUpdater) : IEditorWidget, IEditorWidgetStatusRight, IEditorWidgetStatusCenter
 {
     private bool _entityInspectorEnabled = true, _controlsEnabled = true, _resourceLoaderEnabled = true;
     private EntityId _selectedEntityId = EntityId.Invalid;
@@ -180,7 +181,7 @@ public class EntityWidgets(
                         if (ImGui.ImageButton("ChooseTextureA", new ImTextureRef(texId: texture.View.GetIntPtr()),
                                 new Vector2(imageButtonSize)))
                         {
-                            Task.Run(() =>
+                            _ = Task.Run(() =>
                             {
                                 var pickResult = Nfd.FileOpen([
                                     new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
@@ -204,7 +205,7 @@ public class EntityWidgets(
                         if (ImGui.ImageButton("ChooseTextureN", new ImTextureRef(texId: normalTexture.View.GetIntPtr()),
                                 new Vector2(imageButtonSize)))
                         {
-                            Task.Run(() =>
+                            _ = Task.Run(() =>
                             {
                                 var pickResult = Nfd.FileOpen([
                                     new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
@@ -228,7 +229,7 @@ public class EntityWidgets(
                         if (ImGui.ImageButton("ChooseTextureE", new ImTextureRef(texId: emission.View.GetIntPtr()),
                                 new Vector2(imageButtonSize)))
                         {
-                            Task.Run(() =>
+                            _ = Task.Run(() =>
                             {
                                 var pickResult = Nfd.FileOpen([
                                     new NfdFilter { Description = "Image files", Specification = "png,jpg,jpeg,bmp" }
@@ -370,6 +371,33 @@ public class EntityWidgets(
             ImGui.MenuItem("Controls", string.Empty, ref _controlsEnabled);
             ImGui.MenuItem("Resource Loader", string.Empty, ref _resourceLoaderEnabled);
             ImGui.EndMenu();
+        }
+    }
+
+    public void RenderStatusRight()
+    {
+    }
+
+    public void RenderStatusCenter()
+    {
+        ImGui.TextColored(new Vector4(.9f, .9f, .5f, 1f), nameof(NClientEcsWorld));
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip($"Entities: {world._entityIdFreeList.Count}");
+        }
+
+        ImGui.TextColored(new Vector4(.5f, .9f, .5f, 1f), nameof(ResourceManager));
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(
+                $"InFlightLoads: {loader.GetLoadsInFlight()}, Meshes: {loader.GetAllMeshes().Length}, Textures: {loader.GetAllTextures().Count}");
+        }
+
+        ImGui.TextColored(new Vector4(.5f, .5f, .9f, 1f), nameof(Scene));
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(
+                $"(Opaque: {scene.RenderableInstances.OpaqueMeshes.Sum(x => x._instanceInfos.Count)}; Transparent: {scene.RenderableInstances.TransparentMeshes.Sum(x => x._instanceInfos.Count)}; Gizmo: {scene.RenderableInstances.GizmoMeshes.Sum(x => x._instanceInfos.Count)}");
         }
     }
 }

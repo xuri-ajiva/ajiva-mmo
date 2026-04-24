@@ -40,7 +40,7 @@ public class NClientEcsWorld
         ClearAllEntities();
     }
 
-    private FreeList _entityIdFreeList = new(1);
+    internal FreeList _entityIdFreeList = new(1);
 
     public EntityId CreateEntity() => new(_entityIdFreeList.GetFreeId());
 

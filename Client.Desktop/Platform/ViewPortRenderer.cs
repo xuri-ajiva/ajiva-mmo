@@ -41,8 +41,6 @@ public class ViewPortRenderer(Instanced3dDeferredRenderer renderer) : IRenderLay
 
         renderer.PixelReadRequest = new uvec2(Math.Clamp((u32)mousePosition.X, 0, width - 1),
             Math.Clamp((u32)mousePosition.Y, 0, height - 1));
-        
-        ImGui.Text($"Mouse: {ImGui.GetMousePos()}, Cursor: {ImGui.GetCursorPos()}, WindowPos: {ImGui.GetWindowPos()}, DpiScale: {ImGui.GetWindowDpiScale()}, Request: {renderer.PixelReadRequest}, {renderer.PixelReadResult}");
 
         if (renderer.Render(info, target, width, height, _isSceneViewHovered) is { } colorOutput)
         {
@@ -53,6 +51,8 @@ public class ViewPortRenderer(Instanced3dDeferredRenderer renderer) : IRenderLay
                 _isSceneViewHovered = ImGui.IsItemHovered();
             }
         }
+        
+        ImGui.Text($"Mouse: {ImGui.GetMousePos()}, Cursor: {ImGui.GetCursorPos()}, WindowPos: {ImGui.GetWindowPos()}, DpiScale: {ImGui.GetWindowDpiScale()}, Request: {renderer.PixelReadRequest}, {renderer.PixelReadResult}");
 
         ImGui.End();
         ImGui.PopStyleVar();
