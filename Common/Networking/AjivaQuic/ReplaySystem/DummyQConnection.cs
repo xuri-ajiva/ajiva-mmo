@@ -5,7 +5,7 @@ using NetworkPackets;
 
 namespace Common.Networking.AjivaQuic.ReplaySystem;
 
-[ExcludeFromInterception]
+/*[ExcludeFromInterception]
 public class DummyQConnection : IQConnection
 {
     private static readonly IPEndPoint IpEndPoint = new(IPAddress.Loopback, 0);
@@ -22,4 +22,4 @@ public class DummyQConnection : IQConnection
     public void Send(SerializedMessage message, u8 streamId = 0) => Ignore.Value(message);
 
     public void Start() => Ignore.ForEver();
-}
+}*/

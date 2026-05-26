@@ -1,142 +1,112 @@
 ﻿using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.IO.Pipelines;
 using System.Net.Quic;
-using System.Threading.Channels;
+using Common.Helpers;
 using Interception;
+using Microsoft.Extensions.Logging;
 using NetworkPackets;
-using Serilog;
 
 namespace Common.Networking.AjivaQuic;
 
-public class QStream(
-    QuicStream stream,
-    QConnection qConnection,
-    Instrumentation instrumentation,
-    i32 bufferSize = 64 * 1024 * 1024)
-    : IDisposable
+public class QStream : IDisposable
 {
-    private readonly Instrumentation _instrumentation = instrumentation;
-    private readonly MessageDecoder _decoder = new(instrumentation);
-    private readonly ResizableRingBuffer _writeBuffer = new(bufferSize);
+    private readonly Instrumentation _instrumentation;
+    private readonly Pipe _outboundPipe, _inboundPipe;
     private readonly SemaphoreSlim _dataAvailableSignal = new(1, 1);
 
-    private readonly Histogram<f64>? _inMeter = instrumentation.Meter?.CreateHistogram<f64>(
-            "QStream_ReadMessages_Duration_" + stream.Id, "ms", "Duration of ReadMessages call"),
+    private readonly Histogram<f64>? _inMeter, _outMeter;
+    private readonly QuicStream _stream;
+    private readonly Task _readerTask, _writerTask;
+    public i64 Id => _stream.Id;
+
+    public QStream(QuicStream stream,
+        Instrumentation instrumentation,
+        ILogger logger,
+        CancellationToken token = default)
+    {
+        _stream = stream;
+        _instrumentation = instrumentation;
+        /*
+        _inMeter = instrumentation.Meter?.CreateHistogram<f64>(
+            "QStream_ReadMessages_Duration_" + stream.Id, "ms", "Duration of ReadMessages call");
         _outMeter = instrumentation.Meter?.CreateHistogram<f64>("QStream_Flush_Duration_" + stream.Id, "ms",
             "Duration of Flush call");
+            */
 
-    internal record struct RentedPartialBuffer(u8[] Buffer, i32 Length);
+        const i32 pauseThreshold = 1024 * 1024;
+        var options = new PipeOptions(pauseWriterThreshold: pauseThreshold, resumeWriterThreshold: pauseThreshold / 2);
+        _outboundPipe = new Pipe(options);
+        _inboundPipe = new Pipe(options);
+        /*_readerTask = ReadOutPipeAsync(token);
+        _writerTask = WriteInPipeAsync(token);*/
 
-    private readonly Channel<RentedPartialBuffer> _channel = Channel.CreateBounded<RentedPartialBuffer>(
-        new BoundedChannelOptions(20)
-            { FullMode = BoundedChannelFullMode.Wait, SingleWriter = true });
-
-    [ExcludeFromInterception]
-    public async ValueTask ReadMessages(CancellationToken token = default)
-    {
-        var startingTimestamp = Stopwatch.GetTimestamp();
-        var rent = ArrayPool<u8>.Shared.Rent(bufferSize);
-        var partialRent = new RentedPartialBuffer(rent, await stream.ReadAsync(rent, token));
-        await _channel.Writer.WriteAsync(partialRent, token);
-        _inMeter?.Record(Stopwatch.GetElapsedTime(startingTimestamp).TotalMilliseconds);
-    }
-
-
-    public void DecodeMessages(PacketHandleDelegate<QConnection> handler)
-    {
-        while (_channel.Reader.TryRead(out var rentedBuffer))
+        if (stream.CanWrite)
         {
-            try
-            {
-                _decoder.DecodeMessages(rentedBuffer.Buffer.AsSpan(0, rentedBuffer.Length), handler, qConnection);
-            }
-            catch (Exception e)
-            {
-                Log.Error(e, "Exception during message decoding");
-            }
-            finally
-            {
-                ArrayPool<u8>.Shared.Return(rentedBuffer.Buffer);
-            }
+            _writerTask = AsyncHelper.Run(
+                () => _outboundPipe.Reader.CopyToAsync(_stream, cancellationToken: token),
+                logger, token);
+        }
+
+        if (stream.CanRead)
+        {
+            _readerTask = AsyncHelper.Run(
+                () => _stream.CopyToAsync(_inboundPipe.Writer, cancellationToken: token),
+                logger, token);
         }
     }
+
+    private async Task WriteInPipeAsync(CancellationToken token)
+    {
+        await _stream.CopyToAsync(_inboundPipe.Writer, cancellationToken: token);
+    }
+
+    public PipeWriter Writer => _outboundPipe.Writer;
+    public PipeReader Reader => _inboundPipe.Reader;
 
     [TraceInterception]
-    public async Task FlushAsync(CancellationToken token)
+    private async Task ReadOutPipeAsync(CancellationToken token)
     {
-        var startingTimestamp = Stopwatch.GetTimestamp();
-        while (_writeBuffer.DataAvailable() > 0)
+        await _outboundPipe.Reader.CopyToAsync(_stream, token);
+        return;
+
+        while (true)
         {
-            var part = _writeBuffer.ConsumePart();
-            stream.Write(part.Span);
-            await stream.FlushAsync(token);
-        }
+            var startingTimestamp = Stopwatch.GetTimestamp();
 
-        await _dataAvailableSignal.WaitAsync(token);
-        _outMeter?.Record(Stopwatch.GetElapsedTime(startingTimestamp).TotalMilliseconds);
-    }
+            var readResult = await _outboundPipe.Reader.ReadAsync(token);
 
-    public i32 PendingWriteBytes() => _writeBuffer.DataAvailable();
-    public i32 FreeBytes() => _writeBuffer.FreeSpace();
+            foreach (var memory in readResult.Buffer)
+            {
+                await _stream.WriteAsync(memory, token);
+                _outboundPipe.Writer.Advance(memory.Length);
+            }
 
-    public Lock.Scope EnterLock()
-    {
-        return _writeBuffer.EnterLock();
-    }
+            await _stream.FlushAsync(token);
+            _outMeter?.Record(Stopwatch.GetElapsedTime(startingTimestamp).TotalMilliseconds);
 
-    public void WriteLength(u64 nextMessageLength)
-    {
-        if (nextMessageLength == 0)
-        {
-            return;
-        }
-
-        Span<u8> lengthBytes = stackalloc u8[BitPackingHelper.MaxVarLength];
-        var bytesWritten = lengthBytes.PackVarU64(nextMessageLength);
-        _writeBuffer.Write(lengthBytes[..bytesWritten]);
-    }
-
-    public void WriteData(Span<u8> memorySpan)
-    {
-        _writeBuffer.Write(memorySpan);
-    }
-
-    public void SignalDataAvailable()
-    {
-        if (_dataAvailableSignal.CurrentCount != 0) return;
-
-        try
-        {
-            _dataAvailableSignal.Release();
-        }
-        catch (SemaphoreFullException)
-        {
-            /* ignore race */
+            if (readResult.IsCompleted || readResult.IsCanceled) break;
         }
     }
 
     public void Close()
     {
-        stream.Close();
+        _stream.Close();
     }
 
     public void Close(SerializedMessage msg)
     {
-        using var @lock = EnterLock();
-        WriteLength(msg.Length);
-        foreach (var memory in msg)
-        {
-            WriteData(memory.Span);
-        }
-
-        Task.WaitAll(FlushAsync(CancellationToken.None));
-        stream.Close();
+        //todo remove
+        Debugger.Break();
+        _stream.Close();
     }
 
     public void Dispose()
     {
+        _readerTask.Dispose();
+        _writerTask.Dispose();
         _dataAvailableSignal.Dispose();
-        stream.Dispose();
+        _stream.Dispose();
     }
 }

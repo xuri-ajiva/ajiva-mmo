@@ -1,6 +1,8 @@
 ﻿using System.Net;
 using System.Net.Quic;
 using System.Net.Security;
+using Common.Networking.Rpc;
+using Common.Rpc;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -31,14 +33,17 @@ public class QFactory(IServiceProvider provider)
 
     public QServer CreateServer(IPEndPoint? iPEndPoint)
     {
-        return new QServer(QuickServerFactory(provider, iPEndPoint), provider.GetRequiredService<ILogger<QServer>>());
+        return new QServer(QuickServerFactory(provider, iPEndPoint), provider,
+            provider.GetRequiredService<ILogger<QServer>>());
     }
 
     public QClient CreateClient(IPEndPoint? endPoint = null)
     {
-        return new QClient(provider.GetService<QuicClientConnectionOptions>()
-                           ?? MakeClientOptions(endPoint),
-            provider.GetRequiredService<ILogger<QClient>>());
+        return new QClient(
+            provider.GetService<QuicClientConnectionOptions>() ?? MakeClientOptions(endPoint),
+            provider.GetRequiredService<RpcSystemRegistry>(),
+            provider.GetRequiredService<ILogger<QClient>>()
+        );
     }
 
     private static QuicServerConnectionOptions MakeServerOptions()

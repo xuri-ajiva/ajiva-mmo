@@ -19,7 +19,7 @@ public class NetworkPacketCapturer
     }
 
 
-    public void AddPacket(PacketType packetType, scoped ref MemoryPack.MemoryPackReader reader)
+    public void AddPacket(i32 packetType, scoped ref MemoryPack.MemoryPackReader reader)
     {
         var delta = Stopwatch.GetElapsedTime(_startTime);
 
@@ -130,7 +130,7 @@ public class NetworkPacketCapturer
         {
             await fs.ReadExactlyAsync(metaBuffer, token);
             var deltaTicks = BitConverter.ToInt64(metaBuffer.AsSpan(0, 8));
-            var packetType = (PacketType)BitConverter.ToInt32(metaBuffer.AsSpan(8, 4));
+            var packetType = /*(PacketType)*/BitConverter.ToInt32(metaBuffer.AsSpan(8, 4));
             var dataLength = BitConverter.ToInt32(metaBuffer.AsSpan(12, 4));
 
             var dataBuffer = new u8[dataLength];

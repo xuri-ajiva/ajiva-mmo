@@ -1,4 +1,5 @@
-﻿using Interception;
+﻿using System.Diagnostics;
+using Interception;
 
 namespace Common.Networking.AjivaQuic.ReplaySystem;
 
@@ -11,7 +12,6 @@ public class CaptureClient(IQClient qClient, string fileName = "network_replay.a
 
     public ConnectionState State => _qClient.State;
 
-    public IQConnection? Connection => _qClient.Connection;
 
     public async ValueTask ConnectAsync(Instrumentation instrumentation, string? ipEndpoint = null, CancellationToken token = default)
     {
@@ -25,12 +25,14 @@ public class CaptureClient(IQClient qClient, string fileName = "network_replay.a
         await _qClient.DisconnectAsync();
     }
 
-    public void HandlePackets(PacketHandleDelegate<IQConnection> handler)
+    public void HandlePackets()
     {
-        _qClient.HandlePackets((packetType, ref reader, connection) =>
+        Debugger.Break();
+        
+        /*_qClient.HandlePackets((packetType, ref reader, connection) =>
         {
             _capturer.AddPacket(packetType, ref reader);
             handler(packetType, ref reader, connection);
-        });
+        });*/
     }
 }

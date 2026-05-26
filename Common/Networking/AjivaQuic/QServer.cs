@@ -1,7 +1,11 @@
 ﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Quic;
+using Common.Networking.Rpc;
+using Common.Rpc;
 using Interception;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NetworkPackets;
 
@@ -10,19 +14,22 @@ namespace Common.Networking.AjivaQuic;
 
 public interface QServerEventListener
 {
-    void OnClientConnected(QuicListener server, IQConnection connection);
-    void OnClientDisconnected(IQConnection connection);
+    void OnClientConnected(QuicListener server, QServerConnection connection);
+    void OnClientDisconnected(QServerConnection connection);
     void OnConnectionFailed(QuicListener server, IPEndPoint? connection, Exception exception);
 }
 
-public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAsyncDisposable, IQServer
+public class QServer(QuicListenerOptions options, IServiceProvider provider, ILogger<QServer> logger)
+    : IAsyncDisposable, IQServer
 {
     private QuicListener? _server;
     private readonly CancellationTokenSource _cts = new();
-    private readonly ConcurrentBag<QConnection> _connections = [];
+    private readonly ConcurrentBag<(IServiceScope scope, QServerConnection qConnection)> _connections = [];
     private Task? _listenTask;
     public IPEndPoint? LocalEndPoint => _server?.LocalEndPoint;
-    private readonly TaskCompletionSource _readyHandle = new();
+    private readonly TaskCompletionSource _readyHandle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private bool _asyncPacketHandling = true;
 
     public void SendToAll(SerializedMessage message)
     {
@@ -30,7 +37,9 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
         {
             try
             {
-                connection.Send(message);
+                Debugger.Break();
+
+                //connection.Send(message);
             }
             catch (Exception e)
             {
@@ -40,9 +49,9 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
     }
 
     [ExcludeFromInterception]
-    public void Start(QServerEventListener eventListener, Instrumentation instrumentation)
+    public void Start(QServerEventListener eventListener)
     {
-        _listenTask = RunListener(eventListener, instrumentation);
+        _listenTask = RunListener(eventListener);
     }
 
     public async ValueTask DisposeAsync()
@@ -55,15 +64,25 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
         _cts.Dispose();
     }
 
-    public void HandlePackets(PacketHandleDelegate<IQConnection> handler)
+    public void HandlePacketsAsync()
     {
+        _asyncPacketHandling = true;
         foreach (var connection in _connections)
         {
-            connection.HandlePackets(handler);
+            connection.qConnection.StreamHandler.PollContinuously(connection.qConnection);
         }
     }
 
-    private async Task RunListener(QServerEventListener? eventListener, Instrumentation instrumentation)
+    public void HandlePackets()
+    {
+        foreach (var connection in _connections)
+        {
+            connection.qConnection.StreamHandler.Poll(connection.qConnection);
+            //       connection.HandlePackets(handler);
+        }
+    }
+
+    private async Task RunListener(QServerEventListener? eventListener)
     {
         try
         {
@@ -72,16 +91,26 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
                 options.ListenEndPoint);
             _readyHandle.SetResult();
             IPEndPoint? endPoint = null;
+            var registry = provider.GetRequiredService<RpcSystemRegistry>();
             while (!_cts.IsCancellationRequested)
             {
                 try
                 {
+                    var scope = provider.CreateScope();
                     var connection = await _server.AcceptConnectionAsync(_cts.Token);
                     endPoint = connection.RemoteEndPoint;
                     logger.LogInformation("Connection accepted {Connection}", connection);
-                    var qConnection = await QConnectionEstablisher.Server(connection, instrumentation, _cts.Token);
-                    qConnection.StartLoops();
-                    _connections.Add(qConnection);
+                    var qConnection = new QServerConnection(connection, registry, logger);
+                    logger.LogInformation("Initializing connection {Connection}", connection);
+                    await qConnection.Init(_cts.Token);
+                    if (_asyncPacketHandling)
+                    {
+                        qConnection.StreamHandler.PollContinuously(qConnection);
+                        logger.LogInformation("Setup packet handling for connection {Connection}", connection);
+                    }
+
+                    _connections.Add((scope, qConnection));
+                    logger.LogInformation("Connection {Connection} started", connection);
                     eventListener?.OnClientConnected(_server, qConnection);
                 }
                 catch (Exception e)
@@ -107,7 +136,7 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
         options.ListenEndPoint = endPoint;
     }
 
-    public IEnumerable<QConnection> GetConnections() => _connections;
+    public IEnumerable<QServerConnection> GetConnections() => _connections.Select(c => c.qConnection);
 
     public async Task WaitForReady()
     {
@@ -124,5 +153,19 @@ public class QServer(QuicListenerOptions options, ILogger<QServer> logger) : IAs
 
         if (_listenTask is not null)
             await _listenTask;
+    }
+}
+
+public class QServerConnection(QuicConnection connection, RpcSystemRegistry registry, ILogger logger)
+    : QClientBase(registry, logger, connection)
+{
+    private readonly QConnectionStreamHandler _streamHandler = new(registry, logger);
+    public override IStreamHandler StreamHandler => _streamHandler;
+
+    public async ValueTask Init(CancellationToken token)
+    {
+        State = ConnectionState.Connecting;
+        await _streamHandler.Init(Connection, null, false, token);
+        State = ConnectionState.Connected;
     }
 }

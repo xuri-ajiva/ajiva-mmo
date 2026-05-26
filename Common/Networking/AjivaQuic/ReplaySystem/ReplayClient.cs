@@ -8,7 +8,7 @@ public class ReplayClient(NetworkPacketCapturer capturer) : IQClient
 {
     public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
 
-    public IQConnection Connection => new DummyQConnection();
+    //public IQConnection Connection => new DummyQConnection();
 
     public ValueTask ConnectAsync(Instrumentation instrumentation, string? ipEndpoint = null,
         CancellationToken token = default)
@@ -25,6 +25,7 @@ public class ReplayClient(NetworkPacketCapturer capturer) : IQClient
         return Task.CompletedTask;
     }
 
+    /*
     public void HandlePackets(PacketHandleDelegate<IQConnection> handler)
     {
         MemoryPackReaderOptionalState? state = null;
@@ -60,5 +61,5 @@ public class ReplayClient(NetworkPacketCapturer capturer) : IQClient
             if (state is IDisposable disposable)
                 disposable.Dispose();
         }
-    }
+    }*/
 }
