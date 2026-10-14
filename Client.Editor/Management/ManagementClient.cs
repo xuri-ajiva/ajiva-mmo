@@ -8,6 +8,7 @@ using Common.Config;
 using Common.Helpers;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
+using Common.Rpc;
 using Common.SpacialPartitioning;
 using NetworkPackets;
 using Polly;
@@ -21,7 +22,7 @@ public partial class ManagementClient(
     QFactory factory,
     Instrumentation instrumentation) : IHostedLifecycleService, IClusterWorkerPacketHandler<IQConnection>
 {
-    public QClient ClusterManager = factory.CreateClient();
+    public readonly QClient ClusterManager = factory.CreateClient();
     private Task? _backgroundTask;
     private readonly CancellationTokenSource _cts = new();
     public Dictionary<ServerId, PerServerManagementWorker> Servers = new();
@@ -53,6 +54,12 @@ public partial class ManagementClient(
                 async ct => await ClusterManager.ConnectAsync(instrumentation, config.ClusterManagerAddress, ct),
                 _cts.Token);
         Debug.Assert(ClusterManager.Connection != null, "ClusterManager.Connection != null");
+
+        ClusterManager.GetProxy<IGatewayServerForWorkers>()
+            .RegisterObserver();
+
+        ClusterManager.
+        
         new ClusterManagementPackets.RegisterObserver().Send(ClusterManager.Connection);
 
         while (!_cts.IsCancellationRequested)

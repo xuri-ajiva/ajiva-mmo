@@ -6,6 +6,7 @@ using Common.Config;
 using Common.Helpers;
 using Common.Networking;
 using Common.Networking.AjivaQuic;
+using Common.Rpc;
 using Common.SpacialPartitioning;
 using NetworkPackets;
 using Polly;
@@ -48,10 +49,9 @@ public partial class ClusterManagerClient(
 
         await mmServer.Server.WaitForReady();
         logger.LogInformation("Registering server with ClusterManager");
-        new ClusterManagementPackets.RegisterServer(
-            Guid.NewGuid().ToString("D"),
+        _client.GetProxy<IGatewayServerForWorkers>().RegisterServer(Guid.NewGuid().ToString("D"),
             mmServer.LocalEndPoint!.Port, Stopwatch.GetTimestamp()
-        ).Send(_client.Connection!);
+        );
 
         // Start handling management packets
         _ = Task.Run(async () => await HandlePacketsLoop(cancellationToken), cancellationToken);
@@ -65,6 +65,7 @@ public partial class ClusterManagerClient(
             {
                 if (_client.Connection != null)
                 {
+                    _client.PollAsync();
                     _client.HandlePackets((packetType, ref reader, userData) =>
                     {
                         logger.LogInformation("Received cluster managing packet: {PacketType}", packetType);
@@ -109,7 +110,7 @@ public partial class ClusterManagerClient(
         clusterStateCache.UpdateServerMap(message.Servers);
         mmServer.NotifyServerListUpdated();
     }
-    
+
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;

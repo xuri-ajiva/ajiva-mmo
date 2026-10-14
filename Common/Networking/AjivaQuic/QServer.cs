@@ -7,7 +7,6 @@ using Common.Rpc;
 using Interception;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using NetworkPackets;
 
 
 namespace Common.Networking.AjivaQuic;
@@ -24,10 +23,11 @@ public class QServer(QuicListenerOptions options, IServiceProvider provider, ILo
 {
     private QuicListener? _server;
     private readonly CancellationTokenSource _cts = new();
-    private readonly ConcurrentBag<(IServiceScope scope, QServerConnection qConnection)> _connections = [];
+    private readonly List<QServerConnection> _connections = [];
     private Task? _listenTask;
     public IPEndPoint? LocalEndPoint => _server?.LocalEndPoint;
     private readonly TaskCompletionSource _readyHandle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private QServerEventListener? _eventListener;
 
     private bool _asyncPacketHandling = true;
 
@@ -51,7 +51,8 @@ public class QServer(QuicListenerOptions options, IServiceProvider provider, ILo
     [ExcludeFromInterception]
     public void Start(QServerEventListener eventListener)
     {
-        _listenTask = RunListener(eventListener);
+        _eventListener = eventListener;
+        _listenTask = RunListener();
     }
 
     public async ValueTask DisposeAsync()
@@ -69,7 +70,7 @@ public class QServer(QuicListenerOptions options, IServiceProvider provider, ILo
         _asyncPacketHandling = true;
         foreach (var connection in _connections)
         {
-            connection.qConnection.StreamHandler.PollContinuously(connection.qConnection);
+            connection.StreamHandler.PollContinuously(connection);
         }
     }
 
@@ -77,12 +78,12 @@ public class QServer(QuicListenerOptions options, IServiceProvider provider, ILo
     {
         foreach (var connection in _connections)
         {
-            connection.qConnection.StreamHandler.Poll(connection.qConnection);
+            connection.StreamHandler.Poll(connection);
             //       connection.HandlePackets(handler);
         }
     }
 
-    private async Task RunListener(QServerEventListener? eventListener)
+    private async Task RunListener()
     {
         try
         {
@@ -100,22 +101,22 @@ public class QServer(QuicListenerOptions options, IServiceProvider provider, ILo
                     var connection = await _server.AcceptConnectionAsync(_cts.Token);
                     endPoint = connection.RemoteEndPoint;
                     logger.LogInformation("Connection accepted {Connection}", connection);
-                    var qConnection = new QServerConnection(connection, registry, logger);
+                    var qConnection = new QServerConnection(connection, registry, logger, scope);
                     logger.LogInformation("Initializing connection {Connection}", connection);
-                    await qConnection.Init(_cts.Token);
+                    await qConnection.Init(this, _cts.Token);
                     if (_asyncPacketHandling)
                     {
                         qConnection.StreamHandler.PollContinuously(qConnection);
                         logger.LogInformation("Setup packet handling for connection {Connection}", connection);
                     }
 
-                    _connections.Add((scope, qConnection));
+                    _connections.Add(qConnection);
                     logger.LogInformation("Connection {Connection} started", connection);
-                    eventListener?.OnClientConnected(_server, qConnection);
+                    _eventListener?.OnClientConnected(_server, qConnection);
                 }
                 catch (Exception e)
                 {
-                    eventListener?.OnConnectionFailed(_server, endPoint, e);
+                    _eventListener?.OnConnectionFailed(_server, endPoint, e);
                     logger.LogError(e, "Error accepting connection");
                 }
             }
@@ -124,6 +125,21 @@ public class QServer(QuicListenerOptions options, IServiceProvider provider, ILo
         {
             logger.LogError(e, "Error in listener");
         }
+    }
+
+    public void RemoveConnection(QServerConnection connection)
+    {
+        _eventListener?.OnClientDisconnected(connection);
+        if (_connections.Remove(connection))
+        {
+            logger.LogInformation("Connection {Connection} removed", connection);
+        }
+        else
+        {
+            logger.LogInformation("Connection {Connection} not found", connection);
+        }
+
+        connection.Dispose();
     }
 
     public void Stop()
@@ -136,7 +152,7 @@ public class QServer(QuicListenerOptions options, IServiceProvider provider, ILo
         options.ListenEndPoint = endPoint;
     }
 
-    public IEnumerable<QServerConnection> GetConnections() => _connections.Select(c => c.qConnection);
+    public IEnumerable<QServerConnection> GetConnections() => _connections;
 
     public async Task WaitForReady()
     {
@@ -156,16 +172,32 @@ public class QServer(QuicListenerOptions options, IServiceProvider provider, ILo
     }
 }
 
-public class QServerConnection(QuicConnection connection, RpcSystemRegistry registry, ILogger logger)
-    : QClientBase(registry, logger, connection)
+public class QServerConnection(
+    QuicConnection connection,
+    RpcSystemRegistry registry,
+    ILogger logger,
+    IServiceScope scope)
+    : QClientBase(registry, logger, connection), IDisposable
 {
     private readonly QConnectionStreamHandler _streamHandler = new(registry, logger);
     public override IStreamHandler StreamHandler => _streamHandler;
+    private CancellationTokenSource? _cts;
+    private CancellationTokenRegistration _registration;
 
-    public async ValueTask Init(CancellationToken token)
+    public async ValueTask Init(QServer qServer, CancellationToken token)
     {
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        _registration = _cts.Token.Register(() => qServer.RemoveConnection(this));
         State = ConnectionState.Connecting;
-        await _streamHandler.Init(Connection, null, false, token);
+        await _streamHandler.Init(Connection!, null, false, _cts);
         State = ConnectionState.Connected;
+    }
+
+    public void Dispose()
+    {
+        _registration.Unregister();
+        _registration.Dispose();
+        _cts?.Dispose();
+        scope.Dispose();
     }
 }

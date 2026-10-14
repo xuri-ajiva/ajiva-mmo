@@ -1,33 +1,38 @@
-﻿using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.IO.Pipelines;
 using System.Net.Quic;
-using Common.Helpers;
 using Interception;
 using Microsoft.Extensions.Logging;
-using NetworkPackets;
 
 namespace Common.Networking.AjivaQuic;
 
 public class QStream : IDisposable
 {
     private readonly Instrumentation _instrumentation;
+    private readonly ILogger _logger;
+    private readonly CancellationToken _token;
     private readonly Pipe _outboundPipe, _inboundPipe;
     private readonly SemaphoreSlim _dataAvailableSignal = new(1, 1);
+    private readonly Lock _writeLock = new();
 
     private readonly Histogram<f64>? _inMeter, _outMeter;
     private readonly QuicStream _stream;
+    private readonly QConnectionStreamHandler _streamHandler;
     private readonly Task _readerTask, _writerTask;
     public i64 Id => _stream.Id;
 
     public QStream(QuicStream stream,
+        QConnectionStreamHandler streamHandler,
         Instrumentation instrumentation,
         ILogger logger,
         CancellationToken token = default)
     {
         _stream = stream;
+        _streamHandler = streamHandler;
         _instrumentation = instrumentation;
+        _logger = logger;
+        _token = token;
         /*
         _inMeter = instrumentation.Meter?.CreateHistogram<f64>(
             "QStream_ReadMessages_Duration_" + stream.Id, "ms", "Duration of ReadMessages call");
@@ -44,16 +49,35 @@ public class QStream : IDisposable
 
         if (stream.CanWrite)
         {
-            _writerTask = AsyncHelper.Run(
-                () => _outboundPipe.Reader.CopyToAsync(_stream, cancellationToken: token),
-                logger, token);
+            _writerTask = Task.Run(() => WrapAsync(_outboundPipe.Reader.CopyToAsync(_stream, cancellationToken: token)),
+                token);
         }
 
         if (stream.CanRead)
         {
-            _readerTask = AsyncHelper.Run(
-                () => _stream.CopyToAsync(_inboundPipe.Writer, cancellationToken: token),
-                logger, token);
+            _readerTask = Task.Run(() => WrapAsync(_stream.CopyToAsync(_inboundPipe.Writer, cancellationToken: token)),
+                token);
+        }
+    }
+
+    private async Task? WrapAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (QuicException e) when (_streamHandler.IsQuicErrAbort(e))
+        {
+            //
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_token.IsCancellationRequested)
+                _streamHandler.CloseIfOpen();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error in QStream {StreamId}", Id);
         }
     }
 
@@ -64,6 +88,17 @@ public class QStream : IDisposable
 
     public PipeWriter Writer => _outboundPipe.Writer;
     public PipeReader Reader => _inboundPipe.Reader;
+
+    public QStreamWriterGuard AcquireWriter()
+    {
+        _writeLock.Enter();
+        return new QStreamWriterGuard(this, _outboundPipe.Writer);
+    }
+
+    internal void ReleaseWriter()
+    {
+        _writeLock.Exit();
+    }
 
     [TraceInterception]
     private async Task ReadOutPipeAsync(CancellationToken token)
@@ -108,5 +143,22 @@ public class QStream : IDisposable
         _writerTask.Dispose();
         _dataAvailableSignal.Dispose();
         _stream.Dispose();
+    }
+}
+
+public readonly struct QStreamWriterGuard(QStream stream, PipeWriter writer) : IDisposable
+{
+    public PipeWriter Writer { get; } = writer;
+
+    public void Dispose()
+    {
+        try
+        {
+            Writer.FlushAsync().AsTask().Wait();
+        }
+        finally
+        {
+            stream.ReleaseWriter();
+        }
     }
 }

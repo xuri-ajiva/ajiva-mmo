@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -34,7 +34,7 @@ public class RpcSourceGenerator : IIncrementalGenerator
         var interfaceSyntax = (InterfaceDeclarationSyntax)context.Node;
         var semanticModel = context.SemanticModel;
 
-        if (semanticModel.GetDeclaredSymbol(interfaceSyntax) is not INamedTypeSymbol interfaceSymbol)
+        if (semanticModel.GetDeclaredSymbol(interfaceSyntax) is not { } interfaceSymbol)
             return null;
 
         // Check if interface has [RpcSystem] attribute
@@ -64,6 +64,7 @@ public class RpcSourceGenerator : IIncrementalGenerator
         {
             InterfaceSymbol = interfaceSymbol,
             InterfaceName = interfaceSymbol.Name,
+            Name = interfaceSymbol.Name.TrimStart(),
             InterfaceNamespace = interfaceSymbol.ContainingNamespace.ToDisplayString(),
             InterfaceFullyQualified = interfaceSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             RpcSystemName = name,
@@ -87,7 +88,7 @@ public class RpcSourceGenerator : IIncrementalGenerator
             // Generate the source code
             var source = GenerateRpcSystemSource(rpcSystemInfo, systemHash);
 
-            var fileName = $"{rpcSystemInfo.InterfaceNamespace}.{rpcSystemInfo.InterfaceName}.g.cs";
+            var fileName = $"{rpcSystemInfo.InterfaceNamespace}.{rpcSystemInfo.Name}.g.cs";
             context.AddSource(fileName, SourceText.From(source, Encoding.UTF8));
         }
     }
@@ -116,10 +117,6 @@ public class RpcSourceGenerator : IIncrementalGenerator
                 info.InterfaceName);
             context.ReportDiagnostic(diagnostic);
         }
-
-        // Check methods for issues
-        var methodIdMap = new Dictionary<int, string>();
-        int methodId = 1;
 
         foreach (var method in info.Methods)
         {
@@ -159,45 +156,103 @@ public class RpcSourceGenerator : IIncrementalGenerator
                     returnType);
                 context.ReportDiagnostic(diagnostic);
             }
-
-            methodIdMap[methodId] = method.Name;
-            methodId++;
         }
+    }
+
+    private bool IsPrimitiveUnmanaged(ITypeSymbol type)
+    {
+        return type.SpecialType is
+            SpecialType.System_Byte or SpecialType.System_SByte or
+            SpecialType.System_Int16 or SpecialType.System_Int32 or SpecialType.System_Int64 or
+            SpecialType.System_UInt16 or SpecialType.System_UInt32 or SpecialType.System_UInt64 or
+            SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal or
+            SpecialType.System_Boolean or SpecialType.System_Char;
     }
 
     private bool IsSupportedType(ITypeSymbol type)
     {
-        var displayString = type.ToDisplayString();
-
-        // Primitive types that can be written as unmanaged
-        if (displayString.StartsWith("System."))
+        // Handle nullable types by checking their underlying type
+        if (type.NullableAnnotation == NullableAnnotation.Annotated)
         {
-            return displayString is "System.String" or "System.Byte[]" or "System.ReadOnlySpan<System.Byte>" or 
-                   "System.Byte" or "System.Int16" or "System.Int32" or "System.Int64" or 
-                   "System.UInt16" or "System.UInt32" or "System.UInt64" or
-                   "System.Single" or "System.Double" or "System.Decimal" or
-                   "System.Boolean" or "System.Char";
+            var nonNullable = type.WithNullableAnnotation(NullableAnnotation.None);
+            if (!nonNullable.Equals(type, SymbolEqualityComparer.Default))
+            {
+                return IsSupportedType(nonNullable);
+            }
         }
 
-        // Arrays are supported if element type is supported
+        var displayString = type.ToDisplayString();
+
+        if (displayString == "Common.Networking.Rpc.IRpcContext")
+            return true;
+
+        if (displayString.StartsWith("System.Nullable<"))
+        {
+            if (type is INamedTypeSymbol namedType && namedType.TypeArguments.Length == 1)
+            {
+                return IsSupportedType(namedType.TypeArguments[0]);
+            }
+
+            return false;
+        }
+
+        // Check if it's Span or ReadOnlySpan
+        if (displayString.StartsWith("System.ReadOnlySpan<") || displayString.StartsWith("System.Span<"))
+        {
+            if (type is INamedTypeSymbol namedType && namedType.TypeArguments.Length == 1)
+            {
+                return IsSupportedType(namedType.TypeArguments[0]);
+            }
+
+            return false;
+        }
+
+        // Check if it's Memory or ReadOnlyMemory
+        if (displayString.StartsWith("System.ReadOnlyMemory<") || displayString.StartsWith("System.Memory<"))
+        {
+            if (type is INamedTypeSymbol namedType && namedType.TypeArguments.Length == 1)
+            {
+                return IsSupportedType(namedType.TypeArguments[0]);
+            }
+
+            return false;
+        }
+
+        // Check arrays
         if (type is IArrayTypeSymbol arrayType)
         {
             return IsSupportedType(arrayType.ElementType);
         }
 
-        // Custom types (assumed to be serializable)
-        return !displayString.Contains("?");
-    }
+        // Check enums
+        if (type.TypeKind == TypeKind.Enum)
+        {
+            return true;
+        }
 
-    private bool IsUnmanagedType(ITypeSymbol type)
-    {
-        var displayString = type.ToDisplayString();
+        // Check unmanaged types (Guid, Vector3, etc.)
+        if (type.IsUnmanagedType)
+        {
+            return true;
+        }
 
-        // Only primitive unmanaged types, excluding string and byte arrays
-        return displayString is "System.Byte" or "System.Int16" or "System.Int32" or "System.Int64" or 
-               "System.UInt16" or "System.UInt32" or "System.UInt64" or
-               "System.Single" or "System.Double" or "System.Decimal" or
-               "System.Boolean" or "System.Char";
+        // Check generic collections
+        if (type is INamedTypeSymbol namedSymbol && namedSymbol.IsGenericType)
+        {
+            var containingNamespace = namedSymbol.ContainingNamespace?.ToDisplayString();
+            if (containingNamespace == "System.Collections.Generic")
+            {
+                return namedSymbol.TypeArguments.All(IsSupportedType);
+            }
+        }
+
+        // System namespace fallback: only allow known primitive types and String
+        if (displayString.StartsWith("System.") || type.ContainingNamespace?.ToDisplayString() == "System")
+        {
+            return type.SpecialType == SpecialType.System_String || IsPrimitiveUnmanaged(type);
+        }
+
+        return true;
     }
 
     private string GenerateSystemHash(RpcSystemInfo info)
@@ -212,7 +267,8 @@ public class RpcSourceGenerator : IIncrementalGenerator
             sb.Append('+');
             sb.Append(method.Name);
             sb.Append('(');
-            foreach (var param in method.Parameters.Where(p => p.Type.ToDisplayString() != "Common.Networking.Rpc.IRpcContext"))
+            foreach (var param in method.Parameters.Where(p =>
+                         p.Type.ToDisplayString() != "Common.Networking.Rpc.IRpcContext"))
             {
                 sb.Append(';');
                 // Use fully qualified names, keep readable characters
@@ -239,7 +295,6 @@ public class RpcSourceGenerator : IIncrementalGenerator
         sb.AppendLine("using MemoryPack.Internal;");
         sb.AppendLine("using Microsoft.Extensions.DependencyInjection;");
         sb.AppendLine("using Microsoft.Extensions.Logging;");
-        sb.AppendLine("using NetworkPackets;");
         sb.AppendLine();
 
         sb.AppendLine($"namespace {info.InterfaceNamespace};");
@@ -283,14 +338,14 @@ public class RpcSourceGenerator : IIncrementalGenerator
         sb.AppendLine("[CompilerGenerated]");
         sb.AppendLine("static string MethodIdToString(u16 methodId) => methodId switch");
         sb.EnterScope();
-        
+
         int methodId = 1;
         foreach (var method in info.Methods)
         {
             sb.AppendLine($"{methodId} => \"{GetMethodSignatureString(method)}\",");
             methodId++;
         }
-        
+
         sb.AppendLine("_ => \"Unknown\"");
         sb.ExitScope(addSemicolon: true);
         sb.AppendLine();
@@ -321,10 +376,31 @@ public class RpcSourceGenerator : IIncrementalGenerator
             {
                 sb.AppendLine("var args = new System.Collections.Generic.List<string>();");
 
+                var nullableParams = nonContextParams
+                    .Where(p => IsNullableValueType(p.Type, out _))
+                    .ToList();
+
+                if (nullableParams.Count > 0)
+                {
+                    var maskType = GetMaskType(nullableParams.Count);
+                    sb.AppendLine($"var nullMask = reader.ReadUnmanaged<{maskType}>();");
+                }
+
                 foreach (var param in nonContextParams)
                 {
-                    var deserializeCall = GetDeserializeCall(param.Type);
-                    sb.AppendLine($"var arg_{param.Name} = {deserializeCall};");
+                    if (IsNullableValueType(param.Type, out var underlyingType))
+                    {
+                        int nullableIndex = nullableParams.IndexOf(param);
+                        var deserializeCall = GetDeserializeCall(underlyingType);
+                        sb.AppendLine(
+                            $"var arg_{param.Name} = ((nullMask & (1 << {nullableIndex})) != 0) ? {deserializeCall} : ({param.Type.ToDisplayString()})null;");
+                    }
+                    else
+                    {
+                        var deserializeCall = GetDeserializeCall(param.Type);
+                        sb.AppendLine($"var arg_{param.Name} = {deserializeCall};");
+                    }
+
                     sb.AppendLine($"args.Add($\"{param.Name}={{arg_{param.Name}}}\");");
                 }
 
@@ -349,6 +425,10 @@ public class RpcSourceGenerator : IIncrementalGenerator
         // Dispatch method
         sb.AppendLine("void IRpcSystem.Dispatch(IRpcContext context, u16 methodId, ReadOnlySpan<u8> payload)");
         sb.EnterScope();
+        sb.AppendLine("var prevContext = RpcContext.CurrentInternal;");
+        sb.AppendLine("RpcContext.CurrentInternal = context;");
+        sb.AppendLine("try");
+        sb.EnterScope();
         sb.AppendLine("var reader = new MemoryPackReader(payload, null!);");
         sb.AppendLine("switch (methodId)");
         sb.EnterScope();
@@ -361,6 +441,19 @@ public class RpcSourceGenerator : IIncrementalGenerator
 
             // Deserialize parameters
             var parametersList = new List<string>();
+            var nonContextParams = method.Parameters
+                .Where(p => p.Type.ToDisplayString() != "Common.Networking.Rpc.IRpcContext")
+                .ToList();
+
+            var nullableParams = nonContextParams
+                .Where(p => IsNullableValueType(p.Type, out _))
+                .ToList();
+
+            if (nullableParams.Count > 0)
+            {
+                var maskType = GetMaskType(nullableParams.Count);
+                sb.AppendLine($"var nullMask = reader.ReadUnmanaged<{maskType}>();");
+            }
 
             foreach (var param in method.Parameters)
             {
@@ -371,8 +464,19 @@ public class RpcSourceGenerator : IIncrementalGenerator
                 }
                 else
                 {
-                    var deserializeCall = GetDeserializeCall(param.Type);
-                    sb.AppendLine($"var arg_{param.Name} = {deserializeCall};");
+                    if (IsNullableValueType(param.Type, out var underlyingType))
+                    {
+                        int nullableIndex = nullableParams.IndexOf(param);
+                        var deserializeCall = GetDeserializeCall(underlyingType);
+                        sb.AppendLine(
+                            $"var arg_{param.Name} = ((nullMask & (1 << {nullableIndex})) != 0) ? {deserializeCall} : ({param.Type.ToDisplayString()})null;");
+                    }
+                    else
+                    {
+                        var deserializeCall = GetDeserializeCall(param.Type);
+                        sb.AppendLine($"var arg_{param.Name} = {deserializeCall};");
+                    }
+
                     parametersList.Add($"arg_{param.Name}");
                 }
             }
@@ -390,7 +494,8 @@ public class RpcSourceGenerator : IIncrementalGenerator
         // Default case
         sb.AppendLine("default:");
         sb.Indent();
-        sb.AppendLine("context.Logger.LogWarning(\"Received call to unknown method id {MethodId} for system {SystemHash}\",");
+        sb.AppendLine(
+            "context.Logger.LogWarning(\"Received call to unknown method id {MethodId} for system {SystemHash}\",");
         sb.Indent();
         sb.AppendLine("methodId,");
         sb.AppendLine("((IRpcSystem)this).SystemHash);");
@@ -401,7 +506,11 @@ public class RpcSourceGenerator : IIncrementalGenerator
         sb.ExitScope();
         sb.AppendLine("reader.Dispose();");
         sb.ExitScope();
-
+        sb.AppendLine("finally");
+        sb.EnterScope();
+        sb.AppendLine("RpcContext.CurrentInternal = prevContext;");
+        sb.ExitScope();
+        sb.ExitScope();
         sb.ExitScope();
     }
 
@@ -410,19 +519,19 @@ public class RpcSourceGenerator : IIncrementalGenerator
         var parameters = string.Join(", ", method.Parameters
             .Where(p => p.Type.ToDisplayString() != "Common.Networking.Rpc.IRpcContext")
             .Select(p => $"{p.Type.ToDisplayString()} {p.Name}"));
-        
+
         return $"{method.Name}({parameters})";
     }
 
     private void GenerateProxyRegistration(IndentedStringBuilder sb, RpcSystemInfo info, string systemHash)
     {
         sb.AppendLine("[CompilerGenerated]");
-        sb.AppendLine($"file class {info.InterfaceName}ProxyRegistration : IRpcProxyRegistration");
+        sb.AppendLine($"file class {info.Name}ProxyRegistration : IRpcProxyRegistration");
         sb.EnterScope();
 
         sb.AppendLine($"public string SystemHash {{ get; }} = \"{systemHash}\";");
         sb.AppendLine($"public Type SystemType {{ get; }} = typeof({info.InterfaceName});");
-        sb.AppendLine($"public Type ProxyType {{ get; }} = typeof({info.InterfaceName}Proxy);");
+        sb.AppendLine($"public Type ProxyType {{ get; }} = typeof({info.Name}Proxy);");
 
         sb.ExitScope();
     }
@@ -430,14 +539,14 @@ public class RpcSourceGenerator : IIncrementalGenerator
     private void GenerateProxyRegistrationExtensions(IndentedStringBuilder sb, RpcSystemInfo info)
     {
         sb.AppendLine("[CompilerGenerated]");
-        sb.AppendLine($"public static class {info.InterfaceName}ProxyRegistrationExtensions");
+        sb.AppendLine($"public static class {info.Name}ProxyRegistrationExtensions");
         sb.EnterScope();
 
         sb.AppendLine($"extension(IServiceCollection services)");
         sb.EnterScope();
-        sb.AppendLine("public IServiceCollection Add()");
+        sb.AppendLine($"public IServiceCollection Add{info.Name}()");
         sb.EnterScope();
-        sb.AppendLine($"return services.AddSingleton<IRpcProxyRegistration, {info.InterfaceName}ProxyRegistration>();");
+        sb.AppendLine($"return services.AddSingleton<IRpcProxyRegistration, {info.Name}ProxyRegistration>();");
         sb.ExitScope();
         sb.ExitScope();
 
@@ -447,7 +556,7 @@ public class RpcSourceGenerator : IIncrementalGenerator
     private void GenerateProxyClass(IndentedStringBuilder sb, RpcSystemInfo info)
     {
         sb.AppendLine("[CompilerGenerated]");
-        sb.AppendLine($"file class {info.InterfaceName}Proxy(IRpcContext context) : {info.InterfaceName}");
+        sb.AppendLine($"file class {info.Name}Proxy(IRpcContext context) : {info.InterfaceName}");
         sb.EnterScope();
 
         int methodId = 1;
@@ -474,7 +583,7 @@ public class RpcSourceGenerator : IIncrementalGenerator
         {
             var paramType = param.Type.ToDisplayString();
             parametersList.Add($"{param.Type.ToDisplayString()} {param.Name}");
-            
+
             if (paramType != "Common.Networking.Rpc.IRpcContext")
             {
                 parametersForSerialization.Add((param.Name, param.Type));
@@ -485,57 +594,83 @@ public class RpcSourceGenerator : IIncrementalGenerator
 
         sb.AppendLine($"public {returnType} {method.Name}({string.Join(", ", parametersList)})");
         sb.EnterScope();
-        
-        // TODO lock the stream while while writing and move closer to usage
-        sb.AppendLine($"var stream = context.StreamHandler.GetStreamFor<{info.InterfaceName}>();");
-        sb.AppendLine("var bufferWriter = stream.Writer;");
-        
-        sb.AppendLine("var serializer = new SerializedMessage();");
+
+        sb.AppendLine("var serializer_1fd60b8230254022a03bc9b301907f8a = new SerializedMessage();");
         sb.AppendLine("try");
         sb.EnterScope();
 
-        sb.AppendLine("var writer = new MemoryPackWriter<ReusableLinkedArrayBufferWriter>(ref serializer.Writer, serializer.State);");
+        sb.AppendLine(
+            "var writer_1fd60b8230254022a03bc9b301907f8a = new MemoryPackWriter<ReusableLinkedArrayBufferWriter>(ref serializer_1fd60b8230254022a03bc9b301907f8a.Writer, serializer_1fd60b8230254022a03bc9b301907f8a.State);");
+
+        // Collect nullable value type parameters
+        var nullableParams = parametersForSerialization
+            .Where(p => IsNullableValueType(p.type, out _))
+            .ToList();
+
+        if (nullableParams.Count > 0)
+        {
+            var maskType = GetMaskType(nullableParams.Count);
+            sb.AppendLine($"{maskType} nullMask_1fd60b8230254022a03bc9b301907f8a = 0;");
+            for (int i = 0; i < nullableParams.Count; i++)
+            {
+                var (pName, _) = nullableParams[i];
+                sb.AppendLine($"if ({pName}.HasValue) nullMask_1fd60b8230254022a03bc9b301907f8a |= ({maskType})(1 << {i});");
+            }
+
+            sb.AppendLine($"writer_1fd60b8230254022a03bc9b301907f8a.WriteUnmanaged(nullMask_1fd60b8230254022a03bc9b301907f8a);");
+        }
 
         // Serialize parameters
         foreach (var (paramName, paramType) in parametersForSerialization)
         {
-            var serializeCall = GetSerializeCall(paramName, paramType);
-            sb.AppendLine(serializeCall);
+            if (IsNullableValueType(paramType, out var underlyingType))
+            {
+                sb.AppendLine($"if ({paramName}.HasValue)");
+                sb.EnterScope();
+                var serializeCall = GetSerializeCall($"{paramName}.Value", underlyingType, false);
+                sb.AppendLine("writer_1fd60b8230254022a03bc9b301907f8a" + serializeCall);
+                sb.ExitScope();
+            }
+            else
+            {
+                var serializeCall = GetSerializeCall(paramName, paramType, true);
+                sb.AppendLine("writer_1fd60b8230254022a03bc9b301907f8a" + serializeCall);
+            }
         }
 
         sb.AppendLine();
-        sb.AppendLine("writer.Flush();");
+        sb.AppendLine("writer_1fd60b8230254022a03bc9b301907f8a.Flush();");
         sb.AppendLine();
+
+        sb.AppendLine(
+            $"var stream_1fd60b8230254022a03bc9b301907f8a = context.StreamHandler.GetStreamFor<{info.InterfaceName}>();");
+        sb.AppendLine("using (var guard_1fd60b8230254022a03bc9b301907f8a = stream_1fd60b8230254022a03bc9b301907f8a.AcquireWriter())");
+        sb.EnterScope();
 
         sb.AppendLine("new MessageHeader");
         sb.EnterScope();
         sb.AppendLine($"MethodId = {methodId},");
-        sb.AppendLine("PayloadLength = (u32)serializer.Length");
+        sb.AppendLine("PayloadLength = (u32)serializer_1fd60b8230254022a03bc9b301907f8a.Length");
         sb.ExitScope(addSemicolon: false);
-        sb.AppendLine(".WriteTo(bufferWriter);");
+        sb.AppendLine(".WriteTo(guard_1fd60b8230254022a03bc9b301907f8a.Writer);");
         sb.AppendLine();
 
-        sb.AppendLine("foreach (var memory in serializer)");
+        sb.AppendLine("foreach (var memory_1fd60b8230254022a03bc9b301907f8a in serializer_1fd60b8230254022a03bc9b301907f8a)");
         sb.EnterScope();
-        sb.AppendLine("bufferWriter.Write(memory.Span);");
+        sb.AppendLine("guard_1fd60b8230254022a03bc9b301907f8a.Writer.Write(memory_1fd60b8230254022a03bc9b301907f8a.Span);");
         sb.ExitScope();
 
-        sb.ExitScope();
+        sb.ExitScope(); // End using guard
+
+        sb.ExitScope(); // End try
         sb.AppendLine("finally");
         sb.EnterScope();
-        sb.AppendLine("serializer.Dispose();");
+        sb.AppendLine("serializer_1fd60b8230254022a03bc9b301907f8a.Dispose();");
         sb.ExitScope();
         sb.AppendLine();
 
-        if (returnType == "void")
+        if (returnType != "void")
         {
-            sb.AppendLine("bufferWriter.FlushAsync().AsTask().Wait();");
-        }
-        else
-        {
-            // For non-void return types, we still need to complete the async operation
-            // but return a default value (this shouldn't happen if validation is correct)
-            sb.AppendLine("bufferWriter.FlushAsync().AsTask().Wait();");
             sb.AppendLine($"return default!;");
         }
 
@@ -544,56 +679,148 @@ public class RpcSourceGenerator : IIncrementalGenerator
 
     private string GetDeserializeCall(ITypeSymbol type)
     {
-        // Handle arrays
-        if (type is IArrayTypeSymbol arrayType)
+        var display = type.ToDisplayString();
+
+        // 1. Strings
+        if (type.SpecialType == SpecialType.System_String || display == "System.String" || display == "System.String?")
         {
-            var elementType = arrayType.ElementType.ToDisplayString();
-            return $"reader.ReadArray<{elementType}>()";
+            return "reader.ReadString()!";
         }
 
-        // Handle by special type
-        if (type.SpecialType == SpecialType.System_String)
+        // 2. Single Byte
+        if (type.SpecialType == SpecialType.System_Byte || display == "System.Byte" || display == "System.Byte?")
         {
-            return "reader.ReadString()";
-        }
-
-        if (type.SpecialType == SpecialType.System_Byte)
-        {
-            // Single byte - use unmanaged
             return "reader.ReadUnmanaged<byte>()";
         }
 
-        // Default for unmanaged types and custom structs
-        return $"reader.ReadUnmanaged<{type.ToDisplayString()}>()";
+        // 3. Spans: ReadOnlySpan<T> or Span<T>
+        if (display.StartsWith("System.ReadOnlySpan<") || display.StartsWith("System.Span<"))
+        {
+            if (type is INamedTypeSymbol { TypeArguments.Length: 1 } namedType)
+            {
+                var elementType = namedType.TypeArguments[0].ToDisplayString();
+                return $"reader.ReadArray<{elementType}>()";
+            }
+
+            return "reader.ReadArray<byte>()!";
+        }
+
+        // 4. Memory: ReadOnlyMemory<T> or Memory<T>
+        if (display.StartsWith("System.ReadOnlyMemory<") || display.StartsWith("System.Memory<"))
+        {
+            if (type is INamedTypeSymbol { TypeArguments.Length: 1 } namedType)
+            {
+                var elementType = namedType.TypeArguments[0].ToDisplayString();
+                return $"reader.ReadArray<{elementType}>()";
+            }
+
+            return "reader.ReadArray<byte>()!";
+        }
+
+        // 5. Arrays
+        if (type is IArrayTypeSymbol arrayType)
+        {
+            var elementType = arrayType.ElementType.ToDisplayString();
+            return $"reader.ReadArray<{elementType}>()!";
+        }
+
+        // 6. Enums
+        if (type.TypeKind == TypeKind.Enum && type is INamedTypeSymbol)
+        {
+            return $"reader.ReadUnmanaged<{type.ToDisplayString()}>()";
+        }
+
+        // 7. Primitives / Unmanaged Types
+        if (type.IsUnmanagedType)
+        {
+            return $"reader.ReadUnmanaged<{type.ToDisplayString()}>()";
+        }
+
+        // 8. Fallback to general MemoryPack ReadValue
+        return $"reader.ReadValue<{type.ToDisplayString()}>()!";
     }
 
-    private string GetSerializeCall(string paramName, ITypeSymbol type)
+    private string GetSerializeCall(string paramName, ITypeSymbol type, bool useIn)
     {
-        // Handle arrays
+        var display = type.ToDisplayString();
+
+        // 1. Strings
+        if (type.SpecialType == SpecialType.System_String || display == "System.String" || display == "System.String?")
+        {
+            return $".WriteString({paramName});";
+        }
+
+        // 7. Primitives / Unmanaged Types
+        if (type.IsUnmanagedType)
+        {
+            return $".WriteUnmanaged({(useIn ? "in" : "")} {paramName});";
+        }
+
+        // 3. Spans: ReadOnlySpan<T> or Span<T>
+        if (display.StartsWith("System.ReadOnlySpan<") || display.StartsWith("System.Span<"))
+        {
+            if (type is INamedTypeSymbol { TypeArguments: [{ IsUnmanagedType: true }] })
+            {
+                return $".WriteSpan({paramName});";
+            }
+
+            return $".WriteArray({paramName}.ToArray());";
+        }
+
+        // 4. Memory: ReadOnlyMemory<T> or Memory<T>
+        if (display.StartsWith("System.ReadOnlyMemory<") || display.StartsWith("System.Memory<"))
+        {
+            if (type is INamedTypeSymbol { TypeArguments: [{ IsUnmanagedType: true }] })
+            {
+                return $".WriteSpan({paramName}.Span);";
+            }
+
+            return $".WriteArray({paramName}.ToArray());";
+        }
+
+        // 5. Arrays
         if (type is IArrayTypeSymbol)
         {
-            return $"writer.WriteArray({paramName});";
+            return $".WriteArray({paramName});";
         }
 
-        // Handle by special type
-        if (type.SpecialType == SpecialType.System_String)
+        // 6. Enums
+        if (type.TypeKind == TypeKind.Enum && type is INamedTypeSymbol namedEnum)
         {
-            return $"writer.WriteString({paramName});";
+            return $".WriteUnmanaged({(useIn ? "in" : "")} {paramName});";
         }
 
-        if (type.SpecialType == SpecialType.System_Byte)
+        // 8. Fallback to general MemoryPack WriteValue
+        return $".WriteValue({(useIn ? "in" : "")} {paramName});";
+    }
+
+    private static bool IsNullableValueType(ITypeSymbol type, out ITypeSymbol underlyingType)
+    {
+        if (type is INamedTypeSymbol
+            {
+                OriginalDefinition.SpecialType: SpecialType.System_Nullable_T, TypeArguments.Length: 1
+            } namedType)
         {
-            // Single byte - use unmanaged
-            return $"writer.WriteUnmanaged({paramName});";
+            underlyingType = namedType.TypeArguments[0];
+            return true;
         }
 
-        // Default for unmanaged types and custom structs
-        return $"writer.WriteUnmanaged({paramName});";
+        underlyingType = null!;
+        return false;
+    }
+
+    private static string GetMaskType(int count)
+    {
+        if (count <= 8) return "byte";
+        if (count <= 16) return "ushort";
+        if (count <= 32) return "uint";
+        return "ulong";
     }
 
     private class RpcSystemInfo
     {
         public INamedTypeSymbol InterfaceSymbol { get; set; } = null!;
+        public string Name { get; set; } = null!;
         public string InterfaceName { get; set; } = null!;
         public string InterfaceNamespace { get; set; } = null!;
         public string InterfaceFullyQualified { get; set; } = null!;
@@ -603,6 +830,3 @@ public class RpcSourceGenerator : IIncrementalGenerator
         public InterfaceDeclarationSyntax Syntax { get; set; } = null!;
     }
 }
-
-
-

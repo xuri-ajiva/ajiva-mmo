@@ -1,19 +1,12 @@
 ﻿using System.Buffers;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.IO.Pipelines;
 using System.Net;
 using System.Net.Quic;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading.Channels;
 using Common.Helpers;
 using Common.Networking.Rpc;
 using Common.Rpc;
-using Interception;
 using Microsoft.Extensions.Logging;
-using NetworkPackets;
 
 namespace Common.Networking.AjivaQuic;
 
@@ -22,8 +15,8 @@ public class QConnectionStreamHandler(RpcSystemRegistry registry, ILogger logger
 {
     private readonly List<Task> _tasks = [];
     private readonly Dictionary<Type, QStream> _inboundStreams = [], _outBoundStreams = [];
-    private Lock _streamLock = new();
-    private CancellationToken _token;
+    private readonly Lock _streamLock = new();
+    private CancellationTokenSource _token;
     private QuicConnection _connection;
     private Instrumentation _instrumentation;
     private QuicStream _controlStream;
@@ -61,14 +54,59 @@ public class QConnectionStreamHandler(RpcSystemRegistry registry, ILogger logger
                     {
                         await PollStreamAsync(registry.GetSystem(keyValuePair.Key), keyValuePair.Value, context);
                     }
+                    catch (QuicException e) when (IsQuicErrAbort(e))
+                    {
+                        return;
+                    }
+                    catch (OperationCanceledException) when (_token.IsCancellationRequested)
+                    {
+                        return;
+                    }
                     catch (Exception e)
                     {
-                        Console.WriteLine(e);
+                        logger.LogError(e, "Error in PollContinuously for stream {Stream}", keyValuePair.Value);
                         throw;
                     }
                 }
-            }, logger, _token);
+            }, logger, _token.Token);
             _tasks.Add(thread);
+        }
+    }
+
+
+    internal bool IsQuicErrAbort(QuicException e)
+    {
+        switch (e.QuicError)
+        {
+            case QuicError.InternalError:
+            case QuicError.ConnectionAborted:
+            case QuicError.StreamAborted:
+            case QuicError.ConnectionIdle:
+            case QuicError.OperationAborted:
+                logger.LogDebug(e, "QuicException with error code {ErrorCode} indicates a connection abort",
+                    e.QuicError);
+                CloseIfOpen();
+                return true;
+            case QuicError.ConnectionTimeout:
+            case QuicError.ConnectionRefused:
+            case QuicError.TransportError:
+                CloseIfOpen();
+                // wtf happened here
+                logger.LogError(e, "QuicException with error code {ErrorCode} indicates an unexpected issue",
+                    e.QuicError);
+                return true;
+            default:
+                break;
+        }
+
+        return false;
+    }
+
+    internal void CloseIfOpen()
+    {
+        if (!_token.IsCancellationRequested)
+        {
+            _token.Cancel();
         }
     }
 
@@ -141,20 +179,20 @@ public class QConnectionStreamHandler(RpcSystemRegistry registry, ILogger logger
     }
 
     public async ValueTask Init(QuicConnection connection, Instrumentation instrumentation, bool isClient,
-        CancellationToken token)
+        CancellationTokenSource token)
     {
         _connection = connection;
         _instrumentation = instrumentation;
         _token = token;
         if (isClient)
         {
-            _controlStream = await connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, token);
-            _systemMapping = await registry.OfferAwaitableSystems(_controlStream, token);
+            _controlStream = await connection.OpenOutboundStreamAsync(QuicStreamType.Bidirectional, token.Token);
+            _systemMapping = await registry.OfferAwaitableSystems(_controlStream, token.Token);
         }
         else
         {
-            _controlStream = await connection.AcceptInboundStreamAsync(token);
-            _systemMapping = await registry.DecideSystemsAndStreams(_controlStream, token);
+            _controlStream = await connection.AcceptInboundStreamAsync(token.Token);
+            _systemMapping = await registry.DecideSystemsAndStreams(_controlStream, token.Token);
         }
 
         AcceptStreams();
@@ -171,9 +209,9 @@ public class QConnectionStreamHandler(RpcSystemRegistry registry, ILogger logger
             logger.LogInformation("Opening Stream for " + mapping.SystemHash);
             var stream = await _connection.OpenOutboundStreamAsync(
                 mapping.Flags == RpcSystemSideFlags.Both ? QuicStreamType.Bidirectional : QuicStreamType.Unidirectional,
-                _token);
-            var streamSystemType = registry.BindSystemToStream(mapping, stream, _token);
-            _outBoundStreams.Add(streamSystemType, new QStream(stream, _instrumentation, logger, _token));
+                _token.Token);
+            var streamSystemType = registry.BindSystemToStream(mapping, stream, _token.Token);
+            _outBoundStreams.Add(streamSystemType, new QStream(stream, this, _instrumentation, logger, _token.Token));
         }
     }
 
@@ -193,11 +231,28 @@ public class QConnectionStreamHandler(RpcSystemRegistry registry, ILogger logger
         {
             while (!_token.IsCancellationRequested)
             {
-                var stream = await _connection.AcceptInboundStreamAsync(_token);
-                logger.LogInformation("New Stream accepted");
-                HandleNewStreamAsync(stream);
+                try
+                {
+                    var stream = await _connection.AcceptInboundStreamAsync(_token.Token);
+                    logger.LogInformation("New Stream accepted");
+                    HandleNewStreamAsync(stream);
+                }
+                catch (QuicException e) when (IsQuicErrAbort(e))
+                {
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    if (!_token.IsCancellationRequested)
+                        CloseIfOpen();
+                }
+                catch (Exception e)
+                {
+                    logger.LogError(e, "Error accepting new stream");
+                    throw;
+                }
             }
-        }, logger, _token));
+        }, logger, _token.Token));
     }
 
     private void HandleNewStreamAsync(QuicStream stream)
@@ -206,7 +261,8 @@ public class QConnectionStreamHandler(RpcSystemRegistry registry, ILogger logger
         {
             var streamSystemType = registry.ResolveStreamSystem(stream, _systemMapping);
             using var sl = _streamLock.EnterScope();
-            _inboundStreams.Add(streamSystemType, new QStream(stream, _instrumentation, logger, _token));
+            _inboundStreams.Add(streamSystemType,
+                new QStream(stream, this, _instrumentation, logger, token: _token.Token));
         }
         catch (Exception e)
         {

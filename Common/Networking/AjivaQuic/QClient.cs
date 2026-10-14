@@ -7,10 +7,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Common.Networking.AjivaQuic;
 
-public abstract class QClientBase(RpcSystemRegistry registry, ILogger logger, QuicConnection connection)
+public abstract class QClientBase(RpcSystemRegistry registry, ILogger logger, QuicConnection? connection)
     : IRpcContext
 {
-    protected QuicConnection Connection = connection;
+    protected QuicConnection? Connection = connection;
     private readonly Dictionary<Type, object> _proxies = [];
     public ConnectionState State { get; protected set; } = ConnectionState.Disconnected;
     public bool IsConnected => State == ConnectionState.Connected;
@@ -54,7 +54,7 @@ public class QClient(QuicClientConnectionOptions options, RpcSystemRegistry regi
         {
             State = ConnectionState.Connecting;
             Connection = await QuicConnection.ConnectAsync(options, _cts.Token);
-            await _streamHandler.Init(Connection, instrumentation, true, _cts.Token);
+            await _streamHandler.Init(Connection, instrumentation, true, _cts);
             State = ConnectionState.Connected;
         }
         catch (Exception e)
