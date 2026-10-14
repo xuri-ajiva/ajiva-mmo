@@ -8,7 +8,7 @@ This project is where I learn how those pieces work and build them into one appl
 
 Rendering and editor features coexist with experimental networking and world distribution. Replication still has known correctness issues, and server meshing remains a future goal. There are no published player-count or performance benchmarks.
 
-Six short clips below show loading, shader reload, ECS editing, UI events, network capture/replay, and render traces. Click a preview to open its MP4.
+Six short clips below show loading, shader reload, ECS editing, UI events, network capture/replay, and render traces. Click a preview to open the video file on GitHub. If GitHub cannot preview it, use **View raw** to open or download the MP4.
 
 [Development and setup](#development) · [Repository map](#repository-map) · [Planned work](#planned-work)
 
@@ -16,9 +16,9 @@ Six short clips below show loading, shader reload, ECS editing, UI events, netwo
 
 Native WebGPU rendering with deferred PBR, instancing, transparency, and GPU picking.
 
-[Concurrent loading and mesh mutation · 28 seconds](docs/showcases/concurrent-loading.mp4?raw=true): level loading, mesh copying, and in-place mutation.
+[Concurrent loading and mesh mutation · 28 seconds](docs/showcases/concurrent-loading.mp4): level loading, mesh copying, and in-place mutation.
 
-[![Concurrent loading and mesh mutation](docs/showcases/concurrent-loading.jpg)](docs/showcases/concurrent-loading.mp4?raw=true)
+[![Concurrent loading and mesh mutation](docs/showcases/concurrent-loading.jpg)](docs/showcases/concurrent-loading.mp4)
 
 <details>
 <summary>Render passes, scene tools, and current limits</summary>
@@ -38,9 +38,9 @@ Start with [the renderer](Client.Renderer/Renderers/Instanced3dDeferredRenderer.
 
 Write shaders in C#, generate WGSL and binding helpers, and reload shaders while the application runs.
 
-[Live shader reload · 35 seconds](docs/showcases/shader-reload.mp4?raw=true): edit a C# shader and see the render pipeline rebuild while the application runs.
+[Live shader reload · 35 seconds](docs/showcases/shader-reload.mp4): edit a C# shader and see the render pipeline rebuild while the application runs.
 
-[![C# shader editing alongside the running renderer](docs/showcases/shader-reload.jpg)](docs/showcases/shader-reload.mp4?raw=true)
+[![C# shader editing alongside the running renderer](docs/showcases/shader-reload.jpg)](docs/showcases/shader-reload.mp4)
 
 <details>
 <summary>Shader generation and live reloading</summary>
@@ -61,13 +61,13 @@ See [the generator](Generators/WgslGenerator), [shader examples](Client.Renderer
 
 An ImGui editor with detachable windows, scene inspection, resource tools, and cluster controls; RmlUi supplies document-based game UI.
 
-[ECS picking and transform smoothing · 53 seconds](docs/showcases/ecs-picking-smoothing.mp4?raw=true): select an entity, edit its position and scale, and compare the immediate gizmo update with the renderer's smoothed transform.
+[ECS picking and transform smoothing · 53 seconds](docs/showcases/ecs-picking-smoothing.mp4): select an entity, edit its position and scale, and compare the immediate gizmo update with the renderer's smoothed transform.
 
-[![Entity selection and the ECS inspector](docs/showcases/ecs-picking-smoothing.jpg)](docs/showcases/ecs-picking-smoothing.mp4?raw=true)
+[![Entity selection and the ECS inspector](docs/showcases/ecs-picking-smoothing.jpg)](docs/showcases/ecs-picking-smoothing.mp4)
 
-[RmlUi hit testing and events · 42 seconds](docs/showcases/rmlui-events.mp4?raw=true): hit testing, event target resolution, dispatch, and bubbling in the game UI.
+[RmlUi hit testing and events · 42 seconds](docs/showcases/rmlui-events.mp4): hit testing, event target resolution, dispatch, and bubbling in the game UI.
 
-[![Document-based game UI and event inspection](docs/showcases/rmlui-events.jpg)](docs/showcases/rmlui-events.mp4?raw=true)
+[![Document-based game UI and event inspection](docs/showcases/rmlui-events.jpg)](docs/showcases/rmlui-events.mp4)
 
 <details>
 <summary>Editor tools and windowing</summary>
@@ -92,9 +92,9 @@ See [the editor widgets](Client.Editor/EditorLayers/Widgets), [ImGui integration
 
 QUIC transport, generated packets, chunk replication, and server discovery are implemented. Replication still needs correctness work; Networking 2.0 is under development.
 
-[Network capture and replay · 36 seconds](docs/showcases/network-capture-replay.mp4?raw=true): capture and replay traffic from multiple servers, including loading/unloading behavior and visible replication bugs.
+[Network capture and replay · 36 seconds](docs/showcases/network-capture-replay.mp4): capture and replay traffic from multiple servers, including loading/unloading behavior and visible replication bugs.
 
-[![Network capture and server management controls](docs/showcases/network-capture-replay.jpg)](docs/showcases/network-capture-replay.mp4?raw=true)
+[![Network capture and server management controls](docs/showcases/network-capture-replay.jpg)](docs/showcases/network-capture-replay.mp4)
 
 <details>
 <summary>Current networking architecture and limitations</summary>
@@ -180,9 +180,9 @@ A custom ECS, generated entity code, and separate update/render scheduling, buil
 
 Aspire runs the local cluster. Editor controls capture render and update cycles, with generated call events and timed spans to inspect their execution.
 
-[Render traces and CPU timing · 12 seconds](docs/showcases/telemetry-traces.mp4?raw=true): inspect a captured render cycle and its nested spans in the Aspire dashboard.
+[Render traces and CPU timing · 12 seconds](docs/showcases/telemetry-traces.mp4): inspect a captured render cycle and its nested spans in the Aspire dashboard.
 
-[![Render cycle spans and CPU timing in Aspire](docs/showcases/telemetry-traces.jpg)](docs/showcases/telemetry-traces.mp4?raw=true)
+[![Render cycle spans and CPU timing in Aspire](docs/showcases/telemetry-traces.jpg)](docs/showcases/telemetry-traces.mp4)
 
 <details>
 <summary>Local orchestration and loop tracing</summary>
