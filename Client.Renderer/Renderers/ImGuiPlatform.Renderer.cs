@@ -175,7 +175,7 @@ public partial class ImGuiPlatform
         }
     }
 
-    private void DestroyTexture(ImTextureDataPtr tex)
+    private unsafe void DestroyTexture(ImTextureDataPtr tex)
     {
         if (tex.IsNull) return;
 
@@ -185,6 +185,8 @@ public partial class ImGuiPlatform
             tuple.BindGroup?.Release();
         }
 
+        tex.SetTexID(default);
+        tex.BackendUserData = null;
         tex.SetStatus(ImTextureStatus.Destroyed);
     }
 
@@ -220,6 +222,15 @@ public partial class ImGuiPlatform
 
     private unsafe void UpdateTexture(ImTextureDataPtr tex)
     {
+        if (tex.IsNull || tex.Status == ImTextureStatus.Destroyed) return;
+
+        if (tex.Status == ImTextureStatus.WantDestroy)
+        {
+            if (tex.UnusedFrames > 0)
+                DestroyTexture(tex);
+            return;
+        }
+
         AjivaTexture texture;
         if (tex.Status == ImTextureStatus.WantCreate)
         {
@@ -265,14 +276,12 @@ public partial class ImGuiPlatform
             tex.SetStatus(ImTextureStatus.Ok);
         }
 
-        if (tex is { Status: ImTextureStatus.Destroyed })
-            DestroyTexture(tex);
     }
 
     private bool TryGetTexture(ImTextureDataPtr tex, [NotNullWhen(true)] out AjivaTexture? texture)
     {
         texture = null;
-        if (tex is { IsNull: true, TexID.IsNull: true }) return false;
+        if (tex.IsNull || tex.TexID.IsNull) return false;
         var id = tex.TexID;
         if (!_textures.TryGetValue(id, out var bindGroup)) return false;
         texture = bindGroup.Texture;
