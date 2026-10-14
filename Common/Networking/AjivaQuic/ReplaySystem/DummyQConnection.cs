@@ -1,9 +1,4 @@
-﻿using System.Net;
-using Common.Helpers;
-using Interception;
-using NetworkPackets;
-
-namespace Common.Networking.AjivaQuic.ReplaySystem;
+﻿namespace Common.Networking.AjivaQuic.ReplaySystem;
 
 /*[ExcludeFromInterception]
 public class DummyQConnection : IQConnection

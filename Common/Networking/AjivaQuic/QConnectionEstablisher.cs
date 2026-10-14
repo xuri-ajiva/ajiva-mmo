@@ -1,9 +1,4 @@
-﻿using System.Diagnostics;
-using System.Net.Quic;
-using Common.Networking.Rpc;
-using Common.Rpc;
-
-namespace Common.Networking.AjivaQuic;
+﻿namespace Common.Networking.AjivaQuic;
 
 public static class QConnectionEstablisher
 {
