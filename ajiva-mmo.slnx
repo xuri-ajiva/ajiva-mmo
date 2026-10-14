@@ -31,4 +31,5 @@
   <Project Path="ClusterManager\ClusterManager.csproj" />
   <Project Path="Common/Common.csproj" />
   <Project Path="Server/Server.csproj" />
+  <Project Path="TestRpc/TestRpc.csproj" />
 </Solution>
