@@ -21,6 +21,7 @@ public partial class ClientGameLogic : IDisposable
     private readonly Scene _scene;
     private readonly EntityAssetRegistry _assetRegistry;
     private readonly Dictionary<NetEntId, EntityId> _networkToEcs = new();
+    private readonly Dictionary<EntityId, HashSet<SpatialChunk>> _chunkMembership = new();
 
     /*public NetEntId? LocalPlayerNetworkId { get; private set; }
     public EntityId? LocalPlayerEntityId { get; private set; }*/
@@ -47,9 +48,6 @@ public partial class ClientGameLogic : IDisposable
         {
             if (TryCleanUpEntity(pair.Key))
                 delCount++;
-
-            if (delCount % 50 == 0)
-                IncrementRenderVersion("Auto-delete batch");
         }
 
         if (delCount > 0)
@@ -75,6 +73,7 @@ public partial class ClientGameLogic : IDisposable
         _logger.LogWarning("Clearing entire world state");
         // Clear all mappings
         _networkToEcs.Clear();
+        _chunkMembership.Clear();
 
         World.ClearAllEntities();
 
@@ -132,19 +131,9 @@ public partial class ClientGameLogic : IDisposable
     private bool TryMarkEntityForDeletion(EntityId entity, NetEntId netEntId)
     {
         SpecialEntity(netEntId, nameof(TryMarkEntityForDeletion));
-        if (World.NetState.TryGet(entity, out var netState))
+        if (World.NetState.Has(entity))
         {
-            if (netState.CreatedTick == _lastTick)
-            {
-                SpecialEntity(netEntId, "Entity created and deleted in the same tick, skipping deletion");
-                return false;
-            }
-
             World.NetState.Update(entity).DeletedTick = _lastTick;
-        
-            // DELETED: Phantom chunk logic. 
-            // We do NOT want to guess the chunk by spatial position here, 
-            // because the position might already be in the NEW chunk!
         }
         else
         {
@@ -168,20 +157,28 @@ public partial class ClientGameLogic : IDisposable
         state.DeletedTick = null;
         state.CreatedTick = _lastTick;
 
-        // DELETED: Phantom chunk logic. 
-
-        if (state.GhostChunk is not { } chunk)
-        {
-            SpecialEntity(netId, "No ghost chunk to remove on resurrection");
-            return true;
-        }
-
-        SpecialEntity(netId, "Removing from ghost chunk on resurrection");
-
-        // The GhostChunk exists because the server explicitly told us it was removed from an older chunk.
-        chunk.Remove(id);
         state.GhostChunk = null;
         return true;
+    }
+
+    private void AddChunkEntity(SpatialChunk chunk, EntityId id)
+    {
+        if (!_chunkMembership.TryGetValue(id, out var chunks))
+            _chunkMembership[id] = chunks = new(ReferenceEqualityComparer.Instance);
+        // Keep server ordering for positional updates, without duplicate delta additions.
+        if (chunks.Add(chunk))
+            chunk.Entities.Add(id);
+    }
+
+    private void RemoveChunkEntity(SpatialChunk chunk, EntityId id)
+    {
+        chunk.Entities.RemoveAll(entity => entity == id);
+        if (!_chunkMembership.TryGetValue(id, out var chunks)) return;
+        chunks.Remove(chunk);
+        if (chunks.Count != 0) return;
+        _chunkMembership.Remove(id);
+        if (World.NetState.TryGet(id, out var state))
+            TryMarkEntityForDeletion(id, state.Id);
     }
 
 
@@ -190,30 +187,7 @@ public partial class ClientGameLogic : IDisposable
         ref var netState = ref World.NetState.Update(entityId);
         if (!netState.DeletedTick.HasValue || netState.DeletedTick.Value + 2 >= _lastTick) return false;
     
-        netState.GhostChunk?.Remove(entityId);
-        netState.GhostChunk = null;
-    
-        var trans = World.Transform.Get(entityId);
-        //_logger.LogDebug("Auto-deleting entity {EntityId} due to inactivity", netState.Id);
-
-        Lock.Scope scope = default;
-        try
-        {
-            if (Grid is not null && Grid.TryGetChunk(Grid.GetChunkCoord(trans.Position, trans.Level), out var chunk))
-            {
-                scope = chunk.UseLock();
-                // ADDED: When the entity is FINALLY hard-deleted by auto-cleanup, 
-                // we ensure it is purged from whatever physical chunk it ended up in.
-                chunk.Entities.Remove(entityId);
-            }
-
-            SpecialEntity(netState.Id, "Auto-cleanup deletion");
-            return TryDeleteEntity(entityId, netState.Id);
-        }
-        finally
-        {
-            scope.Dispose();
-        }
+        return TryDeleteEntity(entityId, netState.Id);
     }
 
 
@@ -221,6 +195,13 @@ public partial class ClientGameLogic : IDisposable
     {
         SpecialEntity(netId, nameof(TryDeleteEntity));
 
+        if (_chunkMembership.Remove(id, out var chunks))
+            foreach (var chunk in chunks)
+            {
+                using var scope = chunk.UseLock();
+                chunk.Entities.RemoveAll(entity => entity == id);
+                chunk.MarkDirty();
+            }
         _networkToEcs.Remove(netId, out var entity);
         Debug.Assert(entity == id, "EntityId mismatch on deletion");
         World.DeleteEntity(id);
@@ -274,6 +255,7 @@ public partial class ClientGameLogic : IDisposable
             MeshId = typeId,
             EntityId = (u32)entity.Value
         });
+        IncrementRenderVersion();
         return entity;
     }
 

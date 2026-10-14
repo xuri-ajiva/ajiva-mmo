@@ -139,23 +139,12 @@ public partial class ClientGameLogic
     {
         _logger.LogTrace("Chunk unload received: {ChunkCoord}", packet.ChunkCoord);
         if (!GridCheck()) return;
-        var anyRemoved = false;
         if (Grid.TryDeleteChunk(packet.ChunkCoord, out var chunk))
         {
-            anyRemoved = true;
             using var _ = chunk.UseLock();
-            chunk.Entities.Clear();
+            foreach (var id in chunk.Entities.ToArray())
+                RemoveChunkEntity(chunk, id);
         }
-
-        foreach (var netEntId in packet.NetEntIds)
-        {
-            SpecialEntity(netEntId, nameof(HandleChunkUnload));
-            if (!_networkToEcs.TryGetValue(netEntId, out var ecsEntity)) continue;
-            anyRemoved |= TryMarkEntityForDeletion(ecsEntity, netEntId);
-        }
-
-        if (anyRemoved)
-            IncrementRenderVersion();
     }
 
     public void HandleChunkDelta(ToClientPackets.ChunkDeltaPacket message)
@@ -174,18 +163,7 @@ public partial class ClientGameLogic
                 SpecialEntity(entId, "RemovedIds in ChunkDelta");
                 if (!_networkToEcs.TryGetValue(entId, out var local)) continue;
 
-                if (TryMarkEntityForDeletion(local, entId))
-                {
-                    ref var netState = ref World.NetState.Update(local);
-
-                    // Philosophy implementation: Only set ghost chunk if it is currently null
-                    if (netState.GhostChunk == null)
-                    {
-                        netState.GhostChunk = chunk;
-                    }
-                }
-
-                chunk.Entities.Remove(local);
+                RemoveChunkEntity(chunk, local);
             }
         }
 
@@ -203,7 +181,7 @@ public partial class ClientGameLogic
                 }
 
                 // Immediately register to the current chunk's bounds
-                chunk.Entities.Add(id);
+                AddChunkEntity(chunk, id);
             }
         }
 
@@ -217,36 +195,17 @@ public partial class ClientGameLogic
             message.Coord, entityCount);
         if (!GridCheck()) return;
 
-        if (entityCount == 0)
+        var chunk = Grid.GetChunkData(message.Coord);
+        using var _ = chunk.UseLock();
+        foreach (var id in chunk.Entities.ToArray())
+            RemoveChunkEntity(chunk, id);
+
+        foreach (var netEntId in message.NetEntIds)
         {
-            if (!Grid.TryGetChunk(message.Coord, out var chunk) || chunk is not { Entities.Count: > 0 }) return;
-            using var _ = chunk.UseLock();
-            chunk.Entities.Clear();
-            IncrementRenderVersion();
-            chunk.MarkDirty();
+            if (!TryResurrectEntity(netEntId, out var id))
+                id = CreateEntity(netEntId, 1);
+            AddChunkEntity(chunk, id);
         }
-        else
-        {
-            var chunk = Grid.GetChunkData(message.Coord);
-            using var _ = chunk.UseLock();
-            var beforeCount = chunk.Entities.Count;
-            if (beforeCount > 0)
-                chunk.Entities.Clear();
-
-            foreach (var netEntId in message.NetEntIds)
-            {
-                SpecialEntity(netEntId, nameof(HandleChunkLoad));
-                if (!TryResurrectEntity(netEntId, out var id))
-                {
-                    id = CreateEntity(netEntId, 1);
-                }
-
-                chunk.Entities.Add(id);
-            }
-
-            if (beforeCount > 0)
-                IncrementRenderVersion();
-            chunk.MarkDirty();
-        }
+        chunk.MarkDirty();
     }
 }
