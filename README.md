@@ -8,7 +8,7 @@ This project is where I learn how those pieces work and build them into one appl
 
 Rendering and editor features coexist with experimental networking and world distribution. Replication still has known correctness issues, and server meshing remains a future goal. There are no published player-count or performance benchmarks.
 
-Six short clips below show loading, shader reload, ECS editing, UI events, network capture/replay, and render traces. Click a preview to open the video file on GitHub. If GitHub cannot preview it, use **View raw** to open or download the MP4.
+Six short clips below show loading, shader reload, ECS editing, UI events, network capture/replay, and render traces. Play the clips below to see each feature in action.
 
 [Development and setup](#development) · [Repository map](#repository-map) · [Planned work](#planned-work)
 
