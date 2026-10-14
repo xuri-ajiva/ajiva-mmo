@@ -18,7 +18,7 @@ Native WebGPU rendering with deferred PBR, instancing, transparency, and GPU pic
 
 [Concurrent loading and mesh mutation · 28 seconds](docs/showcases/concurrent-loading.mp4): level loading, mesh copying, and in-place mutation.
 
-[![Concurrent loading and mesh mutation](docs/showcases/concurrent-loading.jpg)](docs/showcases/concurrent-loading.mp4)
+https://github.com/user-attachments/assets/aa574a1a-e81b-4d0e-9636-7112f8872e6e
 
 <details>
 <summary>Render passes, scene tools, and current limits</summary>
@@ -40,7 +40,7 @@ Write shaders in C#, generate WGSL and binding helpers, and reload shaders while
 
 [Live shader reload · 35 seconds](docs/showcases/shader-reload.mp4): edit a C# shader and see the render pipeline rebuild while the application runs.
 
-[![C# shader editing alongside the running renderer](docs/showcases/shader-reload.jpg)](docs/showcases/shader-reload.mp4)
+https://github.com/user-attachments/assets/598fd32d-cb10-45b8-8879-1c1b79c1c24f
 
 <details>
 <summary>Shader generation and live reloading</summary>
@@ -63,11 +63,11 @@ An ImGui editor with detachable windows, scene inspection, resource tools, and c
 
 [ECS picking and transform smoothing · 53 seconds](docs/showcases/ecs-picking-smoothing.mp4): select an entity, edit its position and scale, and compare the immediate gizmo update with the renderer's smoothed transform.
 
-[![Entity selection and the ECS inspector](docs/showcases/ecs-picking-smoothing.jpg)](docs/showcases/ecs-picking-smoothing.mp4)
+https://github.com/user-attachments/assets/2d019724-e298-417f-94b3-10b14bc142ec
 
 [RmlUi hit testing and events · 42 seconds](docs/showcases/rmlui-events.mp4): hit testing, event target resolution, dispatch, and bubbling in the game UI.
 
-[![Document-based game UI and event inspection](docs/showcases/rmlui-events.jpg)](docs/showcases/rmlui-events.mp4)
+https://github.com/user-attachments/assets/b52d1f77-6d61-4b4e-b4c9-c2ed36ab43e0
 
 <details>
 <summary>Editor tools and windowing</summary>
@@ -94,7 +94,7 @@ QUIC transport, generated packets, chunk replication, and server discovery are i
 
 [Network capture and replay · 36 seconds](docs/showcases/network-capture-replay.mp4): capture and replay traffic from multiple servers, including loading/unloading behavior and visible replication bugs.
 
-[![Network capture and server management controls](docs/showcases/network-capture-replay.jpg)](docs/showcases/network-capture-replay.mp4)
+https://github.com/user-attachments/assets/a554203d-29f5-461f-bfcc-d8b86a76aedf
 
 <details>
 <summary>Current networking architecture and limitations</summary>
@@ -182,7 +182,7 @@ Aspire runs the local cluster. Editor controls capture render and update cycles,
 
 [Render traces and CPU timing · 12 seconds](docs/showcases/telemetry-traces.mp4): inspect a captured render cycle and its nested spans in the Aspire dashboard.
 
-[![Render cycle spans and CPU timing in Aspire](docs/showcases/telemetry-traces.jpg)](docs/showcases/telemetry-traces.mp4)
+https://github.com/user-attachments/assets/9aac190a-b03b-4e87-9b25-1187f9d20c02
 
 <details>
 <summary>Local orchestration and loop tracing</summary>
