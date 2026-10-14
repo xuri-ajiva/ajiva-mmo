@@ -199,7 +199,7 @@ public class DenseStore<T> : IEcsStore<T, DenseStore<T>.Iterator>
                 if (_index >= store._maxStored) return false;
                 if (store._used.Get(_index))
                 {
-                    Current = new PairKv<EntityId, T>(new EntityId(_index), ref store.Update(new EntityId(_index)));
+                    Current = new PairKv<EntityId, T>(new EntityId(_index), ref store._data[_index]);
                     return true;
                 }
             }
