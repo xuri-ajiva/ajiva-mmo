@@ -6,6 +6,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <UserSecretsId>dotnet-Client.Desktop-de94b7bb-5a61-4304-ba82-394f106a3b50</UserSecretsId>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <RunWorkingDirectory>../Client</RunWorkingDirectory>
     </PropertyGroup>
 
     <ItemGroup>

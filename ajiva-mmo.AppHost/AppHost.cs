@@ -42,7 +42,7 @@ if (desktopClients > 0)
         );
 
 if (editorClients > 0)
-    builder.AddProject<Projects.Client_Editor>("client")
+    builder.AddProject<Projects.Client_Editor>("editorClient")
         .WaitFor(clusterManager)
         .WithReplicas(editorClients)
         .WithArgs("--ClientConfiguration:AutoConnect=true",

@@ -1,6 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-    <Sdk Name="Aspire.AppHost.Sdk" Version="9.4.1"/>
+<Project Sdk="Aspire.AppHost.Sdk/13.6.1">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -11,15 +9,14 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aspire.Hosting.AppHost"/>
-        <PackageReference Include="Aspire.Hosting.Docker"/>
+        <PackageReference Include="Aspire.Hosting.Docker" />
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Client.Desktop\Client.Desktop.csproj" />
         <ProjectReference Include="..\Client.Editor\Client.Editor.csproj" />
-        <ProjectReference Include="..\ClusterManager\ClusterManager.csproj"/>
-        <ProjectReference Include="..\Server\Server.csproj"/>
+        <ProjectReference Include="..\ClusterManager\ClusterManager.csproj" />
+        <ProjectReference Include="..\Server\Server.csproj" />
     </ItemGroup>
 
 </Project>

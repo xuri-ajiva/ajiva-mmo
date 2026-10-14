@@ -6,6 +6,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <UserSecretsId>dotnet-Client.Editor-69ef1b52-e976-4639-b550-0cd1e91e25ff</UserSecretsId>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <RunWorkingDirectory>../Client</RunWorkingDirectory>
     </PropertyGroup>
 
     <ItemGroup>
