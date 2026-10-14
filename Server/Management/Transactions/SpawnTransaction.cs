@@ -32,9 +32,11 @@ public class SpawnTransaction(ILogger<SpawnTransaction> logger, NServerEcs ecs) 
         {
             // Simple grid spawn logic
             // todo optimize with spatial partitioning and actual region we own
-            for (float x = MinBounds.X; x <= MaxBounds.X; x += Spacing)
+            // Region intersections use an exclusive maximum. Including it spawns
+            // a duplicate border row in the neighboring server's chunks.
+            for (float x = MinBounds.X; x < MaxBounds.X; x += Spacing)
             {
-                for (float z = MinBounds.Z; z <= MaxBounds.Z; z += Spacing)
+                for (float z = MinBounds.Z; z < MaxBounds.Z; z += Spacing)
                 {
                     // Check if point is in our region
                     //if (AssignedRegion.Contains(new Vector2(x, z)))

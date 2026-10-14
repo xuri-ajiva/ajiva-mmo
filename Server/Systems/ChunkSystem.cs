@@ -159,6 +159,10 @@ public class ChunkSystem(
                 if (context.LoadedChunks.Add(chunkCoord))
                 {
                     SendLoadChunk(context, chunkCoord);
+                    // Membership is already current
+                    using var baseline = BuildChunkData(chunkCoord, chunk, fullState: true);
+                    context.Connection.Send(baseline);
+                    continue;
                 }
 
                 context.Connection.Send(chunkData);
@@ -169,12 +173,12 @@ public class ChunkSystem(
         world.Grid.ClearDirtyFlags();
     }
 
-    private SerializedMessage BuildChunkData(ChunkCoord chunkCoord, SpatialChunk chunk)
+    private SerializedMessage BuildChunkData(ChunkCoord chunkCoord, SpatialChunk chunk, bool fullState = false)
     {
         var serializer = new SerializedMessage();
         var writer = new MemoryPackWriter<ReusableLinkedArrayBufferWriter>(ref serializer.Writer, serializer.State);
 
-        if (world.Grid.TryGetDeltaInfo(chunkCoord, out var added, out var removed))
+        if (!fullState && world.Grid.TryGetDeltaInfo(chunkCoord, out var added, out var removed))
         {
             var addedIds = (added ?? []).Select(x => new NetEntId(_serverId, x)).ToList();
             var removedIds = (removed ?? []).Select(x => new NetEntId(_serverId, x)).ToList();
@@ -195,7 +199,7 @@ public class ChunkSystem(
             positions.Data.Add(PositionChunkData.QuantizeFor(chunkCoord, world.Grid.GridInfo, position.Value));
 
 
-            if (world.Rotation.IsDirty(entityId))
+            if (fullState || world.Rotation.IsDirty(entityId))
             {
                 var rotation = world.Rotation.Get(entityId);
                 rotations.Data.Add(RotationChunkData.Quantize(rotation.Value));
@@ -203,7 +207,7 @@ public class ChunkSystem(
                 world.Rotation.ClearDirty(entityId);
             }
 
-            if (world.Scale.IsDirty(entityId))
+            if (fullState || world.Scale.IsDirty(entityId))
             {
                 var scale = world.Scale.Get(entityId);
                 scales.Data.Add(new ScaleChunkData(scale.Value));
